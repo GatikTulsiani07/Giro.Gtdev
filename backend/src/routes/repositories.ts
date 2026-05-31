@@ -8,7 +8,8 @@ import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
 import { cloneRepo, repoClonePath } from "../services/repository/clone.js";
 import { scanRepo } from "../services/repository/scanner.js";
-import { buildContext } from "../services/context/index.js";
+import { analyzeRepository } from "../services/repository/analyzer.js";
+import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import type { ScanResult } from "../services/repository/types.js";
 
 const ConnectBody = z.object({ repoUrl: z.string().min(1) });
@@ -36,6 +37,7 @@ repositoriesRoute.post("/connect", async (c) => {
   try {
     const { clonePath, alreadyExisted } = await cloneRepo(owner, repo);
     const stats = await scanRepo(clonePath);
+    const analysis = await analyzeRepository(clonePath, stats);
 
     const result: ScanResult = {
       owner,
@@ -47,7 +49,7 @@ repositoriesRoute.post("/connect", async (c) => {
       languages: stats.languages,
       tree: stats.tree,
     };
-    return ok(c, result);
+    return ok(c, { ...result, ...analysis });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
     const code = message.startsWith("Clone failed") ? "clone_error" : "filesystem_error";
@@ -82,12 +84,10 @@ repositoriesRoute.post("/context", async (c) => {
   }
 
   try {
-    const { summary, tree, chunks } = await buildContext(clonePath);
+    const context = await buildRepositoryContext(clonePath);
     return ok(c, {
       repository: { owner, repo, clonePath },
-      summary,
-      tree,
-      chunks,
+      ...context,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";

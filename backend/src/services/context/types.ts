@@ -1,37 +1,26 @@
-// Types for the repository context-extraction engine.
+// Types for the repository chunking + context engine.
 
-export interface ExtractedFile {
-  relativePath: string;
-  extension: string;
-  size: number;
+export type SourceFile = {
+  filePath: string; // relative, forward-slash separated
+  absolutePath: string;
+  extension: string; // includes leading dot, e.g. '.ts'
+  language: string;
+  sizeBytes: number;
   content: string;
-}
+};
 
-export interface Chunk {
-  chunkId: string;
+export type CodeChunk = {
+  chunkId: string; // `${filePath}:${startLine}-${endLine}`
   filePath: string;
-  startLine: number;
-  endLine: number;
+  startLine: number; // 1-based
+  endLine: number; // 1-based, inclusive
   language: string;
   content: string;
-}
+  tokenEstimate: number; // Math.ceil(content.length / 4)
+};
 
-export interface RepoSummary {
-  packageManagers: string[];
-  frameworks: string[];
-  buildSystems: string[];
-  testFrameworks: string[];
-  configFiles: string[];
-  envFiles: string[];
-  ciFiles: string[];
-  usesDocker: boolean;
-  isMonorepo: boolean;
-  backendDirs: string[];
-  frontendDirs: string[];
-}
-
-export interface ContextResult {
-  summary: RepoSummary;
-  tree: string[];
-  chunks: Chunk[];
-}
+export type ContextBuildResult = {
+  totalFilesRead: number;
+  totalChunks: number;
+  chunks: CodeChunk[];
+};
