@@ -1,6 +1,9 @@
 import OpenAI from "openai";
+import { generateMockEmbedding } from "./mockEmbedder.js";
 
-const openai = new OpenAI();
+const PROVIDER = process.env.EMBEDDINGS_PROVIDER ?? "mock";
+
+const openai = PROVIDER === "openai" ? new OpenAI() : null;
 
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 export const MAX_EMBEDDING_CHARS = 8000;
@@ -14,8 +17,12 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     normalized = lastSpace > 0 ? sliced.slice(0, lastSpace) : sliced;
   }
 
+  if (PROVIDER === "mock") {
+    return generateMockEmbedding(normalized);
+  }
+
   try {
-    const response = await openai.embeddings.create({
+    const response = await openai!.embeddings.create({
       model: EMBEDDING_MODEL,
       input: normalized,
     });
