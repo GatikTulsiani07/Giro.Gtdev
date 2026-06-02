@@ -10,6 +10,8 @@ import { cloneRepo, repoClonePath } from "../services/repository/clone.js";
 import { scanRepo } from "../services/repository/scanner.js";
 import { analyzeRepository } from "../services/repository/analyzer.js";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
+import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.js";
+import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
 import type { ScanResult } from "../services/repository/types.js";
 
 const ConnectBody = z.object({ repoUrl: z.string().min(1) });
@@ -93,5 +95,44 @@ repositoriesRoute.post("/context", async (c) => {
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error("repos_context_failed", { requestId: c.get("requestId"), message });
     return fail(c, { code: "context_error", message }, 500);
+  }
+});
+
+// GET /repos/:id/summary — repository intelligence summary.
+// :id is the clone folder name "owner--repo". ?refresh=1 forces regeneration.
+repositoriesRoute.get("/:id/summary", async (c) => {
+  const id = c.req.param("id");
+  const refresh = c.req.query("refresh") === "1";
+
+  if (!/^[A-Za-z0-9._-]+--[A-Za-z0-9._-]+$/.test(id)) {
+    return fail(c, { code: "invalid_id", message: "id must be 'owner--repo'" }, 400);
+  }
+
+  const [owner, repo] = id.split("--") as [string, string];
+  const clonePath = repoClonePath(owner, repo);
+
+  if (!existsSync(clonePath)) {
+    return fail(
+      c,
+      { code: "repo_not_connected", message: "Repository not connected. Call /repos/connect first." },
+      404,
+    );
+  }
+
+  const repository = `${owner}/${repo}`;
+
+  try {
+    if (!refresh) {
+      const cached = await loadSummary(repository);
+      if (cached) return ok(c, { ...cached, cached: true });
+    }
+
+    const summary = await buildRepositorySummary(clonePath, repository);
+    await saveSummary(summary);
+    return ok(c, { ...summary, cached: false });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    logger.error("repos_summary_failed", { requestId: c.get("requestId"), message });
+    return fail(c, { code: "summary_error", message }, 500);
   }
 });
