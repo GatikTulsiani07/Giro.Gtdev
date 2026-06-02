@@ -12,6 +12,7 @@ import { analyzeRepository } from "../services/repository/analyzer.js";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.js";
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
+import { analyzeRepoDependencies } from "../services/graph/index.js";
 import type { ScanResult } from "../services/repository/types.js";
 
 const ConnectBody = z.object({ repoUrl: z.string().min(1) });
@@ -134,5 +135,43 @@ repositoriesRoute.get("/:id/summary", async (c) => {
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error("repos_summary_failed", { requestId: c.get("requestId"), message });
     return fail(c, { code: "summary_error", message }, 500);
+  }
+});
+
+// GET /repos/dependencies/:owner/:repo — dependency graph + symbol intelligence.
+repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+
+  if (!owner || !repo) {
+    return fail(
+      c,
+      { code: "validation_error", message: "owner and repo are required" },
+      400,
+    );
+  }
+
+  try {
+    const result = await analyzeRepoDependencies(owner, repo);
+    return ok(c, result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    if (message === "Repository not connected") {
+      return fail(
+        c,
+        {
+          code: "repo_not_connected",
+          message: "Repository not connected. Call POST /repos/connect first.",
+        },
+        404,
+      );
+    }
+    logger.error("dependency_analysis_failed", {
+      requestId: c.get("requestId"),
+      owner,
+      repo,
+      message,
+    });
+    return fail(c, { code: "dependency_error", message }, 500);
   }
 });
