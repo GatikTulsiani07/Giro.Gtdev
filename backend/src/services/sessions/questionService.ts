@@ -6,6 +6,7 @@ import { assembleAnswer } from "./answerAssembler.js";
 import type { AskResult, RepositorySummaryView } from "./answerTypes.js";
 import type { SelectedContextChunk } from "./types.js";
 import { assembleEnrichedContext } from "../context/enrichedAssembler.js";
+import { trimContextToBudget } from "../context/contextBudget.js";
 import { searchRepositoryFiles as searchFiles } from "../fileSearch/index.js";
 import { analyzeRepoDependencies } from "../graph/index.js";
 import { repoClonePath } from "../repository/clone.js";
@@ -128,10 +129,16 @@ export async function answerSessionQuestion(
     });
   }
 
+  // STEP 6.5 — trim context to budget
+  const budgetResult = await trimContextToBudget(enrichedContext.context, {
+    maxChunks: 8,
+    maxEstimatedTokens: 3500,
+  });
+
   // STEP 7 — Assemble answer (synchronous)
   const { answer, sources, citations } = assembleAnswer(
     question,
-    enrichedContext,
+    { ...enrichedContext, context: budgetResult.selected },
     fileResults.results,
     summary,
   );
@@ -142,7 +149,7 @@ export async function answerSessionQuestion(
     const seen = new Set<string>();
     const selectedChunks: SelectedContextChunk[] = [];
 
-    for (const item of enrichedContext.context) {
+    for (const item of budgetResult.selected) {
       const filePath = toRelativePath(item.filePath);
       const key = `${filePath}:${item.startLine}:${item.endLine}`;
       if (seen.has(key)) continue;
@@ -194,6 +201,11 @@ export async function answerSessionQuestion(
     usedDependencyGraph,
     retrievalSourceCounts: enrichedContext.stats.sourceCounts,
     estimatedContextTokens: enrichedContext.estimatedTokens,
+    contextBudget: {
+      selected: budgetResult.selected.length,
+      dropped: budgetResult.dropped.length,
+      estimatedTokens: budgetResult.estimatedTokens,
+    },
   };
 
   // STEP 10 — Log success
