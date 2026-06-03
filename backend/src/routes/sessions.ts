@@ -11,6 +11,7 @@ import {
   addMessageToSession,
   removeSession,
 } from "../services/sessions/sessionService.js";
+import { answerSessionQuestion } from "../services/sessions/questionService.js";
 
 const CitationSchema = z
   .object({
@@ -33,6 +34,10 @@ const AddMessageBody = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1, "content is required"),
   citations: z.array(CitationSchema).optional(),
+});
+
+const AskBody = z.object({
+  question: z.string().min(1, "question is required").max(2000),
 });
 
 const sessionsRouter = new Hono<{ Variables: { requestId: string } }>();
@@ -106,6 +111,25 @@ sessionsRouter.delete("/:id", async (c) => {
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error("session_route_failed", { requestId: c.get("requestId"), message });
     return fail(c, { code: "session_error", message }, 500);
+  }
+});
+
+sessionsRouter.post("/:id/ask", async (c) => {
+  const id = c.req.param("id");
+  const parsed = AskBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return fail(c, { code: "validation_error", message: "question is required", details: parsed.error.flatten() }, 400);
+  }
+  try {
+    const result = await answerSessionQuestion(id, parsed.data.question);
+    if (result === "session_not_found") {
+      return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
+    }
+    return ok(c, result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Ask failed";
+    logger.error("session_ask_failed", { requestId: c.get("requestId"), sessionId: id, message });
+    return fail(c, { code: "ask_error", message }, 500);
   }
 });
 
