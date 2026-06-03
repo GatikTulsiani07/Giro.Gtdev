@@ -14,6 +14,16 @@ import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
 import { analyzeRepoDependencies } from "../services/graph/index.js";
 import { searchRepositoryFiles } from "../services/fileSearch/index.js";
+import {
+  getRepositoryIndexMetadata,
+  isRepositoryHealthy,
+  isRepositoryStale,
+  setRepositoryIndexing,
+  setRepositoryIndexed,
+  setRepositoryFailed,
+  touchRepositoryAccess,
+  listIndexedRepositories,
+} from "../services/repository/indexingService.js";
 import type { ScanResult } from "../services/repository/types.js";
 
 const ConnectBody = z.object({ repoUrl: z.string().min(1) });
@@ -38,6 +48,27 @@ repositoriesRoute.post("/connect", async (c) => {
     return fail(c, { code: "invalid_repo_url", message }, 400);
   }
 
+  // Skip-if-indexed guard: a healthy index short-circuits re-ingestion.
+  // A stale index falls through and re-indexes.
+  const existing = getRepositoryIndexMetadata(owner, repo);
+  if (existing && isRepositoryHealthy(owner, repo)) {
+    touchRepositoryAccess(owner, repo);
+    return ok(c, {
+      skipped: true,
+      reason: "already_indexed",
+      owner,
+      repo,
+      status: existing.status,
+      indexedAt: existing.indexedAt,
+    });
+  }
+  const reindexingStale = existing !== null && isRepositoryStale(owner, repo);
+  if (reindexingStale) {
+    logger.info("repos_reindex_stale", { requestId: c.get("requestId"), owner, repo });
+  }
+
+  setRepositoryIndexing(owner, repo);
+
   try {
     const { clonePath, alreadyExisted } = await cloneRepo(owner, repo);
     const stats = await scanRepo(clonePath);
@@ -53,13 +84,30 @@ repositoriesRoute.post("/connect", async (c) => {
       languages: stats.languages,
       tree: stats.tree,
     };
+
+    setRepositoryIndexed(owner, repo, {
+      chunkCount: 0,
+      fileCount: stats.totalFiles ?? 0,
+      symbolCount: 0,
+      graphNodeCount: 0,
+      graphEdgeCount: 0,
+      summaryAvailable: analysis.framework !== "unknown",
+    });
+    touchRepositoryAccess(owner, repo);
+
     return ok(c, { ...result, ...analysis });
   } catch (err) {
+    setRepositoryFailed(owner, repo);
     const message = err instanceof Error ? err.message : "unknown error";
     const code = message.startsWith("Clone failed") ? "clone_error" : "filesystem_error";
     logger.error("repos_connect_failed", { requestId: c.get("requestId"), message });
     return fail(c, { code, message }, 500);
   }
+});
+
+repositoriesRoute.get("/indexed", (c) => {
+  const repositories = listIndexedRepositories();
+  return ok(c, { repositories, count: repositories.length });
 });
 
 repositoriesRoute.post("/context", async (c) => {

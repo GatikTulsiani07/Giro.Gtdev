@@ -10,6 +10,8 @@ export interface Citation {
 }
 
 // Compatible with the existing enriched retrieval chunk shape.
+// `source`/`signals` are optional: the session ask flow persists a lean chunk
+// (path/lines/content/score only), while other callers may include them.
 export interface SelectedContextChunk {
   filePath: string;
   language: string;
@@ -17,8 +19,8 @@ export interface SelectedContextChunk {
   startLine: number;
   endLine: number;
   score: number;
-  source: string;
-  signals: {
+  source?: string;
+  signals?: {
     semantic?: number;
     keyword?: number;
     symbol?: number;
