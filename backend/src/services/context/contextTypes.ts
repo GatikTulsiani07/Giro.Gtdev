@@ -1,6 +1,7 @@
 // Upgraded context types for the hybrid + file-search assembly engine.
 
 import type { ChunkConfidence } from "../retrieval/confidenceScorer.js";
+import type { RetrievalDebugReport } from "../retrieval/debugReport.js";
 
 export interface EnrichedContextChunk {
   filePath: string;
@@ -47,6 +48,7 @@ export interface EnrichedAssembledContext {
     };
     confidence?: number;
     chunkConfidence?: ChunkConfidence[];
+    debugReport?: RetrievalDebugReport;
   };
 }
 

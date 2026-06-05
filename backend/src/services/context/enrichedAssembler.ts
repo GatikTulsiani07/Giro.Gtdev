@@ -5,6 +5,7 @@ import { hybridSearch } from "../retrieval/hybridSearch.js";
 import { searchRepositoryFiles } from "../fileSearch/index.js";
 import { rerankChunks } from "../retrieval/qualityReranker.js";
 import { buildConfidenceMetadata } from "../retrieval/confidenceScorer.js";
+import { buildRetrievalDebugReport } from "../retrieval/debugReport.js";
 import { repoClonePath } from "../repository/clone.js";
 import { logger } from "../../lib/logger.js";
 import { existsSync } from "node:fs";
@@ -190,6 +191,9 @@ export async function assembleEnrichedContext(
   // Confidence metadata derived from the finalized chunk set (no mutation).
   const confidenceMeta = buildConfidenceMetadata(finalChunks);
 
+  // Developer-facing debug report (metadata only; never affects retrieval).
+  const debugReport = buildRetrievalDebugReport(finalChunks, reranked.statistics);
+
   logger.info("enriched_context_assembled", {
     query: request.query,
     repository,
@@ -215,6 +219,7 @@ export async function assembleEnrichedContext(
       rerank: reranked.statistics,
       confidence: confidenceMeta.confidence,
       chunkConfidence: confidenceMeta.chunkConfidence,
+      debugReport,
     },
   };
 }
