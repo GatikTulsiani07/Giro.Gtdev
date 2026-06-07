@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createApp } from "../app.js";
 import { clearAllSessions } from "../services/sessions/store.js";
 import { clearRepositoryIndexRegistry } from "../services/repository/indexingService.js";
+import { signAccessToken } from "../services/auth/jwt.js";
 
 type ApiResponse = {
   success: boolean;
@@ -11,6 +12,9 @@ type ApiResponse = {
   error?: { code: string; message: string };
   requestId: string;
 };
+
+// Valid bearer token for exercising protected routes in contract tests.
+const AUTH = `Bearer ${await signAccessToken({ userId: "test-user", email: "test@example.com" })}`;
 
 function asRecord(v: unknown): Record<string, unknown> {
   assert.ok(v && typeof v === "object", "expected object");
@@ -22,7 +26,7 @@ async function call(method: string, path: string, body?: unknown) {
   const res = await app.fetch(
     new Request("http://local" + path, {
       method,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", authorization: AUTH },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }),
   );

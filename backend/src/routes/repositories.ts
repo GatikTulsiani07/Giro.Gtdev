@@ -14,6 +14,10 @@ import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
 import { analyzeRepoDependencies } from "../services/graph/index.js";
 import { searchRepositoryFiles } from "../services/fileSearch/index.js";
+import { setRepositoryOwner } from "../services/repository/ownershipStore.js";
+import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
+import { getAuthenticatedUser } from "../services/auth/authContext.js";
+import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
   getRepositoryIndexMetadata,
   isRepositoryHealthy,
@@ -28,7 +32,7 @@ import type { ScanResult } from "../services/repository/types.js";
 
 const ConnectBody = z.object({ repoUrl: z.string().min(1) });
 
-type Variables = { requestId: string };
+type Variables = { requestId: string; authenticatedUser: AuthenticatedUser };
 
 export const repositoriesRoute = new Hono<{ Variables: Variables }>();
 
@@ -48,10 +52,21 @@ repositoriesRoute.post("/connect", async (c) => {
     return fail(c, { code: "invalid_repo_url", message }, 400);
   }
 
+  const user = getAuthenticatedUser(c);
+  if (!user) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+  const repoId = `${owner}/${repo}`;
+
   // Skip-if-indexed guard: a healthy index short-circuits re-ingestion.
   // A stale index falls through and re-indexes.
   const existing = getRepositoryIndexMetadata(owner, repo);
   if (existing && isRepositoryHealthy(owner, repo)) {
+    // Enforce ownership before returning the existing index to this user.
+    const access = requireRepositoryAccess({ repoId, userId: user.userId });
+    if (!access.ok) {
+      return fail(c, { code: access.code, message: access.message }, access.status);
+    }
     touchRepositoryAccess(owner, repo);
     return ok(c, {
       skipped: true,
@@ -94,6 +109,8 @@ repositoriesRoute.post("/connect", async (c) => {
       summaryAvailable: analysis.framework !== "unknown",
     });
     touchRepositoryAccess(owner, repo);
+    // The connecting user becomes the repository owner.
+    setRepositoryOwner(repoId, user.userId);
 
     return ok(c, { ...result, ...analysis });
   } catch (err) {
@@ -127,6 +144,16 @@ repositoriesRoute.post("/context", async (c) => {
   }
 
   const clonePath = repoClonePath(owner, repo);
+
+  const ctxUser = getAuthenticatedUser(c);
+  if (!ctxUser) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+  const ctxAccess = requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: ctxUser.userId });
+  if (!ctxAccess.ok) {
+    return fail(c, { code: ctxAccess.code, message: ctxAccess.message }, ctxAccess.status);
+  }
+
   if (!existsSync(clonePath)) {
     return fail(
       c,
@@ -160,6 +187,16 @@ repositoriesRoute.get("/:id/summary", async (c) => {
 
   const [owner, repo] = id.split("--") as [string, string];
   const clonePath = repoClonePath(owner, repo);
+  const repository = `${owner}/${repo}`;
+
+  const sumUser = getAuthenticatedUser(c);
+  if (!sumUser) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+  const sumAccess = requireRepositoryAccess({ repoId: repository, userId: sumUser.userId });
+  if (!sumAccess.ok) {
+    return fail(c, { code: sumAccess.code, message: sumAccess.message }, sumAccess.status);
+  }
 
   if (!existsSync(clonePath)) {
     return fail(
@@ -168,8 +205,6 @@ repositoriesRoute.get("/:id/summary", async (c) => {
       404,
     );
   }
-
-  const repository = `${owner}/${repo}`;
 
   try {
     if (!refresh) {
@@ -198,6 +233,15 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
       { code: "validation_error", message: "owner and repo are required" },
       400,
     );
+  }
+
+  const depUser = getAuthenticatedUser(c);
+  if (!depUser) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+  const depAccess = requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: depUser.userId });
+  if (!depAccess.ok) {
+    return fail(c, { code: depAccess.code, message: depAccess.message }, depAccess.status);
   }
 
   try {
@@ -246,6 +290,15 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
       return fail(c, { code: "validation_error", message: "limit must be an integer 1-50" }, 400);
     }
     limit = parsed;
+  }
+
+  const srchUser = getAuthenticatedUser(c);
+  if (!srchUser) {
+    return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
+  }
+  const srchAccess = requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: srchUser.userId });
+  if (!srchAccess.ok) {
+    return fail(c, { code: srchAccess.code, message: srchAccess.message }, srchAccess.status);
   }
 
   try {
