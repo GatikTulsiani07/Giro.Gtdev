@@ -19,6 +19,9 @@ const EnvSchema = z.object({
         .filter(Boolean),
     ),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  // Secret used to sign/verify JWT access tokens. The default is for local dev
+  // ONLY — production MUST override this with a strong secret (>= 16 chars).
+  JWT_SECRET: z.string().min(16).default("dev-insecure-secret-change-me"),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

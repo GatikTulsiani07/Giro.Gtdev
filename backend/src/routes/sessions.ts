@@ -7,7 +7,6 @@ import { logger } from "../lib/logger.js";
 import { requireAuthenticatedUser } from "../services/auth/authContext.js";
 import {
   createNewSession,
-  getSessionById,
   listAllSessions,
   addMessageToSession,
   removeSession,
@@ -54,8 +53,17 @@ function getSessionAccessFailureResponse(
 sessionsRouter.post("/", async (c) => {
   try {
     const parsed = CreateSessionBody.safeParse(await c.req.json().catch(() => null));
+
     if (!parsed.success) {
-      return fail(c, { code: "validation_error", message: "Invalid request body", details: parsed.error.flatten() }, 400);
+      return fail(
+        c,
+        {
+          code: "validation_error",
+          message: "Invalid request body",
+          details: parsed.error.flatten(),
+        },
+        400,
+      );
     }
 
     const user = requireAuthenticatedUser(c);
@@ -68,7 +76,12 @@ sessionsRouter.post("/", async (c) => {
     return ok(c, session, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    logger.error("session_route_failed", { requestId: c.get("requestId"), message });
+
+    logger.error("session_route_failed", {
+      requestId: c.get("requestId"),
+      message,
+    });
+
     return fail(c, { code: "session_error", message }, 500);
   }
 });
@@ -76,11 +89,20 @@ sessionsRouter.post("/", async (c) => {
 sessionsRouter.get("/", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
-    const sessions = listAllSessions().filter((session) => session.userId === user.userId);
+
+    const sessions = listAllSessions().filter(
+      (session) => session.userId === user.userId,
+    );
+
     return ok(c, { sessions, count: sessions.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    logger.error("session_route_failed", { requestId: c.get("requestId"), message });
+
+    logger.error("session_route_failed", {
+      requestId: c.get("requestId"),
+      message,
+    });
+
     return fail(c, { code: "session_error", message }, 500);
   }
 });
@@ -99,15 +121,15 @@ sessionsRouter.get("/:id", async (c) => {
       return getSessionAccessFailureResponse(c, access);
     }
 
-    const session = getSessionById(id);
-    if (!session) {
-      return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
-    }
-
-    return ok(c, session);
+    return ok(c, access.session);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    logger.error("session_route_failed", { requestId: c.get("requestId"), message });
+
+    logger.error("session_route_failed", {
+      requestId: c.get("requestId"),
+      message,
+    });
+
     return fail(c, { code: "session_error", message }, 500);
   }
 });
@@ -115,8 +137,17 @@ sessionsRouter.get("/:id", async (c) => {
 sessionsRouter.post("/:id/messages", async (c) => {
   try {
     const parsed = AddMessageBody.safeParse(await c.req.json().catch(() => null));
+
     if (!parsed.success) {
-      return fail(c, { code: "validation_error", message: "Invalid request body", details: parsed.error.flatten() }, 400);
+      return fail(
+        c,
+        {
+          code: "validation_error",
+          message: "Invalid request body",
+          details: parsed.error.flatten(),
+        },
+        400,
+      );
     }
 
     const user = requireAuthenticatedUser(c);
@@ -132,6 +163,7 @@ sessionsRouter.post("/:id/messages", async (c) => {
     }
 
     const session = addMessageToSession(id, parsed.data);
+
     if (!session) {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
     }
@@ -139,7 +171,12 @@ sessionsRouter.post("/:id/messages", async (c) => {
     return ok(c, session);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    logger.error("session_route_failed", { requestId: c.get("requestId"), message });
+
+    logger.error("session_route_failed", {
+      requestId: c.get("requestId"),
+      message,
+    });
+
     return fail(c, { code: "session_error", message }, 500);
   }
 });
@@ -159,6 +196,7 @@ sessionsRouter.delete("/:id", async (c) => {
     }
 
     const removed = removeSession(id);
+
     if (!removed) {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
     }
@@ -166,7 +204,12 @@ sessionsRouter.delete("/:id", async (c) => {
     return ok(c, { id, deleted: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    logger.error("session_route_failed", { requestId: c.get("requestId"), message });
+
+    logger.error("session_route_failed", {
+      requestId: c.get("requestId"),
+      message,
+    });
+
     return fail(c, { code: "session_error", message }, 500);
   }
 });
@@ -174,8 +217,17 @@ sessionsRouter.delete("/:id", async (c) => {
 sessionsRouter.post("/:id/ask", async (c) => {
   const id = c.req.param("id");
   const parsed = AskBody.safeParse(await c.req.json().catch(() => null));
+
   if (!parsed.success) {
-    return fail(c, { code: "validation_error", message: "question is required", details: parsed.error.flatten() }, 400);
+    return fail(
+      c,
+      {
+        code: "validation_error",
+        message: "question is required",
+        details: parsed.error.flatten(),
+      },
+      400,
+    );
   }
 
   try {
@@ -191,6 +243,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
     }
 
     const result = await answerSessionQuestion(id, parsed.data.question);
+
     if (result === "session_not_found") {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
     }
@@ -198,7 +251,13 @@ sessionsRouter.post("/:id/ask", async (c) => {
     return ok(c, result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ask failed";
-    logger.error("session_ask_failed", { requestId: c.get("requestId"), sessionId: id, message });
+
+    logger.error("session_ask_failed", {
+      requestId: c.get("requestId"),
+      sessionId: id,
+      message,
+    });
+
     return fail(c, { code: "ask_error", message }, 500);
   }
 });
