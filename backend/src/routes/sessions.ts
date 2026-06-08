@@ -1,10 +1,10 @@
 // Session routes: validation + delegation only. No business logic here.
 
 import { Hono } from "hono";
-import { requireAuthenticatedUser } from "../services/auth/authContext.js";
 import { z } from "zod";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import { requireAuthenticatedUser } from "../services/auth/authContext.js";
 import {
   createNewSession,
   getSessionById,
@@ -12,6 +12,7 @@ import {
   addMessageToSession,
   removeSession,
 } from "../services/sessions/sessionService.js";
+import { requireSessionAccess } from "../services/sessions/sessionOwnershipGuard.js";
 import { answerSessionQuestion } from "../services/sessions/questionService.js";
 
 const CitationSchema = z
@@ -43,6 +44,13 @@ const AskBody = z.object({
 
 const sessionsRouter = new Hono<{ Variables: { requestId: string } }>();
 
+function getSessionAccessFailureResponse(
+  c: Parameters<typeof fail>[0],
+  access: Extract<ReturnType<typeof requireSessionAccess>, { ok: false }>,
+) {
+  return fail(c, { code: access.code, message: access.message }, access.status);
+}
+
 sessionsRouter.post("/", async (c) => {
   try {
     const parsed = CreateSessionBody.safeParse(await c.req.json().catch(() => null));
@@ -67,7 +75,8 @@ sessionsRouter.post("/", async (c) => {
 
 sessionsRouter.get("/", async (c) => {
   try {
-    const sessions = listAllSessions();
+    const user = requireAuthenticatedUser(c);
+    const sessions = listAllSessions().filter((session) => session.userId === user.userId);
     return ok(c, { sessions, count: sessions.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -78,10 +87,23 @@ sessionsRouter.get("/", async (c) => {
 
 sessionsRouter.get("/:id", async (c) => {
   try {
-    const session = getSessionById(c.req.param("id"));
+    const user = requireAuthenticatedUser(c);
+    const id = c.req.param("id");
+
+    const access = requireSessionAccess({
+      sessionId: id,
+      userId: user.userId,
+    });
+
+    if (!access.ok) {
+      return getSessionAccessFailureResponse(c, access);
+    }
+
+    const session = getSessionById(id);
     if (!session) {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
     }
+
     return ok(c, session);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -96,10 +118,24 @@ sessionsRouter.post("/:id/messages", async (c) => {
     if (!parsed.success) {
       return fail(c, { code: "validation_error", message: "Invalid request body", details: parsed.error.flatten() }, 400);
     }
-    const session = addMessageToSession(c.req.param("id"), parsed.data);
+
+    const user = requireAuthenticatedUser(c);
+    const id = c.req.param("id");
+
+    const access = requireSessionAccess({
+      sessionId: id,
+      userId: user.userId,
+    });
+
+    if (!access.ok) {
+      return getSessionAccessFailureResponse(c, access);
+    }
+
+    const session = addMessageToSession(id, parsed.data);
     if (!session) {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
     }
+
     return ok(c, session);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -110,11 +146,24 @@ sessionsRouter.post("/:id/messages", async (c) => {
 
 sessionsRouter.delete("/:id", async (c) => {
   try {
-    const removed = removeSession(c.req.param("id"));
+    const user = requireAuthenticatedUser(c);
+    const id = c.req.param("id");
+
+    const access = requireSessionAccess({
+      sessionId: id,
+      userId: user.userId,
+    });
+
+    if (!access.ok) {
+      return getSessionAccessFailureResponse(c, access);
+    }
+
+    const removed = removeSession(id);
     if (!removed) {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
     }
-    return ok(c, { id: c.req.param("id"), deleted: true });
+
+    return ok(c, { id, deleted: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error("session_route_failed", { requestId: c.get("requestId"), message });
@@ -128,11 +177,24 @@ sessionsRouter.post("/:id/ask", async (c) => {
   if (!parsed.success) {
     return fail(c, { code: "validation_error", message: "question is required", details: parsed.error.flatten() }, 400);
   }
+
   try {
+    const user = requireAuthenticatedUser(c);
+
+    const access = requireSessionAccess({
+      sessionId: id,
+      userId: user.userId,
+    });
+
+    if (!access.ok) {
+      return getSessionAccessFailureResponse(c, access);
+    }
+
     const result = await answerSessionQuestion(id, parsed.data.question);
     if (result === "session_not_found") {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
     }
+
     return ok(c, result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ask failed";

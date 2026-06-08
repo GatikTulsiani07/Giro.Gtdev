@@ -1,7 +1,8 @@
 import { getSessionById } from "./sessionService.js";
+import type { Session } from "./types.js";
 
 export type SessionAccessResult =
-  | { ok: true }
+  | { ok: true; session: Session }
   | {
       ok: false;
       status: 403 | 404;
@@ -36,5 +37,5 @@ export function requireSessionAccess({
     };
   }
 
-  return { ok: true };
+  return { ok: true, session };
 }
