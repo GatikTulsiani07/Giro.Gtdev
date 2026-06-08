@@ -12,6 +12,7 @@ import {
   removeSession,
 } from "../services/sessions/sessionService.js";
 import { requireSessionAccess } from "../services/sessions/sessionOwnershipGuard.js";
+import { requireSessionRepositoryOwnership } from "../services/sessions/sessionRepositoryGuard.js";
 import { answerSessionQuestion } from "../services/sessions/questionService.js";
 
 const CitationSchema = z
@@ -67,6 +68,16 @@ sessionsRouter.post("/", async (c) => {
     }
 
     const user = requireAuthenticatedUser(c);
+
+    // A session may only be created for a repository owned by this user.
+    const repoAccess = requireSessionRepositoryOwnership({
+      owner: parsed.data.owner,
+      repo: parsed.data.repo,
+      userId: user.userId,
+    });
+    if (!repoAccess.ok) {
+      return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
+    }
 
     const session = createNewSession({
       ...parsed.data,
@@ -240,6 +251,16 @@ sessionsRouter.post("/:id/ask", async (c) => {
 
     if (!access.ok) {
       return getSessionAccessFailureResponse(c, access);
+    }
+
+    // The repository this session targets must still be owned by this user.
+    const repoAccess = requireSessionRepositoryOwnership({
+      owner: access.session.owner,
+      repo: access.session.repo,
+      userId: user.userId,
+    });
+    if (!repoAccess.ok) {
+      return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
     }
 
     const result = await answerSessionQuestion(id, parsed.data.question);

@@ -5,6 +5,7 @@ import { createApp } from "../app.js";
 import { clearAllSessions } from "../services/sessions/store.js";
 import { clearRepositoryIndexRegistry } from "../services/repository/indexingService.js";
 import { signAccessToken } from "../services/auth/jwt.js";
+import { setRepositoryOwner } from "../services/repository/ownershipStore.js";
 
 type ApiResponse = {
   success: boolean;
@@ -15,6 +16,10 @@ type ApiResponse = {
 
 // Valid bearer token for exercising protected routes in contract tests.
 const AUTH = `Bearer ${await signAccessToken({ userId: "test-user", email: "test@example.com" })}`;
+
+// Sessions may only target a repository owned by the user, so register the
+// repo these contract tests create sessions for.
+setRepositoryOwner("acme/demo", "test-user");
 
 function asRecord(v: unknown): Record<string, unknown> {
   assert.ok(v && typeof v === "object", "expected object");
