@@ -10,6 +10,13 @@ import {
 const USER_A = { userId: "user-a", email: "a@example.com" };
 const USER_B = { userId: "user-b", email: "b@example.com" };
 
+type ApiBody = {
+  success?: boolean;
+  error?: {
+    code?: string;
+  };
+};
+
 async function authHeader(user: typeof USER_A): Promise<string> {
   return `Bearer ${await signAccessToken(user)}`;
 }
@@ -17,7 +24,7 @@ async function authHeader(user: typeof USER_A): Promise<string> {
 async function request(
   path: string,
   token?: string,
-): Promise<{ status: number; body: { success?: boolean; error?: { code?: string } } }> {
+): Promise<{ status: number; body: ApiBody }> {
   const app = createApp();
   const headers: Record<string, string> = {};
   if (token) headers.authorization = token;
@@ -27,12 +34,31 @@ async function request(
     headers,
   });
 
-  const body = (await res.json().catch(() => ({}))) as {
-    success?: boolean;
-    error?: { code?: string };
-  };
+  const body = (await res.json().catch(() => ({}))) as ApiBody;
 
   return { status: res.status, body };
+}
+
+async function postJson(
+  path: string,
+  body: unknown,
+  token?: string,
+): Promise<{ status: number; body: ApiBody }> {
+  const app = createApp();
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (token) headers.authorization = token;
+
+  const res = await app.request(path, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  const responseBody = (await res.json().catch(() => ({}))) as ApiBody;
+
+  return { status: res.status, body: responseBody };
 }
 
 beforeEach(() => {
@@ -118,5 +144,47 @@ describe("repository dependency route ownership", () => {
     if (result.status === 404) {
       assert.equal(result.body.error?.code, "repo_not_connected");
     }
+  });
+});
+
+describe("repository context route ownership", () => {
+  it("returns 401 without auth", async () => {
+    const result = await postJson("/repos/context", {
+      repoUrl: "https://github.com/acme/demo",
+    });
+
+    assert.equal(result.status, 401);
+    assert.equal(result.body.error?.code, "unauthorized");
+  });
+
+  it("returns 404 when repo is not connected", async () => {
+    const token = await authHeader(USER_A);
+
+    const result = await postJson(
+      "/repos/context",
+      {
+        repoUrl: "https://github.com/acme/demo",
+      },
+      token,
+    );
+
+    assert.equal(result.status, 404);
+    assert.equal(result.body.error?.code, "repo_not_connected");
+  });
+
+  it("returns 403 for foreign repository", async () => {
+    setRepositoryOwner("acme/demo", USER_A.userId);
+    const token = await authHeader(USER_B);
+
+    const result = await postJson(
+      "/repos/context",
+      {
+        repoUrl: "https://github.com/acme/demo",
+      },
+      token,
+    );
+
+    assert.equal(result.status, 403);
+    assert.equal(result.body.error?.code, "repo_not_owned");
   });
 });
