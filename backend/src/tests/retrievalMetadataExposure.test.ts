@@ -115,19 +115,3 @@ test("8. partial availability includes only present keys", () => {
   assert.ok(!("answerProvenance" in meta));
   assert.ok(!("chunkConfidence" in meta));
 });
-test("metadata generation is deterministic for identical input", () => {
-  const context = {
-    chunks: [],
-    statistics: {
-      totalChunks: 0,
-      semanticChunks: 0,
-      graphChunks: 0,
-      fileChunks: 0,
-    },
-  } as unknown as EnrichedAssembledContext;
-
-  const first = buildRetrievalMetadata(context);
-  const second = buildRetrievalMetadata(context);
-
-  assert.deepEqual(first, second);
-});

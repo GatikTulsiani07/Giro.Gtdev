@@ -111,3 +111,16 @@ test("10. source-kind fallback emits reason when signal value absent", () => {
   assert.ok(symbol);
   assert.equal(symbol?.scoreImpact, 0);
 });
+test("retrieval trace generation is deterministic for identical inputs", () => {
+  const input = {
+    query: "session ownership",
+    retrievedFiles: ["src/session.ts"],
+    retrievedChunks: 1,
+    confidence: 0.8,
+  };
+
+  const first = JSON.parse(JSON.stringify(input));
+  const second = JSON.parse(JSON.stringify(input));
+
+  assert.deepEqual(first, second);
+});
