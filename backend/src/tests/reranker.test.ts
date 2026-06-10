@@ -211,7 +211,7 @@ test("14. cross-file boosting is deterministic", () => {
 });
 
 test("15. relatedFiles only boosts candidates present in the chunk list", () => {
-  const { statistics } = rerankChunks(
+  const { chunks, statistics } = rerankChunks(
     [
       chunk({ filePath: "a.ts", content: "seed", score: 100, startLine: 1, endLine: 5 }),
       chunk({ filePath: "present.ts", content: "x", score: 20, startLine: 1, endLine: 5 }),
@@ -219,6 +219,22 @@ test("15. relatedFiles only boosts candidates present in the chunk list", () => 
     "nomatch",
     { relatedFiles: { "a.ts": ["present.ts", "absent.ts"] } },
   );
-  // Only present.ts is in the list -> exactly one cross-file boost.
+
   assert.equal(statistics.crossFileBoostedChunkCount, 1);
+
+  const present = chunks.find((c) => c.filePath === "present.ts")?.score ?? 0;
+  assert.ok(present > 0.2);
+  assert.ok(chunks.every((c) => c.filePath !== "absent.ts"));
+});
+
+test("16. output chunks are not the same object references as input chunks", () => {
+  const input = [
+    chunk({ filePath: "a.ts", score: 5 }),
+    chunk({ filePath: "b.ts", score: 7 }),
+  ];
+
+  const { chunks } = rerankChunks(input, "nomatch");
+
+  assert.notStrictEqual(chunks[0], input[0]);
+  assert.notStrictEqual(chunks[1], input[1]);
 });
