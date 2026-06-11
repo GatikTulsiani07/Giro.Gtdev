@@ -124,3 +124,101 @@ test("retrieval trace generation is deterministic for identical inputs", () => {
 
   assert.deepEqual(first, second);
 });
+
+test("11. multi-run deep determinism: 5 runs are deep-equal and byte-identical", () => {
+  const input: EnrichedContextChunk[] = [
+    chunk({
+      filePath: "src/alpha.ts",
+      source: "semantic",
+      signals: { semantic: 0.91234, keyword: 0.4567, symbol: 0.3, graph: 0.21 },
+    }),
+    chunk({
+      filePath: "src/beta.ts",
+      source: "keyword",
+      signals: { keyword: 0.777, fileSearch: 0.123 },
+    }),
+    chunk({
+      filePath: "src/gamma.ts",
+      source: "graph",
+      signals: { graph: 0.654321 },
+    }),
+    chunk({
+      filePath: "src/delta.ts",
+      source: "file-search",
+      signals: {},
+    }),
+  ];
+
+  const runs = Array.from({ length: 5 }, () => buildRetrievalTrace(input));
+  const first = runs[0];
+  const firstJson = JSON.stringify(first);
+  for (let i = 1; i < runs.length; i++) {
+    assert.deepEqual(runs[i], first);
+    assert.equal(JSON.stringify(runs[i]), firstJson);
+  }
+});
+
+test("12. output shape lockdown: trace and reason key sets are exact", () => {
+  const traces = buildRetrievalTrace([
+    chunk({
+      filePath: "src/shape.ts",
+      source: "semantic",
+      signals: { semantic: 0.6, keyword: 0.4, symbol: 0.2, graph: 0.1, fileSearch: 0.05 },
+    }),
+    chunk({ filePath: "src/shape2.ts", signals: {} }),
+  ]);
+
+  for (const trace of traces) {
+    assert.deepEqual(Object.keys(trace).sort(), [
+      "endLine",
+      "filePath",
+      "reasons",
+      "startLine",
+    ]);
+    for (const reason of trace.reasons) {
+      assert.deepEqual(Object.keys(reason).sort(), [
+        "description",
+        "scoreImpact",
+        "type",
+      ]);
+    }
+  }
+});
+
+test("13. per-chunk isolation: trace depends only on the chunk itself", () => {
+  const target = chunk({
+    filePath: "src/isolated.ts",
+    source: "semantic",
+    signals: { semantic: 0.8, keyword: 0.3, graph: 0.2 },
+  });
+
+  const [alone] = buildRetrievalTrace([target]);
+
+  const embedded = buildRetrievalTrace([
+    chunk({ filePath: "src/before.ts", source: "keyword", signals: { keyword: 0.9 } }),
+    target,
+    chunk({ filePath: "src/after.ts", source: "graph", signals: { graph: 0.5 } }),
+  ]);
+  const fromLarger = embedded.find((t) => t.filePath === "src/isolated.ts");
+
+  assert.deepEqual(fromLarger, alone);
+});
+
+test("14. deep nested immutability: input (including signals) is untouched", () => {
+  const input: EnrichedContextChunk[] = [
+    chunk({
+      filePath: "src/immutable1.ts",
+      source: "semantic",
+      signals: { semantic: 0.5, keyword: 0.4, symbol: 0.3, graph: 0.2, fileSearch: 0.1 },
+    }),
+    chunk({
+      filePath: "src/immutable2.ts",
+      source: "file-search",
+      signals: { fileSearch: 0.65 },
+    }),
+  ];
+
+  const snapshot = JSON.parse(JSON.stringify(input));
+  buildRetrievalTrace(input);
+  assert.deepEqual(input, snapshot);
+});
