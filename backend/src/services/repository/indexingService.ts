@@ -9,6 +9,7 @@ import type {
   RepositoryIndexMetadata,
   RepositoryIndexStatus,
 } from "./indexingTypes.js";
+import type { IndexingMode } from "./indexingPlan.js";
 
 const store = new Map<string, RepositoryIndexMetadata>();
 
@@ -32,6 +33,8 @@ function defaultMetadata(owner: string, repo: string): RepositoryIndexMetadata {
     firstIndexedAt: null,
     lastIndexedAt: null,
     totalIndexedFiles: 0,
+    lastIndexMode: null,
+    lastChangedFileCount: 0,
   };
 }
 
@@ -42,6 +45,11 @@ export interface IndexedCounts {
   graphNodeCount: number;
   graphEdgeCount: number;
   summaryAvailable: boolean;
+}
+
+export interface SetRepositoryIndexedOptions {
+  indexMode?: IndexingMode;
+  changedFileCount?: number;
 }
 
 export function getRepositoryIndexMetadata(
@@ -62,6 +70,7 @@ export function setRepositoryIndexed(
   owner: string,
   repo: string,
   counts: IndexedCounts,
+  options?: SetRepositoryIndexedOptions,
 ): void {
   const key = repoKey(owner, repo);
   const existing = store.get(key) ?? defaultMetadata(owner, repo);
@@ -79,6 +88,10 @@ export function setRepositoryIndexed(
     firstIndexedAt: existing.firstIndexedAt ?? now,
     lastIndexedAt: now,
     totalIndexedFiles: counts.fileCount,
+    // Backward compatible: callers without options preserve prior values.
+    lastIndexMode: options?.indexMode ?? existing.lastIndexMode ?? null,
+    lastChangedFileCount:
+      options?.changedFileCount ?? existing.lastChangedFileCount ?? 0,
   });
 }
 

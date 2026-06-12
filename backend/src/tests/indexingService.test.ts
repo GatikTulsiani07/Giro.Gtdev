@@ -179,3 +179,67 @@ test("18. backward compatibility remains intact", () => {
   const sorted = [...keys].sort();
   assert.deepEqual(keys, sorted);
 });
+
+test("21. default metadata has lastIndexMode null and lastChangedFileCount 0", () => {
+  setRepositoryIndexing("acme", "api");
+  const meta = getRepositoryIndexMetadata("acme", "api");
+  assert.equal(meta?.lastIndexMode, null);
+  assert.equal(meta?.lastChangedFileCount, 0);
+});
+
+test("22. setRepositoryIndexed with no options preserves backward compatibility", () => {
+  setRepositoryIndexing("acme", "api");
+  setRepositoryIndexed("acme", "api", {
+    chunkCount: 10,
+    fileCount: 5,
+    symbolCount: 0,
+    graphNodeCount: 0,
+    graphEdgeCount: 0,
+    summaryAvailable: false,
+  });
+  const meta = getRepositoryIndexMetadata("acme", "api");
+  assert.equal(meta?.status, "indexed");
+  assert.equal(meta?.chunkCount, 10);
+  assert.equal(meta?.lastIndexMode, null);
+  assert.equal(meta?.lastChangedFileCount, 0);
+});
+
+test("23. setRepositoryIndexed with options records mode and changed count", () => {
+  setRepositoryIndexing("acme", "api");
+  setRepositoryIndexed(
+    "acme",
+    "api",
+    {
+      chunkCount: 10,
+      fileCount: 5,
+      symbolCount: 0,
+      graphNodeCount: 0,
+      graphEdgeCount: 0,
+      summaryAvailable: false,
+    },
+    { indexMode: "full", changedFileCount: 5 },
+  );
+  const meta = getRepositoryIndexMetadata("acme", "api");
+  assert.equal(meta?.lastIndexMode, "full");
+  assert.equal(meta?.lastChangedFileCount, 5);
+});
+
+test("24. re-index updates mode and changed count", () => {
+  setRepositoryIndexing("acme", "api");
+  setRepositoryIndexed(
+    "acme",
+    "api",
+    { chunkCount: 10, fileCount: 5, symbolCount: 0, graphNodeCount: 0, graphEdgeCount: 0, summaryAvailable: false },
+    { indexMode: "full", changedFileCount: 5 },
+  );
+  setRepositoryIndexing("acme", "api");
+  setRepositoryIndexed(
+    "acme",
+    "api",
+    { chunkCount: 12, fileCount: 6, symbolCount: 0, graphNodeCount: 0, graphEdgeCount: 0, summaryAvailable: false },
+    { indexMode: "incremental", changedFileCount: 1 },
+  );
+  const meta = getRepositoryIndexMetadata("acme", "api");
+  assert.equal(meta?.lastIndexMode, "incremental");
+  assert.equal(meta?.lastChangedFileCount, 1);
+});

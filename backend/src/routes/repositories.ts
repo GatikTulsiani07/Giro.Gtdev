@@ -20,7 +20,7 @@ import {
 } from "../services/repository/ownershipStore.js";
 import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
 import { saveRepositoryFileSnapshot, getRepositoryFileSnapshot } from "../services/repository/fileSnapshotStore.js";
-import { detectChangedFiles } from "../services/repository/changedFileDetection.js";
+import { buildRepositoryIndexingPlan } from "../services/repository/indexingPlan.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -105,33 +105,45 @@ repositoriesRoute.post("/connect", async (c) => {
       tree: stats.tree,
     };
 
-    setRepositoryIndexed(owner, repo, {
-      chunkCount: 0,
-      fileCount: stats.totalFiles ?? 0,
-      symbolCount: 0,
-      graphNodeCount: 0,
-      graphEdgeCount: 0,
-      summaryAvailable: analysis.framework !== "unknown",
+    // Build the incremental indexing plan from the PREVIOUS snapshot, before
+    // the new snapshot overwrites it below. Planning/recording only — no
+    // partial re-embedding happens here.
+    const previousSnapshot = getRepositoryFileSnapshot(repoId);
+    const indexingPlan = buildRepositoryIndexingPlan({
+      previousSnapshot,
+      currentFiles: stats.files,
     });
+    logger.info("repository_indexing_plan", {
+      requestId: c.get("requestId"),
+      owner,
+      repo,
+      mode: indexingPlan.mode,
+      totalChangedFiles: indexingPlan.totalChangedFiles,
+      reason: indexingPlan.reason,
+    });
+
+    setRepositoryIndexed(
+      owner,
+      repo,
+      {
+        chunkCount: 0,
+        fileCount: stats.totalFiles ?? 0,
+        symbolCount: 0,
+        graphNodeCount: 0,
+        graphEdgeCount: 0,
+        summaryAvailable: analysis.framework !== "unknown",
+      },
+      {
+        indexMode: indexingPlan.mode,
+        changedFileCount: indexingPlan.totalChangedFiles,
+      },
+    );
     touchRepositoryAccess(owner, repo);
     // The connecting user becomes the repository owner.
     setRepositoryOwner(repoId, user.userId);
 
-    // Persist the indexed file snapshot for future incremental indexing.
-    // Detection is computed for logging/debugging only; it does not affect
-    // the response shape or any indexing decision in this phase.
-    const previousSnapshot = getRepositoryFileSnapshot(repoId);
-    const changes = detectChangedFiles(previousSnapshot?.files ?? null, stats.files);
+    // Persist the new indexed file snapshot for future incremental indexing.
     saveRepositoryFileSnapshot(repoId, stats.files);
-    logger.info("repos_file_snapshot", {
-      requestId: c.get("requestId"),
-      owner,
-      repo,
-      added: changes.added.length,
-      removed: changes.removed.length,
-      unchanged: changes.unchanged.length,
-      shouldReindexFully: changes.shouldReindexFully,
-    });
 
     return ok(c, { ...result, ...analysis });
   } catch (err) {
