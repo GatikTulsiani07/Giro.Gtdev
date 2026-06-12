@@ -21,6 +21,7 @@ import {
 import { requireRepositoryAccess } from "../services/repository/ownershipGuard.js";
 import { saveRepositoryFileSnapshot, getRepositoryFileSnapshot } from "../services/repository/fileSnapshotStore.js";
 import { buildRepositoryIndexingPlan } from "../services/repository/indexingPlan.js";
+import { executeIndexingPlan } from "../services/repository/indexingExecutor.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -120,6 +121,28 @@ repositoriesRoute.post("/connect", async (c) => {
       mode: indexingPlan.mode,
       totalChangedFiles: indexingPlan.totalChangedFiles,
       reason: indexingPlan.reason,
+    });
+
+    // Execute the plan: analyze only the files the plan selects. Full reindex
+    // analyzes every file; incremental analyzes only changed (added) files and
+    // skips unchanged ones. Per-file analysis here records a lightweight file
+    // descriptor — the seam future commits (chunking/embedding) will expand.
+    const execution = await executeIndexingPlan({
+      plan: indexingPlan,
+      currentFiles: stats.files,
+      analyzeFile: (file) => ({
+        filePath: file.filePath,
+        language: file.language,
+        size: file.size,
+      }),
+    });
+    logger.info("repository_indexing_execution", {
+      requestId: c.get("requestId"),
+      owner,
+      repo,
+      mode: execution.mode,
+      analyzed: execution.analyzedFiles.length,
+      skipped: execution.skippedFiles.length,
     });
 
     setRepositoryIndexed(
