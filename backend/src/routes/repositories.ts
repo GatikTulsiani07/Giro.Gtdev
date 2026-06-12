@@ -26,6 +26,7 @@ import {
   buildIndexCleanupPlanFromIndexingPlan,
   executeIndexCleanup,
 } from "../services/repository/indexCleanup.js";
+import { removeRepositorySymbolsForFiles } from "../services/repository/symbolIndexStore.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -175,6 +176,9 @@ repositoriesRoute.post("/connect", async (c) => {
     const cleanupPlan = buildIndexCleanupPlanFromIndexingPlan(indexingPlan);
     if (cleanupPlan.cleanupRequired) {
       const cleanup = executeIndexCleanup(cleanupPlan);
+      // Drop stale symbol records for removed files (no-op until symbol
+      // extraction output is persisted into the store in a later commit).
+      removeRepositorySymbolsForFiles(repoId, cleanup.removedFiles);
       logger.info("repository_index_cleanup", {
         requestId: c.get("requestId"),
         owner,
