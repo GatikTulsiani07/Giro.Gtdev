@@ -1,6 +1,6 @@
 # Giro.gtdev — Tasks
 
-# PHASE 1 — Repository Intelligence Core ✅ COMPLETE
+# PHASE 1 — Repository Intelligence Core  COMPLETE
 
 ## Core Backend
 
@@ -95,7 +95,7 @@
 
 ---
 
-# PHASE 3 — Repository Indexing Scalability 🚧 ACTIVE
+# PHASE 3 — Repository Indexing Scalability ACTIVE
 
 ## Incremental Indexing
 
@@ -107,9 +107,9 @@
 * [x] Incremental deletion cleanup foundation
 * [x] Symbol index store
 * [x] Symbol extraction pipeline
-* [ ] Persist extracted symbols during indexing
-* [ ] Incremental symbol refresh for changed files
-* [ ] Removed-file symbol pruning
+* [x] Persist extracted symbols during indexing
+* [x] Incremental symbol refresh for changed files
+* [x] Removed-file symbol pruning
 * [ ] Incremental graph update foundation
 
 ## Indexing Pipeline
@@ -140,7 +140,7 @@
 
 ---
 
-# REPOSITORY INTELLIGENCE PIPELINE ✅ COMPLETE
+# REPOSITORY INTELLIGENCE PIPELINE  COMPLETE
 
 The repository intelligence layer now provides deterministic repository understanding through a multi-stage pipeline:
 
@@ -289,48 +289,42 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 # CURRENT STATUS
 
+# CURRENT STATUS
+
 Current backend capabilities include:
 
-* deterministic retrieval orchestration
-* hybrid repository intelligence
-* dependency graph analysis
-* symbol-aware retrieval
-* deterministic answer synthesis
-* context budget enforcement
-* indexing lifecycle metadata
-* changed-file detection
-* file snapshot persistence
-* incremental indexing planning
-* incremental indexing execution
-* deletion cleanup foundation
-* symbol index store
-* repository symbol extraction engine
-* repository-aware session architecture
-* ownership and isolation protections
-* repository structure summaries
-* repository architecture summaries
-* repository overview generation
-* repository overview text generation
-* repository health scoring
-* repository health summaries
-* repository health text generation
-* retrieval context summaries
-* retrieval context text generation
-* 578+ passing backend tests
+- deterministic retrieval orchestration
+- hybrid repository intelligence
+- dependency graph analysis
+- symbol-aware retrieval
+- deterministic answer synthesis
+- context budget enforcement
+- indexing lifecycle metadata
+- changed-file detection
+- file snapshot persistence
+- incremental indexing planning
+- incremental indexing execution
+- deletion cleanup foundation
+- symbol index store
+- repository symbol extraction engine
+- symbol persistence during indexing
+- incremental symbol refresh
+- removed-file symbol pruning
+- repository overview generation
+- repository health analysis
+- retrieval context generation
+- repository-aware session architecture
+- ownership and isolation protections
+- 600+ passing backend tests
 
 Backend maturity has progressed beyond prototype stage into scalable MVP infrastructure.
 
 Current priority:
 
-1. Persist extracted symbols during indexing
-2. Incremental symbol refresh for changed files
-3. Removed-file symbol pruning
-4. Incremental graph update foundation
-5. Retrieval context integration into ask flow
-6. Architecture-aware answer generation
-7. Symbol score calibration
-8. Graph traversal weighting
-9. Retry-safe indexing
-10. Automatic stale detection
-11. Repository cleanup lifecycle
-12. Session cleanup lifecycle
+1. Incremental graph update foundation
+2. Parallel indexing workers
+3. Retry-safe indexing
+4. Automatic stale detection
+5. Repository cleanup lifecycle
+6. Session cleanup lifecycle
+7. PostgreSQL persistence layer
