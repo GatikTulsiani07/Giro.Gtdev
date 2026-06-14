@@ -9,6 +9,7 @@ import { logger } from "../lib/logger.js";
 import { cloneRepo, repoClonePath } from "../services/repository/clone.js";
 import { scanRepo } from "../services/repository/scanner.js";
 import { analyzeRepository } from "../services/repository/analyzer.js";
+import { extractRepoSymbols } from "../services/graph/symbolExtractor.js";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { buildRepositorySummary } from "../services/intelligence/summaryBuilder.js";
 import { saveSummary, loadSummary } from "../services/intelligence/summaryStore.js";
@@ -26,7 +27,7 @@ import {
   buildIndexCleanupPlanFromIndexingPlan,
   executeIndexCleanup,
 } from "../services/repository/indexCleanup.js";
-import { removeRepositorySymbolsForFiles } from "../services/repository/symbolIndexStore.js";
+import { removeRepositorySymbolsForFiles, saveRepositorySymbols, symbolRecordsFromFileMaps } from "../services/repository/symbolIndexStore.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
@@ -100,6 +101,12 @@ repositoriesRoute.post("/connect", async (c) => {
     const stats = await scanRepo(clonePath);
     const analysis = await analyzeRepository(clonePath, stats);
 
+    // Extract repository symbols from the freshly cloned/scanned source. If
+    // this throws, the existing catch runs setRepositoryFailed and no symbols
+    // are persisted (a failed index never partially writes a symbol set).
+    const symbolMaps = await extractRepoSymbols(clonePath);
+    const symbolCount = symbolMaps.reduce((n, m) => n + m.symbols.length, 0);
+
     const result: ScanResult = {
       owner,
       repo,
@@ -156,7 +163,7 @@ repositoriesRoute.post("/connect", async (c) => {
       {
         chunkCount: 0,
         fileCount: stats.totalFiles ?? 0,
-        symbolCount: 0,
+        symbolCount,
         graphNodeCount: 0,
         graphEdgeCount: 0,
         summaryAvailable: analysis.framework !== "unknown",
@@ -188,6 +195,10 @@ repositoriesRoute.post("/connect", async (c) => {
         reason: cleanup.reason,
       });
     }
+
+    // Persist the extracted symbol set for this repo (atomic overwrite). Runs
+    // only on the success path, so a failed index never corrupts a prior set.
+    saveRepositorySymbols(repoId, symbolRecordsFromFileMaps(symbolMaps));
 
     // Persist the new indexed file snapshot for future incremental indexing.
     saveRepositoryFileSnapshot(repoId, stats.files);

@@ -88,6 +88,12 @@ export function getRepositorySymbols(repoId: string): RepositorySymbolRecord[] {
   return found.map((s) => ({ ...s }));
 }
 
+// Number of persisted symbols for a repo (matches what setRepositoryIndexed
+// records as symbolCount when persisting an extracted symbol set).
+export function getRepositorySymbolCount(repoId: string): number {
+  return store.get(repoId)?.length ?? 0;
+}
+
 export function getRepositorySymbolsForFile(
   repoId: string,
   filePath: string,
@@ -114,5 +120,10 @@ export function removeRepositorySymbolsForFiles(
 
 // test-only helper — resets the in-memory symbol index
 export function clearRepositorySymbols(): void {
+  store.clear();
+}
+
+// Alias kept for callers that prefer the "...Index" naming.
+export function clearRepositorySymbolIndex(): void {
   store.clear();
 }
