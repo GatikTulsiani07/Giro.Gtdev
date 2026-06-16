@@ -186,8 +186,18 @@ export function clearIndexingFailure(owner: string, repo: string): void {
 export function markRepositoryStale(owner: string, repo: string): void {
   const key = repoKey(owner, repo);
   const existing = store.get(key);
-  if (!existing) return;
+  // Only an indexed repo can go stale; never overwrite failed/indexing/absent.
+  if (!existing || existing.status !== "indexed") return;
   store.set(key, { ...existing, status: "stale" });
+}
+
+// Transition stale -> indexed ONLY (no-op for any other status or absent
+// entry). Preserves all other fields; no timestamp churn.
+export function clearRepositoryStale(owner: string, repo: string): void {
+  const key = repoKey(owner, repo);
+  const existing = store.get(key);
+  if (!existing || existing.status !== "stale") return;
+  store.set(key, { ...existing, status: "indexed" });
 }
 
 export function touchRepositoryAccess(owner: string, repo: string): void {
