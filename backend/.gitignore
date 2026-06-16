@@ -5,3 +5,15 @@ dist
 .env.local
 *.log
 .DS_Store
+# Local AI/editor notes
+.kiro-analysis.md
+.cursor/
+.qodo/
+
+# Screenshots / local media artifacts
+Screenshot *.png
+*.mov
+*.mp4
+
+# Local roadmap/private notes
+PRODUCTION-ROADMAP.md
