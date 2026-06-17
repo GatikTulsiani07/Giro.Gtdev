@@ -38,3 +38,9 @@ export function getFileSymbolMaps(repoId: string): FileSymbolMap[] {
 export function clearGraphSourceStore(): void {
   store.clear();
 }
+
+// Additive: remove a single repo's entire graph-source entry. Idempotent no-op
+// for unknown repos; never touches other repos.
+export function removeRepositoryGraphSource(repoId: string): void {
+  store.delete(repoId);
+}

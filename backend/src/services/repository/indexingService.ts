@@ -229,3 +229,9 @@ export type { RepositoryIndexStatus };
 export function clearRepositoryIndexRegistry(): void {
   store.clear();
 }
+
+// Additive: remove a single repo's metadata entry. Idempotent; never touches
+// other repos.
+export function removeRepositoryIndexMetadata(owner: string, repo: string): void {
+  store.delete(repoKey(owner, repo));
+}

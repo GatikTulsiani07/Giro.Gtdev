@@ -161,6 +161,12 @@ export function clearRepositorySymbols(): void {
   store.clear();
 }
 
+// Additive: remove a single repo's entire symbol entry. Idempotent no-op for
+// unknown repos; never touches other repos.
+export function removeRepositorySymbols(repoId: string): void {
+  store.delete(repoId);
+}
+
 // Alias kept for callers that prefer the "...Index" naming.
 export function clearRepositorySymbolIndex(): void {
   store.clear();

@@ -53,3 +53,9 @@ export function getRepositoryFileSnapshot(
 export function clearRepositoryFileSnapshots(): void {
   store.clear();
 }
+
+// Additive: remove a single repo's snapshot entry. Idempotent no-op for unknown
+// repos; never touches other repos.
+export function removeRepositoryFileSnapshot(repoId: string): void {
+  store.delete(repoId);
+}
