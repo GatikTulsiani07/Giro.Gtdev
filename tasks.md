@@ -4,94 +4,94 @@
 
 ## Core Backend
 
-* [x] Setup backend architecture
-* [x] Setup routing structure
-* [x] Setup middleware system
-* [x] Setup deterministic service layer
-* [x] Setup validation pipeline
-* [x] Setup logging and error handling
+- [x] Setup backend architecture
+- [x] Setup routing structure
+- [x] Setup middleware system
+- [x] Setup deterministic service layer
+- [x] Setup validation pipeline
+- [x] Setup logging and error handling
 
 ## Repository Lifecycle
 
-* [x] Repository connection API
-* [x] Repository ingestion flow
-* [x] Repository metadata extraction
-* [x] Repository indexing lifecycle
-* [x] Indexed repository detection
-* [x] Repository stale-state handling
+- [x] Repository connection API
+- [x] Repository ingestion flow
+- [x] Repository metadata extraction
+- [x] Repository indexing lifecycle
+- [x] Indexed repository detection
+- [x] Repository stale-state handling
 
 ## Retrieval Engine
 
-* [x] Semantic retrieval pipeline
-* [x] Keyword retrieval pipeline
-* [x] Hybrid retrieval engine
-* [x] File-level retrieval explanations
-* [x] Dependency graph retrieval
-* [x] Symbol-aware retrieval
-* [x] Deterministic retrieval ordering
+- [x] Semantic retrieval pipeline
+- [x] Keyword retrieval pipeline
+- [x] Hybrid retrieval engine
+- [x] File-level retrieval explanations
+- [x] Dependency graph retrieval
+- [x] Symbol-aware retrieval
+- [x] Deterministic retrieval ordering
 
 ## Context Engine
 
-* [x] Context assembly pipeline
-* [x] Deterministic context synthesis
-* [x] Context ranking system
-* [x] Context budget limiting
-* [x] Selected context persistence
-* [x] Stable retrieval orchestration
+- [x] Context assembly pipeline
+- [x] Deterministic context synthesis
+- [x] Context ranking system
+- [x] Context budget limiting
+- [x] Selected context persistence
+- [x] Stable retrieval orchestration
 
 ## Session Architecture
 
-* [x] Session engine
-* [x] Repository-aware sessions
-* [x] Ask orchestration flow
-* [x] Message persistence
-* [x] Citation generation
-* [x] Deterministic answer synthesis
+- [x] Session engine
+- [x] Repository-aware sessions
+- [x] Ask orchestration flow
+- [x] Message persistence
+- [x] Citation generation
+- [x] Deterministic answer synthesis
 
 ---
 
-# PHASE 2 — Retrieval Quality Optimization 🚧 MOSTLY COMPLETE
+# PHASE 2 — Retrieval Quality Optimization  MOSTLY COMPLETE
 
 ## Retrieval Ranking
 
-* [x] Weighted hybrid reranking
-* [x] Semantic/keyword balancing
-* [x] Duplicate chunk suppression
-* [x] Cross-file relevance boosting
-* [ ] Symbol score calibration
-* [ ] Graph traversal weighting
+- [x] Weighted hybrid reranking
+- [x] Semantic/keyword balancing
+- [x] Duplicate chunk suppression
+- [x] Cross-file relevance boosting
+- [ ] Symbol score calibration
+- [ ] Graph traversal weighting
 
 ## Context Quality
 
-* [x] Retrieval diversity enforcement
-* [x] Retrieval blind spot detection
-* [x] Retrieval explainability metadata
-* [ ] Adjacent chunk stitching
-* [ ] Smarter chunk merging
-* [ ] Context compression improvements
-* [ ] Long-file handling
-* [ ] Retrieval fallback heuristics
+- [x] Retrieval diversity enforcement
+- [x] Retrieval blind spot detection
+- [x] Retrieval explainability metadata
+- [ ] Adjacent chunk stitching
+- [ ] Smarter chunk merging
+- [ ] Context compression improvements
+- [ ] Long-file handling
+- [ ] Retrieval fallback heuristics
 
 ## Answer Quality
 
-* [x] Retrieval trace metadata
-* [x] Confidence scoring
-* [x] Retrieval quality scoring
-* [x] Explanation consistency checks
-* [x] Repository structure summaries
-* [ ] Architecture-aware explanations
-* [ ] Entrypoint tracing
+- [x] Retrieval trace metadata
+- [x] Confidence scoring
+- [x] Retrieval quality scoring
+- [x] Explanation consistency checks
+- [x] Repository structure summaries
+- [ ] Architecture-aware explanations
+- [ ] Entrypoint tracing
 
 ## Repository Intelligence Summaries
 
-* [x] Repository structure summary engine
-* [x] Repository architecture summary engine
-* [x] Repository overview aggregation
-* [x] Repository overview text generation
-* [x] Repository health summary engine
-* [x] Repository health text generation
-* [x] Retrieval context summary engine
-* [x] Retrieval context text generation
+- [x] Repository structure summary engine
+- [x] Repository architecture summary engine
+- [x] Repository overview aggregation
+- [x] Repository overview text generation
+- [x] Repository health summary engine
+- [x] Repository health text generation
+- [x] Retrieval context summary engine
+- [x] Retrieval context text generation
 
 ---
 
@@ -99,36 +99,35 @@
 
 ## Incremental Indexing
 
-* [x] Repository index lifecycle metadata
-* [x] File snapshot storage
-* [x] Changed-file detection
-* [x] Incremental indexing plan builder
-* [x] Incremental indexing execution engine
-* [x] Incremental deletion cleanup foundation
-* [x] Symbol index store
-* [x] Symbol extraction pipeline
-* [x] Persist extracted symbols during indexing
-* [x] Incremental symbol refresh for changed files
-* [x] Removed-file symbol pruning
-* [x] Incremental graph update foundation
+- [x] Repository index lifecycle metadata
+- [x] File snapshot storage
+- [x] Changed-file detection
+- [x] Incremental indexing plan builder
+- [x] Incremental indexing execution engine
+- [x] Incremental deletion cleanup foundation
+- [x] Symbol index store
+- [x] Symbol extraction pipeline
+- [x] Persist extracted symbols during indexing
+- [x] Incremental symbol refresh for changed files
+- [x] Removed-file symbol pruning
+- [x] Incremental graph update foundation
 
 ## Indexing Pipeline
 
-* [x] Changed-file indexing foundation
-* [x] Incremental indexing foundation
-* [ ] Parallel indexing workers
-* [ ] Batched indexing jobs
-* [x] Retry-safe indexing
-* [ ] Reindex scheduler
+- [x] Changed-file indexing foundation
+- [x] Incremental indexing foundation
+- [ ] Parallel indexing workers
+- [ ] Batched indexing jobs
+- [x] Retry-safe indexing
+- [ ] Reindex scheduler
 
 ## Lifecycle Management
 
-* [x] Automatic stale detection
-* [ ] Repository cleanup
-* [ ] Session cleanup lifecycle
-* [ ] Cache invalidation rules
-* [ ] Background maintenance jobs
-
+- [x] Automatic stale detection
+- [ ] Repository cleanup
+- [ ] Session cleanup lifecycle
+- [ ] Cache invalidation rules
+- [ ] Background maintenance jobs
 
 # REPOSITORY INTELLIGENCE PIPELINE  COMPLETE
 
@@ -145,14 +144,71 @@ The repository intelligence layer now provides deterministic repository understa
 
 This pipeline creates stable repository understanding artifacts that can be consumed by:
 
-* Retrieval systems
-* Answer generation
-* Repository dashboards
-* Architecture panels
-* Repository health monitoring
-* Future autonomous workflows
+- Retrieval systems
+- Answer generation
+- Repository dashboards
+- Architecture panels
+- Repository health monitoring
+- Future autonomous workflows
 
 All stages are deterministic, fully tested, and independent from LLM generation.
+
+
+
+# PHASE 3.5 — Architecture Intelligence  ACTIVE
+
+## Architecture Discovery
+
+- Architecture file collector
+- Architecture file scanner
+- Architecture import extractor
+- Architecture import map
+- Architecture dependency graph
+- Circular dependency detector
+- Layer violation detector
+
+## Architecture Analysis
+
+- Architecture import resolver
+- Resolved architecture import map
+- Internal dependency filter
+- Internal dependency graph
+- Architecture dependency density
+- Architecture coupling score
+- Architecture risk level
+- Architecture quality summary
+
+## Architecture Review
+
+- Architecture finding types
+- Architecture findings generator
+- Architecture review result
+- Architecture review engine
+- Architecture review formatter
+- Architecture review runner
+- Architecture report generator
+- Architecture report metadata
+
+## Architecture Productization
+
+- Architecture analysis facade
+- Architecture API route
+- Architecture report persistence
+- Architecture report history
+- Architecture markdown export
+- Architecture dashboard integration
+- Architecture graph visualization
+- Architecture trend analysis
+
+## Architecture Testing
+
+- Import resolver tests
+- Dependency graph tests
+- Circular dependency tests
+- Layer violation tests
+- Coupling score tests
+- Risk level tests
+- Architecture report snapshot tests
 
 ---
 
@@ -160,21 +216,21 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 ## Persistence
 
-* [ ] Persistent session storage
-* [ ] Persistent retrieval history
-* [ ] Persistent indexed chunks
-* [ ] Persistent symbols
-* [ ] Persistent citations
-* [ ] Persistent repository metadata
+- [ ] Persistent session storage
+- [ ] Persistent retrieval history
+- [ ] Persistent indexed chunks
+- [ ] Persistent symbols
+- [ ] Persistent citations
+- [ ] Persistent repository metadata
 
 ## Infrastructure
 
-* [ ] PostgreSQL integration
-* [ ] pgvector integration
-* [ ] Redis caching
-* [ ] Queue-based indexing
-* [ ] Background workers
-* [ ] Structured observability
+- [ ] PostgreSQL integration
+- [ ] pgvector integration
+- [ ] Redis caching
+- [ ] Queue-based indexing
+- [ ] Background workers
+- [ ] Structured observability
 
 ---
 
@@ -182,26 +238,26 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 ## Contracts
 
-* [x] Stable repository metadata contracts
-* [x] Indexed repository contract coverage
-* [x] Route ownership contract coverage
-* [x] Indexed repository response contract coverage
-* [ ] Shared DTO validation
-* [ ] Error normalization
-* [ ] Versioned APIs
-* [ ] Pagination standards
-* [ ] Request tracing IDs
+- [x] Stable repository metadata contracts
+- [x] Indexed repository contract coverage
+- [x] Route ownership contract coverage
+- [x] Indexed repository response contract coverage
+- [ ] Shared DTO validation
+- [ ] Error normalization
+- [ ] Versioned APIs
+- [ ] Pagination standards
+- [ ] Request tracing IDs
 
 ## Security
 
-* [x] Repository ownership validation
-* [x] Session repository ownership checks
-* [x] Session-to-repository ownership middleware
-* [x] Repository isolation tests
-* [ ] Input sanitization
-* [ ] Rate limiting
-* [ ] Abuse protection
-* [ ] Secure repository path handling
+- [x] Repository ownership validation
+- [x] Session repository ownership checks
+- [x] Session-to-repository ownership middleware
+- [x] Repository isolation tests
+- [ ] Input sanitization
+- [ ] Rate limiting
+- [ ] Abuse protection
+- [ ] Secure repository path handling
 
 ---
 
@@ -209,29 +265,29 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 ## Automated Testing
 
-* [x] Retrieval engine tests
-* [x] Determinism tests
-* [x] Context assembly tests
-* [x] Indexing lifecycle tests
-* [x] Repository contract tests
-* [x] Route ownership tests
-* [x] Repository response contract tests
-* [x] Session ownership tests
-* [ ] Full route integration tests
-* [ ] Failure recovery tests
+- [x] Retrieval engine tests
+- [x] Determinism tests
+- [x] Context assembly tests
+- [x] Indexing lifecycle tests
+- [x] Repository contract tests
+- [x] Route ownership tests
+- [x] Repository response contract tests
+- [x] Session ownership tests
+- [ ] Full route integration tests
+- [ ] Failure recovery tests
 
 ## Reliability
 
-* [x] Empty input handling
-* [x] Missing metadata resilience
-* [x] Deterministic snapshot isolation
-* [x] Deterministic repository intelligence summaries
-* [ ] Empty repository handling
-* [ ] Large repository handling
-* [ ] Corrupted chunk recovery
-* [ ] Missing symbol resilience
-* [ ] Graceful degraded retrieval
-* [ ] Stable retry behavior
+- [x] Empty input handling
+- [x] Missing metadata resilience
+- [x] Deterministic snapshot isolation
+- [x] Deterministic repository intelligence summaries
+- [ ] Empty repository handling
+- [ ] Large repository handling
+- [ ] Corrupted chunk recovery
+- [ ] Missing symbol resilience
+- [ ] Graceful degraded retrieval
+- [ ] Stable retry behavior
 
 ---
 
@@ -239,19 +295,19 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 ## Frontend
 
-* [ ] Dashboard UI
-* [ ] Repository upload UI
-* [ ] Retrieval inspection UI
-* [ ] Session history UI
-* [ ] Architecture visualization
-* [ ] Graph visualization UI
+- [ ] Dashboard UI
+- [ ] Repository upload UI
+- [ ] Retrieval inspection UI
+- [ ] Session history UI
+- [ ] Architecture visualization
+- [ ] Graph visualization UI
 
 ## Realtime
 
-* [ ] Streaming responses
-* [ ] SSE/WebSocket support
-* [ ] Live retrieval progress
-* [ ] Indexing progress streaming
+- [ ] Streaming responses
+- [ ] SSE/WebSocket support
+- [ ] Live retrieval progress
+- [ ] Indexing progress streaming
 
 ---
 
@@ -259,21 +315,21 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 ## Documentation
 
-* [ ] Architecture documentation
-* [ ] Setup guide
-* [ ] API documentation
-* [ ] Local development guide
-* [ ] Benchmark documentation
-* [ ] Repository diagrams
+- [ ] Architecture documentation
+- [ ] Setup guide
+- [ ] API documentation
+- [ ] Local development guide
+- [ ] Benchmark documentation
+- [ ] Repository diagrams
 
 ## Open Source Readiness
 
-* [ ] Issue templates
-* [ ] PR templates
-* [ ] Contribution guidelines
-* [ ] Example repositories
-* [ ] Demo screenshots
-* [ ] Public launch preparation
+- [ ] Issue templates
+- [ ] PR templates
+- [ ] Contribution guidelines
+- [ ] Example repositories
+- [ ] Demo screenshots
+- [ ] Public launch preparation
 
 ---
 
@@ -285,54 +341,43 @@ All stages are deterministic, fully tested, and independent from LLM generation.
 
 Current backend capabilities include:
 
-* deterministic retrieval orchestration
-* hybrid repository intelligence
-* dependency graph analysis
-* symbol-aware retrieval
-* deterministic answer synthesis
-* context budget enforcement
-* indexing lifecycle metadata
-* changed-file detection
-* file snapshot persistence
-* incremental indexing planning
-* incremental indexing execution
-* deletion cleanup foundation
-* symbol index store
-* repository symbol extraction engine
-* symbol persistence during indexing
-* incremental symbol refresh
-* removed-file symbol pruning
-* incremental graph update foundation
-* retry-safe indexing
-* automatic stale detection
-* repository overview generation
-* repository health analysis
-* retrieval context generation
-* repository-aware session architecture
-* ownership and isolation protections
-* 640+ passing backend tests
+- deterministic retrieval orchestration
+- hybrid repository intelligence
+- dependency graph analysis
+- symbol-aware retrieval
+- deterministic answer synthesis
+- context budget enforcement
+- indexing lifecycle metadata
+- changed-file detection
+- file snapshot persistence
+- incremental indexing planning
+- incremental indexing execution
+- deletion cleanup foundation
+- symbol index store
+- repository symbol extraction engine
+- symbol persistence during indexing
+- incremental symbol refresh
+- removed-file symbol pruning
+- incremental graph update foundation
+- retry-safe indexing
+- automatic stale detection
+- repository overview generation
+- repository health analysis
+- retrieval context generation
+- repository-aware session architecture
+- ownership and isolation protections
+- 640+ passing backend tests
 
 Backend maturity has progressed beyond prototype stage into scalable repository intelligence infrastructure.
 
 Current priority:
 
-1. Repository cleanup lifecycle
-2. Parallel indexing workers
-3. Batched indexing jobs
-4. Reindex scheduler
-5. Session cleanup lifecycle
-6. PostgreSQL persistence layer
-7. pgvector integration
-
-
-Backend maturity has progressed beyond prototype stage into scalable MVP infrastructure.
-
-Current priority:
-
-1. Incremental graph update foundation
-2. Parallel indexing workers
-3. Retry-safe indexing
-4. Automatic stale detection
+1. Architecture analysis facade
+2. Architecture API route
+3. Import resolver tests
+4. Dependency graph tests
 5. Repository cleanup lifecycle
-6. Session cleanup lifecycle
+6. Parallel indexing workers
 7. PostgreSQL persistence layer
+8. pgvector integration
+
