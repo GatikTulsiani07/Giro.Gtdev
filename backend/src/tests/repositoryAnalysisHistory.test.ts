@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import type { RepositoryAnalysisReport } from "../services/repository/repositoryAnalysisReport.js";
 import {
   clearRepositoryAnalysisHistory,
   getRepositoryAnalysisHistory,
   saveRepositoryAnalysisReport,
 } from "../services/repository/repositoryAnalysisHistory.js";
 
-const report = {
+const report: RepositoryAnalysisReport = {
   repositoryName: "demo-repo",
   health: {
     summary: {
@@ -21,7 +22,7 @@ const report = {
   },
   overview: "Repository overview",
   structureSummary: "Repository structure",
-} as const;
+};
 
 describe("repository analysis history", () => {
   it("stores and returns repository analysis reports", () => {
