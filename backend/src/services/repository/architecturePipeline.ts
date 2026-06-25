@@ -9,13 +9,11 @@ export interface ArchitecturePipelineResult {
 export function buildArchitectureInput(
   repositoryPath: string,
 ): ArchitecturePipelineResult {
-  const discoveredFiles =
-    scanRepositoryFiles(repositoryPath);
+  const discoveredFiles = scanRepositoryFiles(repositoryPath);
 
-  const collected =
-    collectArchitectureFiles({
-      filePaths: discoveredFiles,
-    });
+  const collected = collectArchitectureFiles({
+    filePaths: discoveredFiles,
+  });
 
   return {
     files: collected.files,
