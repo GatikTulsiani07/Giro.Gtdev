@@ -8,9 +8,16 @@ export interface RepositoryIntelligenceInput {
   overview: RepositoryOverview;
 }
 
+export interface RepositoryIntelligenceSummary {
+  healthScore: number;
+  healthCategory: string;
+  hasArchitectureReport: boolean;
+}
+
 export interface RepositoryIntelligenceResult {
   repositoryId: string;
   repositoryName: string;
+  summary: RepositoryIntelligenceSummary;
   analysis: ReturnType<typeof analyzeRepository>;
   architecture: ReturnType<typeof getArchitectureDashboardData>;
 }
@@ -18,10 +25,18 @@ export interface RepositoryIntelligenceResult {
 export function buildRepositoryIntelligence(
   input: RepositoryIntelligenceInput,
 ): RepositoryIntelligenceResult {
+  const analysis = analyzeRepository(input.repositoryName, input.overview);
+  const architecture = getArchitectureDashboardData(input.repositoryId);
+
   return {
     repositoryId: input.repositoryId,
     repositoryName: input.repositoryName,
-    analysis: analyzeRepository(input.repositoryName, input.overview),
-    architecture: getArchitectureDashboardData(input.repositoryId),
+    summary: {
+      healthScore: analysis.health.summary.healthScore,
+      healthCategory: analysis.health.summary.healthCategory,
+      hasArchitectureReport: architecture.hasReport,
+    },
+    analysis,
+    architecture,
   };
 }
