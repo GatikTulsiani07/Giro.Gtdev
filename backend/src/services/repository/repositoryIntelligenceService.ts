@@ -14,9 +14,16 @@ export interface RepositoryIntelligenceSummary {
   hasArchitectureReport: boolean;
 }
 
+export interface RepositoryIntelligenceStatus {
+  indexed: boolean;
+  architectureReady: boolean;
+  ready: boolean;
+}
+
 export interface RepositoryIntelligenceResult {
   repositoryId: string;
   repositoryName: string;
+  status: RepositoryIntelligenceStatus;
   summary: RepositoryIntelligenceSummary;
   analysis: ReturnType<typeof analyzeRepository>;
   architecture: ReturnType<typeof getArchitectureDashboardData>;
@@ -28,9 +35,16 @@ export function buildRepositoryIntelligence(
   const analysis = analyzeRepository(input.repositoryName, input.overview);
   const architecture = getArchitectureDashboardData(input.repositoryId);
 
+  const status: RepositoryIntelligenceStatus = {
+    indexed: true,
+    architectureReady: architecture.hasReport,
+    ready: architecture.hasReport,
+  };
+
   return {
     repositoryId: input.repositoryId,
     repositoryName: input.repositoryName,
+    status,
     summary: {
       healthScore: analysis.health.summary.healthScore,
       healthCategory: analysis.health.summary.healthCategory,
