@@ -67,6 +67,8 @@ export default defineConfig({
       "src/tests/symbolIndexStore.test.ts",
       "src/tests/symbolIndexStorePersistence.test.ts",
       "src/tests/repositoryIntelligenceScore.test.ts",
+      "src/tests/repositoryIntelligenceText.test.ts",
+      "src/tests/repositoryIntelligenceExport.test.ts",
     ],
   },
 });
