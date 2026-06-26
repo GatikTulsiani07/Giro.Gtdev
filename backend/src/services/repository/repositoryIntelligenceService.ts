@@ -3,6 +3,7 @@ import type { RepositoryIndexMetadata } from "./indexingTypes.js";
 import { analyzeRepository } from "./repositoryAnalysisService.js";
 import { getArchitectureDashboardData } from "./architectureDashboardIntegration.js";
 import { buildRetrievalContextSummary } from "./retrievalContextSummary.js";
+import { buildRepositoryIntelligenceScore } from "./repositoryIntelligenceScore.js";
 import {
   buildRetrievalQualityScore,
   type RetrievalQualityInput,
@@ -39,6 +40,7 @@ export interface RepositoryIntelligenceResult {
   analysis: ReturnType<typeof analyzeRepository>;
   architecture: ReturnType<typeof getArchitectureDashboardData>;
   indexing: RepositoryIndexMetadata | null;
+  intelligence: ReturnType<typeof buildRepositoryIntelligenceScore>;
   retrieval: {
     context: ReturnType<typeof buildRetrievalContextSummary>;
     quality: ReturnType<typeof buildRetrievalQualityScore>;
@@ -84,6 +86,13 @@ export function buildRepositoryIntelligence(
     ready: indexed && architecture.hasReport && retrievalQuality.score > 0,
   };
 
+  const intelligence = buildRepositoryIntelligenceScore({
+    healthScore: analysis.health.summary.healthScore,
+    indexed: status.indexed,
+    architectureReady: status.architectureReady,
+    retrievalScore: retrievalQuality.score,
+  });
+
   return {
     repositoryId: input.repositoryId,
     repositoryName: input.repositoryName,
@@ -98,6 +107,7 @@ export function buildRepositoryIntelligence(
     analysis,
     architecture,
     indexing,
+    intelligence,
     retrieval: {
       context: retrievalContext,
       quality: retrievalQuality,
