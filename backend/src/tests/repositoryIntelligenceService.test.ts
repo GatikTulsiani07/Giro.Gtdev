@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { RepositoryOverview } from "../services/repository/repositoryOverview.js";
 import { buildRepositoryIntelligence } from "../services/repository/repositoryIntelligenceService.js";
 
+
 describe("repository intelligence service", () => {
   it("builds repository intelligence response", () => {
     const overview = {
@@ -28,5 +29,13 @@ describe("repository intelligence service", () => {
     expect(result.repositoryName).toBe("demo-repo");
     expect(result.analysis.repositoryName).toBe("demo-repo");
     expect(result.architecture.repositoryId).toBe("demo/repo");
+    expect(result.retrieval.context.totalFiles).toBe(10);
+    expect(result.retrieval.quality.grade).toBe("poor");
+    expect(result.summary).toHaveProperty("retrievalGrade");
+    expect(result.status.retrievalReady).toBe(false);
+    expect(result.indexing.status).toBe("unknown");
+    expect(result.indexing.indexed).toBe(false);
+    expect(result.summary.indexStatus).toBe("unknown");
+    expect(result.status.indexed).toBe(false);
   });
 });

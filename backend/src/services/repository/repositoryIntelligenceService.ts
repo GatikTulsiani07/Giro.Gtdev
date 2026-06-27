@@ -1,5 +1,6 @@
 import type { RepositoryOverview } from "./repositoryOverview.js";
-import type { RepositoryIndexMetadata } from "./indexingTypes.js";
+import { buildRepositoryIndexSummary } from "./indexingSummary.js";
+
 import { analyzeRepository } from "./repositoryAnalysisService.js";
 import { getArchitectureDashboardData } from "./architectureDashboardIntegration.js";
 import { buildRetrievalContextSummary } from "./retrievalContextSummary.js";
@@ -39,7 +40,7 @@ export interface RepositoryIntelligenceResult {
   summary: RepositoryIntelligenceSummary;
   analysis: ReturnType<typeof analyzeRepository>;
   architecture: ReturnType<typeof getArchitectureDashboardData>;
-  indexing: RepositoryIndexMetadata | null;
+  indexing: ReturnType<typeof buildRepositoryIndexSummary>;
   intelligence: ReturnType<typeof buildRepositoryIntelligenceScore>;
   retrieval: {
     context: ReturnType<typeof buildRetrievalContextSummary>;
@@ -67,6 +68,7 @@ export function buildRepositoryIntelligence(
   const indexing = parsed
     ? getRepositoryIndexMetadata(parsed.owner, parsed.repo)
     : null;
+  const indexingSummary = buildRepositoryIndexSummary(indexing);  
 
   const retrievalContext = buildRetrievalContextSummary(
     input.overview,
@@ -77,7 +79,7 @@ export function buildRepositoryIntelligence(
     input.retrievalQuality ?? {},
   );
 
-  const indexed = indexing?.status === "indexed";
+  const indexed = indexingSummary.indexed;
 
   const status: RepositoryIntelligenceStatus = {
     indexed,
@@ -106,7 +108,7 @@ export function buildRepositoryIntelligence(
     },
     analysis,
     architecture,
-    indexing,
+    indexing: indexingSummary,
     intelligence,
     retrieval: {
       context: retrievalContext,

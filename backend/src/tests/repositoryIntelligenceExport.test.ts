@@ -26,7 +26,17 @@ describe("repository intelligence export", () => {
       },
       analysis: {} as never,
       architecture: {} as never,
-      indexing: null,
+      indexing: {
+          repository: "",
+          status: "unknown",
+          indexed: false,
+          totalFiles: 0,
+          totalChunks: 0,
+          totalSymbols: 0,
+          totalGraphNodes: 0,
+          totalGraphEdges: 0,
+          lastIndexedAt: null,
+        },
       retrieval: {} as never,
     });
 

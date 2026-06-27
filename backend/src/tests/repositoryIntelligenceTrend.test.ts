@@ -17,7 +17,17 @@ describe("repository intelligence trend", () => {
       summary: {} as never,
       analysis: {} as never,
       architecture: {} as never,
-      indexing: null,
+      indexing: {
+          repository: "",
+          status: "unknown",
+          indexed: false,
+          totalFiles: 0,
+          totalChunks: 0,
+          totalSymbols: 0,
+          totalGraphNodes: 0,
+          totalGraphEdges: 0,
+          lastIndexedAt: null,
+        },
       intelligence: {
         score: 88,
         grade: "excellent",
