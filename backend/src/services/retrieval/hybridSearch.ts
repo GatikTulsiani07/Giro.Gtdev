@@ -14,14 +14,23 @@ import type {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const FETCH_MULTIPLIER = 3;
+
+export function resolveHybridSearchLimit(limit?: number): number {
+  return Math.min(MAX_LIMIT, Math.max(1, limit ?? DEFAULT_LIMIT));
+}
+
+export function resolveHybridFetchLimit(limit?: number): number {
+  return resolveHybridSearchLimit(limit) * FETCH_MULTIPLIER;
+}
 
 export async function hybridSearch(
   request: HybridSearchRequest,
 ): Promise<HybridSearchResponse> {
   const { query, owner, repo } = request;
   const repository = `${owner}/${repo}`;
-  const effectiveLimit = Math.min(MAX_LIMIT, Math.max(1, request.limit ?? DEFAULT_LIMIT));
-  const fetchLimit = effectiveLimit * 3;
+  const effectiveLimit = resolveHybridSearchLimit(request.limit);
+  const fetchLimit = resolveHybridFetchLimit(request.limit);
 
   const [semanticSettled, keywordSettled, symbolSettled] = await Promise.allSettled([
     semanticSearch(query, fetchLimit),
@@ -30,6 +39,7 @@ export async function hybridSearch(
   ]);
 
   let semantic: RetrievalResult[] = [];
+
   if (semanticSettled.status === "fulfilled") {
     semantic = semanticSettled.value
       .filter((r) => r.repository === repository)
@@ -51,14 +61,23 @@ export async function hybridSearch(
     });
   }
 
-  const keyword = keywordSettled.status === "fulfilled" ? keywordSettled.value : [];
-  const symbol = symbolSettled.status === "fulfilled" ? symbolSettled.value : [];
+  const keyword =
+    keywordSettled.status === "fulfilled" ? keywordSettled.value : [];
 
-  // Build graph centrality map; degrade gracefully if unavailable.
+  const symbol =
+    symbolSettled.status === "fulfilled" ? symbolSettled.value : [];
+
   let graphNodes: Map<string, number> | null = null;
+
   try {
     const graph = await analyzeRepoDependencies(owner, repo);
-    graphNodes = new Map(graph.nodes.map((n) => [n.filePath, n.centralityScore]));
+
+    graphNodes = new Map(
+      graph.nodes.map((node) => [
+        node.filePath,
+        node.centralityScore,
+      ]),
+    );
   } catch (err) {
     logger.warn("graph_signal_unavailable", {
       repository,
@@ -67,14 +86,20 @@ export async function hybridSearch(
   }
 
   const combined = [...semantic, ...keyword, ...symbol];
-  const graphFiles = graphNodes;
-  const graphBoosted = graphFiles
+
+  const graphBoosted = graphNodes
     ? new Set(
-        combined.filter((r) => graphFiles.has(r.filePath)).map((r) => r.filePath),
+        combined
+          .filter((result) => graphNodes?.has(result.filePath))
+          .map((result) => result.filePath),
       ).size
     : 0;
 
-  const results = mergeAndRerank(combined, graphNodes, effectiveLimit);
+  const results = mergeAndRerank(
+    combined,
+    graphNodes,
+    effectiveLimit,
+  );
 
   logger.info("hybrid_search_complete", {
     repository,
