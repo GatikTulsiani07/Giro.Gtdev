@@ -375,7 +375,11 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
         totalFiles: stats.totalFiles,
         totalSymbols: 0,
         repositoryScale:
-          stats.totalFiles < 50 ? "small" : stats.totalFiles < 250 ? "medium" : "large",
+          stats.totalFiles < 50
+            ? "small"
+            : stats.totalFiles < 250
+              ? "medium"
+              : "large",
       },
       architecture: {
         totalFiles: stats.totalFiles,
@@ -386,16 +390,17 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
     };
 
     const intelligence = buildRepositoryIntelligence({
-  repositoryId: repoId,
-  repositoryName: repo,
-  overview: overview as never,
-});
+      repositoryId: repoId,
+      repositoryName: repo,
+      overview: overview as never,
+    });
 
-saveRepositoryIntelligence(intelligence);
+    saveRepositoryIntelligence(intelligence);
 
     return ok(c, buildRepositoryIntelligenceApiResponse(intelligence));
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
+
     logger.error("repository_intelligence_failed", {
       requestId: c.get("requestId"),
       owner,
@@ -406,6 +411,7 @@ saveRepositoryIntelligence(intelligence);
     return fail(c, { code: "repository_intelligence_error", message }, 500);
   }
 });
+
 
 // GET /repos/dependencies/:owner/:repo — dependency graph + symbol intelligence.
 repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
