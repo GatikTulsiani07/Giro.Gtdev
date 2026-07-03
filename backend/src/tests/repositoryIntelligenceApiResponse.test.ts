@@ -48,5 +48,7 @@ describe("repository intelligence api response", () => {
     expect(response.intelligence.score).toBe(95);
     expect(response.readiness.level).toBe("excellent");
     expect(response.status.ready).toBe(true);
+    expect(response.metadata.version).toBe("v1");
+expect(response.metadata.generatedAt).toBeTruthy();
   });
 });

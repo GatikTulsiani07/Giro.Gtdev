@@ -6,6 +6,11 @@ export interface RepositoryIntelligenceApiResponse {
     name: string;
   };
 
+  metadata: {
+    generatedAt: string;
+    version: "v1";
+  };
+
   readiness: RepositoryIntelligenceResult["readiness"];
 
   intelligence: RepositoryIntelligenceResult["intelligence"];
@@ -28,6 +33,10 @@ export function buildRepositoryIntelligenceApiResponse(
       id: intelligence.repositoryId,
       name: intelligence.repositoryName,
     },
+    metadata: {
+  generatedAt: new Date().toISOString(),
+  version: "v1",
+},
 
     readiness: intelligence.readiness,
 
