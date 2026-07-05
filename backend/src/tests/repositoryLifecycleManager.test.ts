@@ -26,6 +26,10 @@ import {
   getRepositorySummary,
 } from "../services/repository/repositoryLifecycleManager.js";
 import {
+  clearRepositoryLifecycleEvents,
+  listRepositoryLifecycleEvents,
+} from "../services/repository/repositoryLifecycleEvents.js";
+import {
   clearRepositoryIntelligenceHistory,
 } from "../services/repository/repositoryIntelligenceHistory.js";
 import {
@@ -129,6 +133,7 @@ beforeEach(() => {
   clearGraphSourceStore();
   clearRepositoryIntelligenceHistory(REPO_ID);
   clearRepositoryIntelligenceHistory(`${OWNER}/other`);
+  clearRepositoryLifecycleEvents();
   clearAllSessions();
 });
 
@@ -169,6 +174,7 @@ describe("repository lifecycle manager", () => {
       graphNodes: COUNTS.graphNodeCount,
       graphEdges: COUNTS.graphEdgeCount,
     });
+    expect(listRepositoryLifecycleEvents()).toEqual([]);
   });
 
   it("propagates connect indexing errors", async () => {
@@ -212,6 +218,20 @@ describe("repository lifecycle manager", () => {
       indexedFiles: COUNTS.fileCount,
       indexedChunks: COUNTS.chunkCount,
     });
+    expect(listRepositoryLifecycleEvents(REPO_ID)).toEqual([
+      {
+        repositoryId: REPO_ID,
+        sequence: 1,
+        type: "repository_dashboard_viewed",
+        message: "Repository dashboard summary viewed.",
+        metadata: {
+          chunks: COUNTS.chunkCount,
+          files: COUNTS.fileCount,
+          status: "indexed",
+          symbols: COUNTS.symbolCount,
+        },
+      },
+    ]);
   });
 
   it("coordinates cleanup planner, executor, and report without changing output shape", () => {
@@ -255,6 +275,39 @@ describe("repository lifecycle manager", () => {
     expect(getSessionById("session-a")).toBeNull();
     expect(getSessionById("session-z")).toBeNull();
     expect(getSessionById("session-other")).not.toBeNull();
+    expect(listRepositoryLifecycleEvents(REPO_ID)).toEqual([
+      {
+        repositoryId: REPO_ID,
+        sequence: 1,
+        type: "repository_cleanup_planned",
+        message: "Repository cleanup plan built.",
+        metadata: {
+          cleanupRequired: true,
+          totalResources: 9,
+        },
+      },
+      {
+        repositoryId: REPO_ID,
+        sequence: 2,
+        type: "repository_cleanup_executed",
+        message: "Repository cleanup plan executed.",
+        metadata: {
+          totalExecuted: 9,
+          totalSkipped: 1,
+        },
+      },
+      {
+        repositoryId: REPO_ID,
+        sequence: 3,
+        type: "repository_cleanup_reported",
+        message: "Repository cleanup report built.",
+        metadata: {
+          success: false,
+          totalExecuted: 9,
+          totalSkipped: 1,
+        },
+      },
+    ]);
   });
 
   it("is deterministic for an already cleaned repository", () => {
@@ -282,5 +335,13 @@ describe("repository lifecycle manager", () => {
         completionPercentage: 0,
       },
     });
+    expect(listRepositoryLifecycleEvents(REPO_ID).map((event) => event.type)).toEqual([
+      "repository_cleanup_planned",
+      "repository_cleanup_executed",
+      "repository_cleanup_reported",
+      "repository_cleanup_planned",
+      "repository_cleanup_executed",
+      "repository_cleanup_reported",
+    ]);
   });
 });
