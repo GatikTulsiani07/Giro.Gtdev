@@ -24,7 +24,6 @@ export interface RepositoryRefactoringSummary {
   critical: number;
   warnings: number;
   informational: number;
-  impactedModuleCount: number;
 }
 
 export interface RepositoryRefactoringInput {
@@ -68,16 +67,11 @@ function addOpportunity(
 function summarize(
   opportunities: readonly RepositoryRefactoringOpportunity[],
 ): RepositoryRefactoringSummary {
-  const impactedModules = opportunities.flatMap(
-    (opportunity) => opportunity.impactedModules,
-  );
-
   return {
     total: opportunities.length,
     critical: opportunities.filter((item) => item.severity === "critical").length,
     warnings: opportunities.filter((item) => item.severity === "warning").length,
     informational: opportunities.filter((item) => item.severity === "info").length,
-    impactedModuleCount: sortedUnique(impactedModules).length,
   };
 }
 

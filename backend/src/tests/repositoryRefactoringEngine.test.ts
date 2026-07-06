@@ -103,7 +103,6 @@ describe("repository refactoring engine", () => {
       critical: 0,
       warnings: 0,
       informational: 0,
-      impactedModuleCount: 0,
     });
   });
 
