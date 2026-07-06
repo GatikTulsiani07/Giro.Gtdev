@@ -1,11 +1,16 @@
 // POST /repos/connect — clone + scan a GitHub repository.
 
 import { Hono } from "hono";
-import { z } from "zod";
 import { existsSync } from "node:fs";
 import { parseRepoUrl } from "../lib/parseRepoUrl.js";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import {
+  RepositoryCleanupRequestSchema,
+  RepositoryConnectRequestSchema,
+  RepositoryDashboardParamsSchema,
+  RepositoryWorkspaceParamsSchema,
+} from "../contracts/repositoryContracts.js";
 import { cloneRepo, repoClonePath } from "../services/repository/clone.js";
 import { scanRepo } from "../services/repository/scanner.js";
 import { analyzeRepository } from "../services/repository/analyzer.js";
@@ -55,15 +60,13 @@ import {
 } from "../services/repository/indexingService.js";
 import type { ScanResult } from "../services/repository/types.js";
 
-const ConnectBody = z.object({ repoUrl: z.string().min(1) });
-
 type Variables = { requestId: string; authenticatedUser: AuthenticatedUser };
 
 export const repositoriesRoute = new Hono<{ Variables: Variables }>();
 
 repositoriesRoute.post("/connect", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const parsed = ConnectBody.safeParse(body);
+  const parsed = RepositoryConnectRequestSchema.safeParse(body);
   if (!parsed.success) {
     return fail(c, { code: "validation_error", message: "repoUrl is required" }, 400);
   }
@@ -246,7 +249,7 @@ repositoriesRoute.get("/indexed", (c) => {
 
 repositoriesRoute.post("/context", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const parsed = ConnectBody.safeParse(body);
+  const parsed = RepositoryConnectRequestSchema.safeParse(body);
   if (!parsed.success) {
     return fail(c, { code: "validation_error", message: "repoUrl is required" }, 400);
   }
@@ -341,16 +344,18 @@ repositoriesRoute.get("/:id/summary", async (c) => {
 
 // GET /repos/intelligence/:owner/:repo — unified repository intelligence payload.
 repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
-  const owner = c.req.param("owner");
-  const repo = c.req.param("repo");
-
-  if (!owner || !repo) {
+  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
+    owner: c.req.param("owner"),
+    repo: c.req.param("repo"),
+  });
+  if (!parsedParams.success) {
     return fail(
       c,
       { code: "validation_error", message: "owner and repo are required" },
       400,
     );
   }
+  const { owner, repo } = parsedParams.data;
 
   const user = getAuthenticatedUser(c);
   if (!user) {
@@ -425,16 +430,18 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
 
 // GET /repos/dependencies/:owner/:repo — dependency graph + symbol intelligence.
 repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
-  const owner = c.req.param("owner");
-  const repo = c.req.param("repo");
-
-  if (!owner || !repo) {
+  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
+    owner: c.req.param("owner"),
+    repo: c.req.param("repo"),
+  });
+  if (!parsedParams.success) {
     return fail(
       c,
       { code: "validation_error", message: "owner and repo are required" },
       400,
     );
   }
+  const { owner, repo } = parsedParams.data;
 
   const depUser = getAuthenticatedUser(c);
   if (!depUser) {
@@ -472,14 +479,17 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
 
 // GET /repos/search/:owner/:repo?q=query&limit=1-50 — file-level semantic search.
 repositoriesRoute.get("/search/:owner/:repo", async (c) => {
-  const owner = c.req.param("owner");
-  const repo = c.req.param("repo");
+  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
+    owner: c.req.param("owner"),
+    repo: c.req.param("repo"),
+  });
   const query = c.req.query("q");
   const limitRaw = c.req.query("limit");
 
-  if (!owner || !repo) {
+  if (!parsedParams.success) {
     return fail(c, { code: "validation_error", message: "owner and repo are required" }, 400);
   }
+  const { owner, repo } = parsedParams.data;
   if (!query || query.trim().length === 0) {
     return fail(c, { code: "validation_error", message: "query (q) is required" }, 400);
   }
@@ -526,16 +536,18 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
 
 // DELETE /repos/:owner/:repo — cleanup repository lifecycle metadata.
 repositoriesRoute.delete("/:owner/:repo", (c) => {
-  const owner = c.req.param("owner");
-  const repo = c.req.param("repo");
-
-  if (!owner || !repo) {
+  const parsedParams = RepositoryCleanupRequestSchema.safeParse({
+    owner: c.req.param("owner"),
+    repo: c.req.param("repo"),
+  });
+  if (!parsedParams.success) {
     return fail(
       c,
       { code: "validation_error", message: "owner and repo are required" },
       400,
     );
   }
+  const { owner, repo } = parsedParams.data;
 
   const user = getAuthenticatedUser(c);
   if (!user) {
@@ -563,16 +575,18 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
 
 // GET /repos/:owner/:repo/dashboard/intelligence — full dashboard intelligence bundle.
 repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
-  const owner = c.req.param("owner");
-  const repo = c.req.param("repo");
-
-  if (!owner || !repo) {
+  const parsedParams = RepositoryDashboardParamsSchema.safeParse({
+    owner: c.req.param("owner"),
+    repo: c.req.param("repo"),
+  });
+  if (!parsedParams.success) {
     return fail(
       c,
       { code: "validation_error", message: "owner and repo are required" },
       400,
     );
   }
+  const { owner, repo } = parsedParams.data;
 
   const user = getAuthenticatedUser(c);
 
@@ -599,16 +613,18 @@ repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
 
 // GET /repos/:owner/:repo/workspace — primary repository workspace payload.
 repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
-  const owner = c.req.param("owner");
-  const repo = c.req.param("repo");
-
-  if (!owner || !repo) {
+  const parsedParams = RepositoryWorkspaceParamsSchema.safeParse({
+    owner: c.req.param("owner"),
+    repo: c.req.param("repo"),
+  });
+  if (!parsedParams.success) {
     return fail(
       c,
       { code: "validation_error", message: "owner and repo are required" },
       400,
     );
   }
+  const { owner, repo } = parsedParams.data;
 
   const user = getAuthenticatedUser(c);
 
@@ -674,16 +690,18 @@ repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
 
 // GET /repos/:owner/:repo/dashboard — frontend-ready repository dashboard summary.
 repositoriesRoute.get("/:owner/:repo/dashboard", async (c) => {
-  const owner = c.req.param("owner");
-  const repo = c.req.param("repo");
-
-  if (!owner || !repo) {
+  const parsedParams = RepositoryDashboardParamsSchema.safeParse({
+    owner: c.req.param("owner"),
+    repo: c.req.param("repo"),
+  });
+  if (!parsedParams.success) {
     return fail(
       c,
       { code: "validation_error", message: "owner and repo are required" },
       400,
     );
   }
+  const { owner, repo } = parsedParams.data;
 
   const user = getAuthenticatedUser(c);
 
