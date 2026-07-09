@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import { createValidationError } from "../lib/apiErrors.js";
 import { hybridSearch } from "../services/retrieval/hybridSearch.js";
 import {
   ChunkLimitSchema,
@@ -33,7 +34,7 @@ retrievalRouter.post("/hybrid", async (c) => {
   if (!parsed.success) {
     return fail(
       c,
-      { code: "validation_error", message: parsed.error.errors[0]?.message ?? "Invalid request" },
+      createValidationError(parsed.error.flatten()),
       400,
     );
   }

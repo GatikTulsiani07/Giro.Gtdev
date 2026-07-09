@@ -56,12 +56,12 @@ test("4. valid JWT passes auth and reaches the handler (not a 401)", async () =>
 });
 
 test("5. POST to a protected group reaches the validation layer with valid JWT", async () => {
-  // No body -> handler-level validation_error (400), proving auth was passed
+  // No body -> handler-level validation_failed (400), proving auth was passed
   // and the real handler executed (not a 401 auth failure).
   const { status, json } = await call("/sessions", { authorization: VALID }, "POST");
   assert.notEqual(status, 401);
   assert.equal(json.success, false);
-  assert.equal(json.error?.code, "validation_error");
+  assert.equal(json.error?.code, "validation_failed");
 });
 
 test("6. health route remains accessible without auth", async () => {

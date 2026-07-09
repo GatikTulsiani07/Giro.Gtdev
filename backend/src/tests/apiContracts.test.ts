@@ -93,14 +93,14 @@ test("5. POST message appends to session", async () => {
   assert.equal(last?.content, "hi");
 });
 
-test("6. POST message with invalid role returns 400 validation_error", async () => {
+test("6. POST message with invalid role returns 400 validation_failed", async () => {
   clearAllSessions();
   const created = await call("POST", "/sessions", { owner: "acme", repo: "demo" });
   const id = asRecord(created.json.data).id as string;
   const { status, json } = await call("POST", `/sessions/${id}/messages`, { role: "robot", content: "x" });
   assert.equal(status, 400);
   assert.equal(json.success, false);
-  assert.equal(json.error?.code, "validation_error");
+  assert.equal(json.error?.code, "validation_failed");
 });
 
 test("7. DELETE session then GET returns 404", async () => {

@@ -219,14 +219,14 @@ test("10. valid JWT reaches ownership check, not auth failure", async () => {
 });
 
 // --- validation rejections that prove auth/ownership ordering ---
-test("11. summary invalid id -> 400 invalid_id (with valid JWT)", async () => {
+test("11. summary invalid id -> 400 validation_failed (with valid JWT)", async () => {
   const { status, json } = await call("GET", "/repos/not-a-valid-id/summary", TOKEN_A);
   assert.equal(status, 400);
-  assert.equal(json.error?.code, "invalid_id");
+  assert.equal(json.error?.code, "validation_failed");
 });
 
-test("12. search missing q -> 400 validation_error (with valid JWT)", async () => {
+test("12. search missing q -> 400 validation_failed (with valid JWT)", async () => {
   const { status, json } = await call("GET", "/repos/search/acme/demo", TOKEN_A);
   assert.equal(status, 400);
-  assert.equal(json.error?.code, "validation_error");
+  assert.equal(json.error?.code, "validation_failed");
 });

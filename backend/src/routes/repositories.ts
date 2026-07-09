@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { parseRepoUrl } from "../lib/parseRepoUrl.js";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import { createValidationError } from "../lib/apiErrors.js";
 import {
   CloneOptionsSchema,
   GithubRepositoryUrlSchema,
@@ -81,14 +82,23 @@ function parseRepositoryParams(owner: string, repo: string) {
 }
 
 function invalidOwnerRepo(c: Parameters<typeof fail>[0]) {
-  return fail(c, { code: "validation_error", message: "owner and repo are required" }, 400);
+  return fail(
+    c,
+    createValidationError({
+      fieldErrors: {
+        owner: ["owner is required"],
+        repo: ["repo is required"],
+      },
+    }),
+    400,
+  );
 }
 
 repositoriesRoute.post("/connect", async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = RepositoryConnectBodySchema.safeParse(body);
   if (!parsed.success) {
-    return fail(c, { code: "validation_error", message: "repoUrl is required" }, 400);
+    return fail(c, createValidationError(parsed.error.flatten()), 400);
   }
 
   let owner: string;
@@ -271,7 +281,7 @@ repositoriesRoute.post("/context", async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = RepositoryConnectBodySchema.safeParse(body);
   if (!parsed.success) {
-    return fail(c, { code: "validation_error", message: "repoUrl is required" }, 400);
+    return fail(c, createValidationError(parsed.error.flatten()), 400);
   }
 
   let owner: string;
@@ -322,13 +332,21 @@ repositoriesRoute.get("/:id/summary", async (c) => {
   const refresh = c.req.query("refresh") === "1";
 
   if (!/^[A-Za-z0-9._-]+--[A-Za-z0-9._-]+$/.test(id)) {
-    return fail(c, { code: "invalid_id", message: "id must be 'owner--repo'" }, 400);
+    return fail(
+      c,
+      createValidationError({
+        fieldErrors: {
+          id: ["id must be 'owner--repo'"],
+        },
+      }),
+      400,
+    );
   }
 
   const [ownerRaw, repoRaw] = id.split("--") as [string, string];
   const parsedId = parseRepositoryParams(ownerRaw, repoRaw);
   if (!parsedId.success) {
-    return fail(c, { code: "invalid_id", message: "id must be 'owner--repo'" }, 400);
+    return fail(c, createValidationError(parsedId.error.flatten()), 400);
   }
   const { owner, repo } = parsedId.data;
   const clonePath = repoClonePath(owner, repo);
@@ -495,19 +513,35 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
   const limitRaw = c.req.query("limit");
 
   if (!parsedParams.success) {
-    return fail(c, { code: "validation_error", message: "owner and repo are required" }, 400);
+    return invalidOwnerRepo(c);
   }
   const { owner, repo } = parsedParams.data;
   const parsedQuery = SearchQuerySchema.safeParse(query ?? "");
   if (!parsedQuery.success || parsedQuery.data.length === 0) {
-    return fail(c, { code: "validation_error", message: "query (q) is required" }, 400);
+    return fail(
+      c,
+      createValidationError({
+        fieldErrors: {
+          q: ["query (q) is required"],
+        },
+      }),
+      400,
+    );
   }
 
   let limit: number | undefined;
   if (limitRaw !== undefined) {
     const parsed = Number(limitRaw);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 50) {
-      return fail(c, { code: "validation_error", message: "limit must be an integer 1-50" }, 400);
+      return fail(
+        c,
+        createValidationError({
+          fieldErrors: {
+            limit: ["limit must be an integer 1-50"],
+          },
+        }),
+        400,
+      );
     }
     limit = parsed;
   }

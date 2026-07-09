@@ -197,10 +197,10 @@ test("11. invalid JWT -> 401 invalid_token", async () => {
 
 // --- GET /repos/:id/summary deterministic error contracts ---
 
-test("12. malformed id -> 400 invalid_id", async () => {
+test("12. malformed id -> 400 validation_failed", async () => {
   const { status, json } = await request("/repos/not-a-valid-id/summary", TOKEN);
   assert.equal(status, 400);
-  assert.equal(json.error?.code, "invalid_id");
+  assert.equal(json.error?.code, "validation_failed");
 });
 
 test("13. owned repo with no clone -> 404 repo_not_connected", async () => {

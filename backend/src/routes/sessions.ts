@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import { createValidationError } from "../lib/apiErrors.js";
 import { requireAuthenticatedUser } from "../services/auth/authContext.js";
 import {
   createNewSession,
@@ -65,11 +66,7 @@ sessionsRouter.post("/", async (c) => {
     if (!parsed.success) {
       return fail(
         c,
-        {
-          code: "validation_error",
-          message: "Invalid request body",
-          details: parsed.error.flatten(),
-        },
+        createValidationError(parsed.error.flatten()),
         400,
       );
     }
@@ -159,11 +156,7 @@ sessionsRouter.post("/:id/messages", async (c) => {
     if (!parsed.success) {
       return fail(
         c,
-        {
-          code: "validation_error",
-          message: "Invalid request body",
-          details: parsed.error.flatten(),
-        },
+        createValidationError(parsed.error.flatten()),
         400,
       );
     }
@@ -239,11 +232,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
   if (!parsed.success) {
     return fail(
       c,
-      {
-        code: "validation_error",
-        message: "question is required",
-        details: parsed.error.flatten(),
-      },
+      createValidationError(parsed.error.flatten()),
       400,
     );
   }

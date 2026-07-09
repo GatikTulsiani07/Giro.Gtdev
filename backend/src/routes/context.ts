@@ -9,6 +9,7 @@ import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { assembleEnrichedContext } from "../services/context/enrichedAssembler.js";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import { createValidationError } from "../lib/apiErrors.js";
 import {
   ChunkLimitSchema,
   RepositoryNameSchema,
@@ -78,11 +79,7 @@ contextRouter.post("/assemble", async (c) => {
   if (!parsed.success) {
     return fail(
       c,
-      {
-        code: "validation_error",
-        message: "Invalid request body",
-        details: parsed.error.flatten(),
-      },
+      createValidationError(parsed.error.flatten()),
       400,
     );
   }

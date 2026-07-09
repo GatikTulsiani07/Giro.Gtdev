@@ -31,6 +31,10 @@ type ApiResponse = {
   error?: {
     code?: string;
     message?: string;
+    category?: string;
+    status?: number;
+    retryable?: boolean;
+    details?: unknown;
   };
 };
 
@@ -72,7 +76,10 @@ test("invalid owner param is rejected before ownership lookup", async () => {
   });
 
   assert.equal(result.status, 400);
-  assert.equal(result.body.error?.code, "validation_error");
+  assert.equal(result.body.error?.code, "validation_failed");
+  assert.equal(result.body.error?.category, "validation");
+  assert.equal(result.body.error?.status, 400);
+  assert.equal(result.body.error?.retryable, false);
 });
 
 test("invalid repo param is rejected before ownership lookup", async () => {
@@ -83,7 +90,8 @@ test("invalid repo param is rejected before ownership lookup", async () => {
   });
 
   assert.equal(result.status, 400);
-  assert.equal(result.body.error?.code, "validation_error");
+  assert.equal(result.body.error?.code, "validation_failed");
+  assert.equal(result.body.error?.category, "validation");
 });
 
 test("invalid repository URL on connect is rejected", async () => {
@@ -95,7 +103,8 @@ test("invalid repository URL on connect is rejected", async () => {
   });
 
   assert.equal(result.status, 400);
-  assert.equal(result.body.error?.code, "validation_error");
+  assert.equal(result.body.error?.code, "validation_failed");
+  assert.equal(result.body.error?.category, "validation");
 });
 
 test("valid repository URL on connect still reaches existing success path", async () => {
@@ -123,7 +132,8 @@ test("path traversal repo param is rejected", async () => {
   });
 
   assert.equal(result.status, 400);
-  assert.equal(result.body.error?.code, "invalid_id");
+  assert.equal(result.body.error?.code, "validation_failed");
+  assert.equal(result.body.error?.category, "validation");
 });
 
 test("empty question is rejected on session ask", async () => {
@@ -135,7 +145,8 @@ test("empty question is rejected on session ask", async () => {
   });
 
   assert.equal(result.status, 400);
-  assert.equal(result.body.error?.code, "validation_error");
+  assert.equal(result.body.error?.code, "validation_failed");
+  assert.equal(result.body.error?.category, "validation");
 });
 
 test("oversized question is rejected on session ask", async () => {
@@ -147,7 +158,8 @@ test("oversized question is rejected on session ask", async () => {
   });
 
   assert.equal(result.status, 400);
-  assert.equal(result.body.error?.code, "validation_error");
+  assert.equal(result.body.error?.code, "validation_failed");
+  assert.equal(result.body.error?.category, "validation");
 });
 
 test("existing 401 behavior is unchanged", async () => {
