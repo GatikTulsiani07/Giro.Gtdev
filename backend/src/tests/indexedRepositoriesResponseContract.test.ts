@@ -39,7 +39,7 @@ const COUNTS: IndexedCounts = {
   summaryAvailable: true,
 };
 
-// Real RepositoryIndexMetadata key set in this checkout (16 keys).
+// Real RepositoryIndexMetadata key set in this checkout.
 const ENTRY_KEYS = [
   "owner",
   "repo",
@@ -63,6 +63,9 @@ const ENTRY_KEYS = [
   "lastSuccessfulFile",
   "retryCount",
   "lastRetryAt",
+  "lastLifecycleSeverity",
+  "lastReindexMode",
+  "lastReindexReason",
 ].sort();
 
 const NUMBER_FIELDS = [
@@ -74,7 +77,15 @@ const NUMBER_FIELDS = [
   "totalIndexedFiles",
   "lastChangedFileCount",
 ];
-const NULLABLE_STRING_FIELDS = ["indexedAt", "lastAccessedAt", "firstIndexedAt", "lastIndexedAt"];
+const NULLABLE_STRING_FIELDS = [
+  "indexedAt",
+  "lastAccessedAt",
+  "firstIndexedAt",
+  "lastIndexedAt",
+  "lastLifecycleSeverity",
+  "lastReindexMode",
+  "lastReindexReason",
+];
 
 type ApiResponse = {
   success: boolean;

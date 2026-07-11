@@ -112,7 +112,6 @@ test("maps a complete repository record to a persistence row", () => {
     chunk_count: 9,
     graph_node_count: 4,
     graph_edge_count: 2,
-    graph_available: true,
     metadata_available: true,
     total_indexed_files: 3,
     last_changed_file_count: 3,
@@ -127,7 +126,6 @@ test("maps a complete repository record to a persistence row", () => {
     failed_at: "2026-01-01T00:03:00.000Z",
     last_retry_at: "2026-01-01T00:04:00.000Z",
     last_accessed_at: "2026-01-01T00:11:00.000Z",
-    created_at: BASE_TIME,
     updated_at: "2026-01-01T00:00:01.000Z",
   });
 });
@@ -228,7 +226,7 @@ test("preserves zero counts", () => {
   });
 
   const mapped = repositoryRecordToRow(input);
-  assert.equal(mapped.graph_available, false);
+  assert.equal(mapped.graph_available, undefined);
   assert.deepEqual(repositoryRowToRecord(mapped), input);
 });
 

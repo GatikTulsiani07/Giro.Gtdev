@@ -42,7 +42,7 @@ const COUNTS: IndexedCounts = {
   summaryAvailable: true,
 };
 
-// Actual current RepositoryIndexMetadata key set (16 keys).
+// Actual current RepositoryIndexMetadata key set.
 const EXPECTED_KEYS = [
   "owner",
   "repo",
@@ -66,6 +66,9 @@ const EXPECTED_KEYS = [
   "lastSuccessfulFile",
   "retryCount",
   "lastRetryAt",
+  "lastLifecycleSeverity",
+  "lastReindexMode",
+  "lastReindexReason",
 ].sort();
 
 const TIMESTAMP_OR_NULL = new Set(["indexedAt", "lastAccessedAt", "firstIndexedAt", "lastIndexedAt"]);

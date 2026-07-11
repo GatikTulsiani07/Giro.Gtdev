@@ -4,6 +4,7 @@
   "private": true,
   "description": "Giro.gtdev API — Hono + TypeScript backend",
   "type": "module",
+  "packageManager": "pnpm@11.3.0",
   "engines": {
     "node": ">=20"
   },
@@ -13,7 +14,10 @@
     "start": "node dist/index.js",
     "indexing:work-once": "tsx src/commands/processNextIndexingJob.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "pnpm test:ci",
+    "test:node": "node scripts/run-test-suite.mjs node",
+    "test:vitest": "node scripts/run-test-suite.mjs vitest",
+    "test:ci": "pnpm test:node && pnpm test:vitest"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
