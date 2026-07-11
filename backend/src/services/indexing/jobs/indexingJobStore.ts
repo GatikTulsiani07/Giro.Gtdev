@@ -43,6 +43,7 @@ export interface IndexingJob {
   createdOrder: number;
   startedOrder: number | null;
   completedOrder: number | null;
+  createdByRequestId?: string;
 }
 
 export interface CreateIndexingJobInput {
@@ -53,6 +54,7 @@ export interface CreateIndexingJobInput {
   repositoryUrl: string;
   branch?: string | null;
   maxAttempts?: number;
+  createdByRequestId?: string;
 }
 
 export interface IndexingJobListFilters {

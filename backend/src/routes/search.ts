@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
 import { semanticSearch } from "../services/embeddings/search.js";
 
 const SearchBody = z.object({
@@ -8,7 +7,7 @@ const SearchBody = z.object({
   limit: z.number().int().min(1).max(50).optional().default(10),
 });
 
-const searchRouter = new Hono();
+const searchRouter = new Hono<{ Variables: { requestId: string } }>();
 
 searchRouter.post("/context", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -20,7 +19,7 @@ searchRouter.post("/context", async (c) => {
     );
   }
 
-  const requestId = randomUUID();
+  const requestId = c.get("requestId");
   try {
     const results = await semanticSearch(parsed.data.query, parsed.data.limit);
     return c.json({ success: true, requestId, count: results.length, results });

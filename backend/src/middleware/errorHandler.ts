@@ -43,8 +43,7 @@ export const onError: ErrorHandler = (err, c) => {
 
   logger.error("unhandled_error", {
     request_id: requestId,
-    message: err.message,
-    ...(env.NODE_ENV !== "production" ? { stack: err.stack } : {}),
+    message: "Unhandled request error.",
   });
 
   return fail(

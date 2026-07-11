@@ -169,6 +169,7 @@ export class SupabaseIndexingJobStore implements IndexingJobStore {
         input_repository_url: input.repositoryUrl,
         input_branch: input.branch ?? null,
         input_max_attempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+        input_request_id: input.createdByRequestId ?? null,
       });
       throwIfError(error);
       const row = rowFromData(data);

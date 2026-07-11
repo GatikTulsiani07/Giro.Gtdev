@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { parseRepoUrl } from "../lib/parseRepoUrl.js";
 import { ok, fail } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+import { setRequestLogContext } from "../middleware/requestContext.js";
 import { createValidationError } from "../lib/apiErrors.js";
 import {
   CloneOptionsSchema,
@@ -106,6 +107,7 @@ repositoriesRoute.post("/connect", async (c) => {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
   const repoId = `${owner}/${repo}`;
+  setRequestLogContext(c, { repositoryId: repoId });
 
   const existing = getRepositoryIndexMetadata(owner, repo);
   const ownerUserId = getRepositoryOwner(repoId);
@@ -133,7 +135,9 @@ repositoriesRoute.post("/connect", async (c) => {
     repositoryName: repo,
     repositoryUrl: parsed.data.repoUrl,
     branch: parsed.data.cloneOptions?.branch ?? null,
+    createdByRequestId: c.get("requestId"),
   });
+  setRequestLogContext(c, { repositoryId: repoId, jobId: job.jobId });
   setRepositoryIndexing(owner, repo);
 
   return ok(c, {

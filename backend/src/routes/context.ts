@@ -4,7 +4,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { buildRepositoryContext } from "../services/context/contextBuilder.js";
 import { assembleEnrichedContext } from "../services/context/enrichedAssembler.js";
 import { ok, fail } from "../lib/response.js";
@@ -57,7 +56,7 @@ contextRouter.post("/build", async (c) => {
   const folderName = path.basename(clonePath);
   const repository = folderName.replace("--", "/");
 
-  const requestId = randomUUID();
+  const requestId = c.get("requestId");
   try {
     const data = await buildRepositoryContext(clonePath, repository);
     return c.json({ success: true, requestId, data });

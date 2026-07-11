@@ -13,6 +13,7 @@ import {
   processNextIndexingJob,
   type ExecuteIndexingPipeline,
   type IndexingJobRepositoryStore,
+  type IndexingJobWorkerLogger,
 } from "../services/indexing/jobs/indexingJobWorker.js";
 import { runtimeIndexingJobStore } from "../services/indexing/jobs/runtimeIndexingJobStore.js";
 
@@ -36,6 +37,7 @@ export interface RunProcessNextIndexingJobCommandInput {
   repositoryStore: IndexingJobRepositoryStore;
   executeIndexingPipeline?: ExecuteIndexingPipeline;
   writeOutput: (output: string) => void;
+  logger?: IndexingJobWorkerLogger;
 }
 
 function safeFailure(failure: IndexingJobFailure | null): IndexingJobFailure | null {
@@ -108,6 +110,7 @@ export async function runProcessNextIndexingJobCommand(
         jobStore: input.jobStore,
         repositoryStore: input.repositoryStore,
         executeIndexingPipeline: input.executeIndexingPipeline,
+        logger: input.logger,
       });
       result = {
         command: COMMAND_NAME,
@@ -141,6 +144,7 @@ async function runExecutable(): Promise<void> {
         jobStore: runtimeIndexingJobStore,
         repositoryStore: indexingJobRepositoryStore,
         writeOutput,
+        logger: stderrLogger,
       }),
     writeOutput: (output) => console.log(output),
     interruptedOutput: JSON.stringify(

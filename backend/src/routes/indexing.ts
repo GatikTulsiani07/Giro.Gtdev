@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createApiError, createValidationError } from "../lib/apiErrors.js";
 import { fail, ok } from "../lib/response.js";
+import { setRequestLogContext } from "../middleware/requestContext.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type {
   IndexingJob,
@@ -41,6 +42,7 @@ indexingRoute.get("/jobs/:jobId", async (c) => {
   if (!parsed.success) {
     return fail(c, createValidationError(parsed.error.flatten()), 400);
   }
+  setRequestLogContext(c, { jobId: parsed.data });
 
   const user = getAuthenticatedUser(c);
   if (!user) {
@@ -66,6 +68,10 @@ indexingRoute.get("/jobs/:jobId", async (c) => {
       404,
     );
   }
+  setRequestLogContext(c, {
+    jobId: job.jobId,
+    repositoryId: job.repositoryId,
+  });
 
   const access = requireRepositoryAccess({
     repoId: job.repositoryId,

@@ -4,8 +4,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { env } from "./config/env.js";
-import { requestId } from "./middleware/requestId.js";
-import { requestLogger } from "./middleware/logger.js";
+import {
+  createRequestContextMiddleware,
+  type RequestContextOptions,
+  type RequestContextVariables,
+} from "./middleware/requestContext.js";
 import { onError, onNotFound } from "./middleware/errorHandler.js";
 import { createRoutes } from "./routes/index.js";
 import type { ReadinessCheck } from "./routes/health.js";
@@ -13,8 +16,7 @@ import type { IndexingJobStore } from "./services/indexing/jobs/indexingJobStore
 import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexingJobStore.js";
 import { createRuntimeReadinessCheck } from "./services/health/runtimeReadiness.js";
 
-type Variables = {
-  requestId: string;
+type Variables = RequestContextVariables & {
   indexingJobStore: IndexingJobStore;
 };
 
@@ -22,6 +24,7 @@ export interface CreateAppOptions {
   indexingJobStore?: IndexingJobStore;
   readinessCheck?: ReadinessCheck;
   isShuttingDown?: () => boolean;
+  requestContext?: RequestContextOptions;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -34,9 +37,8 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   const app = new Hono<{ Variables: Variables }>();
 
-  // Order matters: requestId first so logger and errors can attach it.
-  app.use("*", requestId());
-  app.use("*", requestLogger());
+  // Order matters: correlation context wraps every later middleware and route.
+  app.use("*", createRequestContextMiddleware(options.requestContext));
   app.use("*", async (c, next) => {
     c.set("indexingJobStore", indexingJobStore);
     await next();
@@ -46,8 +48,8 @@ export function createApp(options: CreateAppOptions = {}) {
     cors({
       origin: env.CORS_ORIGINS,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization", "X-Request-Id"],
-      exposeHeaders: ["X-Request-Id"],
+      allowHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
+      exposeHeaders: ["X-Request-ID"],
       credentials: true,
     }),
   );

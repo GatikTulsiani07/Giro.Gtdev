@@ -65,6 +65,26 @@ export interface ProcessNextIndexingJobInput {
   jobStore: IndexingJobStore;
   repositoryStore?: IndexingJobRepositoryStore;
   executeIndexingPipeline?: ExecuteIndexingPipeline;
+  logger?: IndexingJobWorkerLogger;
+}
+
+export interface IndexingJobWorkerLogger {
+  info(event: string, fields?: Record<string, unknown>): void;
+  error(event: string, fields?: Record<string, unknown>): void;
+}
+
+const silentWorkerLogger: IndexingJobWorkerLogger = {
+  info: () => undefined,
+  error: () => undefined,
+};
+
+function jobLogFields(job: IndexingJob, workerId: string) {
+  return {
+    jobId: job.jobId,
+    repositoryId: job.repositoryId,
+    workerId,
+    ...(job.createdByRequestId ? { requestId: job.createdByRequestId } : {}),
+  };
 }
 
 export interface IndexingJobExecutionReport {
@@ -254,6 +274,7 @@ export async function processNextIndexingJob(
     jobStore,
     repositoryStore = indexingJobRepositoryStore,
     executeIndexingPipeline = executeRepositoryIndexingPipeline,
+    logger = silentWorkerLogger,
   } = input;
 
   const claimed = await jobStore.claimNextJob(workerId);
@@ -267,6 +288,7 @@ export async function processNextIndexingJob(
       failure: null,
     };
   }
+  logger.info("indexing_job_claimed", jobLogFields(claimed, workerId));
 
   const stagesCompleted: IndexingJobStage[] = [];
   let currentStage: IndexingJobStage | null = "pending";
@@ -279,6 +301,7 @@ export async function processNextIndexingJob(
     if (!running) {
       throw new Error("Indexing job could not transition to running");
     }
+    logger.info("indexing_job_started", jobLogFields(claimed, workerId));
 
     const reportStage = async (progress: IndexingPipelineStageProgress) => {
       currentStage = progress.stage;
@@ -306,6 +329,7 @@ export async function processNextIndexingJob(
     if (!succeeded) {
       throw new Error("Indexing job could not be marked succeeded");
     }
+    logger.info("indexing_job_succeeded", jobLogFields(claimed, workerId));
 
     stagesCompleted.push("complete");
     return {
@@ -327,6 +351,11 @@ export async function processNextIndexingJob(
       // Preserve the original indexing failure in the job/report.
     }
     await jobStore.markFailed(claimed.jobId, failure);
+    logger.error("indexing_job_failed", {
+      ...jobLogFields(claimed, workerId),
+      failureCode: failure.code,
+      retryable: failure.retryable,
+    });
     return {
       processed: true,
       jobId: claimed.jobId,

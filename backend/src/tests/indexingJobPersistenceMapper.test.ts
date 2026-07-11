@@ -88,6 +88,17 @@ test("maps a complete queued job to a snake_case insert row", () => {
   });
 });
 
+test("request correlation maps at creation and is excluded from updates", () => {
+  const correlated = job({ createdByRequestId: "request-123" });
+  const inserted = indexingJobToInsertRow(correlated);
+  const updated = indexingJobToUpdateRow(correlated);
+  const restored = indexingJobRowToDomain(row({ request_id: "request-123" }));
+
+  assert.equal(inserted.request_id, "request-123");
+  assert.equal("request_id" in updated, false);
+  assert.equal(restored.createdByRequestId, "request-123");
+});
+
 test("maps claimed and running jobs without inventing order values", () => {
   const claimed = job({
     status: "claimed",

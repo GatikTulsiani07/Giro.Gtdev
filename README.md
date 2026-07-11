@@ -4,6 +4,12 @@ AI-powered Engineering Intelligence Platform for GitHub repositories.
 
 Giro helps developers understand large codebases faster by building deterministic repository intelligence before passing curated context to an LLM.
 
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Active-success)
+![Backend](https://img.shields.io/badge/Backend-Hono-blue)
+![Architecture](https://img.shields.io/badge/Architecture-Deterministic-orange)
+![License](https://img.shields.io/badge/License-MIT-green)s
+
 ## Why Giro?
 
 Modern AI coding tools are powerful, but they often struggle with repository-level understanding.
@@ -77,6 +83,17 @@ Vision
 The goal is to make Giro the engineering intelligence layer for modern AI-assisted software development.
 
 Instead of asking an LLM to guess from limited context, Giro first understands the repository, then helps the model answer with grounded context.
+
+AI Development Workflow
+
+Giro is built using an AI-assisted engineering workflow.
+
+- ChatGPT — Architecture and planning
+- GPT-5 Codex — Feature implementation
+- Manual review — Code quality and refinement
+- GitHub — Version control and sprint tracking
+
+Every feature is planned, implemented, reviewed, tested, and documented before being merged.s
 
 Built by
 

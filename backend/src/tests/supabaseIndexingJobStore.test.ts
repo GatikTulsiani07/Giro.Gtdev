@@ -277,6 +277,7 @@ class FakeSupabaseClient implements SupabaseIndexingJobClient {
         created_order: this.nextOrder++,
         started_order: null,
         completed_order: null,
+        request_id: parameters.input_request_id as string | null,
         created_at: timestamp,
         updated_at: timestamp,
       };
@@ -394,8 +395,22 @@ test("creates a queued job through the database-owned create RPC", async () => {
       input_repository_url: "https://github.com/acme/demo",
       input_branch: "main",
       input_max_attempts: 3,
+      input_request_id: null,
     },
   });
+});
+
+test("persists optional request correlation through the creation RPC", async () => {
+  const created = await store.createJob({
+    ...BASE_INPUT,
+    createdByRequestId: "request-123",
+  });
+
+  assert.equal(created.createdByRequestId, "request-123");
+  assert.equal(
+    (client.calls[0]?.parameters as Record<string, unknown>).input_request_id,
+    "request-123",
+  );
 });
 
 test("gets a job and returns null for an unknown job", async () => {
