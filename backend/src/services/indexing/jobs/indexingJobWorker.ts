@@ -34,7 +34,7 @@ import type {
   IndexingJobStage,
   IndexingJobStore,
 } from "./indexingJobStore.js";
-import type { IndexingMetricStatus, TimeoutMetricCategory } from "../../../observability/metrics.js";
+import type { IndexingMetricStatus, RetryMetricCategory, RetryMetricResult, TimeoutMetricCategory } from "../../../observability/metrics.js";
 import { env } from "../../../config/env.js";
 import { createDeadline } from "../../../runtime/deadline.js";
 import { isDeadlineExceeded } from "../../../runtime/deadline.js";
@@ -48,6 +48,8 @@ export interface IndexingPipelineInput {
   job: IndexingJob;
   reportStage: (progress: IndexingPipelineStageProgress) => Promise<void>;
   signal?: AbortSignal;
+  retryLogger?: { info(event: string, fields?: Record<string, unknown>): void };
+  retryMetrics?: { incrementRetry(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void };
 }
 
 export interface IndexingPipelineResult {
@@ -74,6 +76,7 @@ export interface ProcessNextIndexingJobInput {
   metrics?: {
     incrementIndexing(status: IndexingMetricStatus): void;
     incrementTimeout?(category: TimeoutMetricCategory): void;
+    incrementRetry?(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void;
   };
 }
 
@@ -215,7 +218,13 @@ export async function executeRepositoryIndexingPipeline(
   const cloneDeadline = createDeadline(env.REPOSITORY_CLONE_TIMEOUT_MS, { parentSignal: input.signal });
   let clonePath: string;
   try {
-    ({ clonePath } = await cloneRepo(owner, repo, { deadline: cloneDeadline }));
+    ({ clonePath } = await cloneRepo(owner, repo, {
+      deadline: cloneDeadline,
+      requestId: job.createdByRequestId ?? undefined,
+      jobId: job.jobId,
+      logger: input.retryLogger,
+      metrics: input.retryMetrics,
+    }));
   } finally {
     cloneDeadline.dispose();
   }
@@ -254,7 +263,12 @@ export async function executeRepositoryIndexingPipeline(
   });
 
   await reportStage({ stage: "embed", progress: 90 });
-  const context = await buildRepositoryContext(clonePath, repoId, { signal: input.signal });
+  const context = await buildRepositoryContext(clonePath, repoId, {
+    signal: input.signal,
+    requestId: job.createdByRequestId ?? undefined,
+    logger: input.retryLogger,
+    metrics: input.retryMetrics,
+  });
 
   await reportStage({ stage: "finalize", progress: 95 });
   const cleanupPlan = buildIndexCleanupPlanFromIndexingPlan(indexingPlan);
@@ -338,6 +352,10 @@ export async function processNextIndexingJob(
     const result = await executeIndexingPipeline({
       job: { ...claimed },
       reportStage,
+      retryLogger: logger,
+      retryMetrics: metrics?.incrementRetry ? {
+        incrementRetry: (category, result, attempt) => metrics.incrementRetry!(category, result, attempt),
+      } : undefined,
     });
 
     currentStage = "finalize";

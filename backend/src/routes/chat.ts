@@ -11,7 +11,7 @@ const ChatBody = z.object({
   query: z.string().min(1, "Query must not be empty"),
 });
 
-const chatRouter = new Hono();
+const chatRouter = new Hono<{ Variables: { requestId: string } }>();
 
 chatRouter.post("/", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -26,6 +26,7 @@ chatRouter.post("/", async (c) => {
   try {
     const result = await runRepositoryChat(parsed.data.query, {
       signal: getRequestDeadline(c)?.signal,
+      requestId: c.get("requestId"),
     });
 
     c.header("Content-Type", "text/plain; charset=utf-8");

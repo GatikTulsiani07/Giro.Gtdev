@@ -14,6 +14,8 @@ const DEFAULT_DURATION_BUCKETS_SECONDS = [
 
 export type IndexingMetricStatus = "started" | "completed" | "failed";
 export type TimeoutMetricCategory = "request" | "ai" | "embedding" | "database" | "clone" | "indexing";
+export type RetryMetricCategory = "ai" | "embedding" | "database" | "clone";
+export type RetryMetricResult = "scheduled" | "succeeded" | "exhausted";
 
 export interface MetricsRegistryOptions {
   durationBucketsSeconds?: readonly number[];
@@ -69,6 +71,7 @@ export class MetricsRegistry {
   private rateLimitRejections = 0;
   private readiness = 0;
   private readonly timeouts = new Map<TimeoutMetricCategory, number>();
+  private readonly retries = new Map<string, { category: RetryMetricCategory; result: RetryMetricResult; attempt: number; value: number }>();
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
@@ -132,6 +135,14 @@ export class MetricsRegistry {
     this.timeouts.set(category, (this.timeouts.get(category) ?? 0) + 1);
   }
 
+  incrementRetry(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void {
+    const boundedAttempt = Math.min(6, Math.max(1, Math.trunc(attempt)));
+    const key = `${category}:${result}:${boundedAttempt}`;
+    const existing = this.retries.get(key);
+    if (existing) existing.value += 1;
+    else this.retries.set(key, { category, result, attempt: boundedAttempt, value: 1 });
+  }
+
   render(): string {
     const lines = [
       "# HELP giro_http_requests_total Total HTTP requests.",
@@ -184,6 +195,13 @@ export class MetricsRegistry {
     );
     for (const category of ["request", "ai", "embedding", "database", "clone", "indexing"] as const) {
       lines.push(`giro_timeouts_total{category="${category}"} ${this.timeouts.get(category) ?? 0}`);
+    }
+    lines.push(
+      "# HELP giro_retries_total Retry policy outcomes.",
+      "# TYPE giro_retries_total counter",
+    );
+    for (const metric of this.retries.values()) {
+      lines.push(`giro_retries_total{category="${metric.category}",result="${metric.result}",attempt="${metric.attempt}"} ${metric.value}`);
     }
     return `${lines.join("\n")}\n`;
   }

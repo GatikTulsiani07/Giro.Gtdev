@@ -5,6 +5,9 @@ import { logger } from "../../lib/logger.js";
 import type { RetrievalResult } from "./types.js";
 import { env } from "../../config/env.js";
 import { createDeadline, isDeadlineExceeded } from "../../runtime/deadline.js";
+import { retryDatabaseRead } from "../database/retryPolicy.js";
+import type { RetryRuntimeOptions } from "../../runtime/retry.js";
+import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
 
 interface ChunkRow {
   repository: string;
@@ -20,7 +23,13 @@ export async function keywordSearch(
   owner: string,
   repo: string,
   limit: number = 20,
-  options: { signal?: AbortSignal } = {},
+  options: {
+    signal?: AbortSignal;
+    requestId?: string;
+    logger?: RetryLogger;
+    metrics?: RetryMetrics;
+    retryRuntime?: RetryRuntimeOptions;
+  } = {},
 ): Promise<RetrievalResult[]> {
   const repository = `${owner}/${repo}`;
   const tokens = query
@@ -38,21 +47,31 @@ export async function keywordSearch(
   let rows: ChunkRow[];
   const deadline = createDeadline(env.DATABASE_REQUEST_TIMEOUT_MS, { parentSignal: options.signal });
   try {
-    const { data, error } = await supabase
-      .from("repository_chunks")
-      .select("repository,file_path,language,content,start_line,end_line")
-      .eq("repository", repository)
-      .or(orFilter)
-      .limit(limit * 3)
-      .abortSignal(deadline.signal);
+    const { data, error } = await retryDatabaseRead(
+      () => supabase
+        .from("repository_chunks")
+        .select("repository,file_path,language,content,start_line,end_line")
+        .eq("repository", repository)
+        .or(orFilter)
+        .limit(limit * 3)
+        .abortSignal(deadline.signal),
+      {
+        deadline,
+        operation: "keyword_search",
+        requestId: options.requestId,
+        logger: options.logger,
+        metrics: options.metrics,
+        retryRuntime: options.retryRuntime,
+      },
+    );
     if (deadline.signal.aborted) throw deadline.signal.reason;
-    if (error) throw new Error(error.message);
+    if (error) throw new Error("Keyword search failed.");
     rows = (data ?? []) as ChunkRow[];
   } catch (err) {
     if (isDeadlineExceeded(err)) throw err;
     logger.error("keyword_search_failed", {
       repository,
-      message: err instanceof Error ? err.message : "unknown",
+      message: "Keyword search failed.",
     });
     return [];
   } finally {

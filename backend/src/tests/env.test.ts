@@ -98,6 +98,35 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.EMBEDDING_REQUEST_TIMEOUT_MS, 30_000);
   assert.equal(result.DATABASE_REQUEST_TIMEOUT_MS, 10_000);
   assert.equal(result.REPOSITORY_CLONE_TIMEOUT_MS, 120_000);
+  assert.equal(result.AI_MAX_RETRIES, 2);
+  assert.equal(result.EMBEDDING_MAX_RETRIES, 2);
+  assert.equal(result.DATABASE_MAX_RETRIES, 2);
+  assert.equal(result.CLONE_MAX_RETRIES, 1);
+  assert.equal(result.AI_RETRY_BASE_MS, 200);
+  assert.equal(result.EMBEDDING_RETRY_BASE_MS, 200);
+  assert.equal(result.DATABASE_RETRY_BASE_MS, 100);
+  assert.equal(result.CLONE_RETRY_BASE_MS, 500);
+});
+
+test("retry configuration supports disabling and enforces safe bounds", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    AI_MAX_RETRIES: "0",
+    EMBEDDING_MAX_RETRIES: "5",
+    DATABASE_MAX_RETRIES: "1",
+    CLONE_MAX_RETRIES: "3",
+    AI_RETRY_BASE_MS: "10",
+    EMBEDDING_RETRY_BASE_MS: "10000",
+    DATABASE_RETRY_BASE_MS: "50",
+    CLONE_RETRY_BASE_MS: "1000",
+  });
+  assert.equal(result.AI_MAX_RETRIES, 0);
+  assert.equal(result.EMBEDDING_MAX_RETRIES, 5);
+  assert.equal(result.CLONE_MAX_RETRIES, 3);
+  assert.equal(result.AI_RETRY_BASE_MS, 10);
+  assert.throws(() => validateEnv({ ...REQUIRED, AI_MAX_RETRIES: "6" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, CLONE_MAX_RETRIES: "4" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, DATABASE_RETRY_BASE_MS: "9" }));
 });
 
 test("timeout configuration is bounded", () => {

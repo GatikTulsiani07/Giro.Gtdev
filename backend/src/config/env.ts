@@ -47,6 +47,14 @@ const EnvSchema = z
     EMBEDDING_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
     DATABASE_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(10_000),
     REPOSITORY_CLONE_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
+    AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+    EMBEDDING_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+    DATABASE_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+    CLONE_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
+    AI_RETRY_BASE_MS: z.coerce.number().int().min(10).max(10_000).default(200),
+    EMBEDDING_RETRY_BASE_MS: z.coerce.number().int().min(10).max(10_000).default(200),
+    DATABASE_RETRY_BASE_MS: z.coerce.number().int().min(10).max(10_000).default(100),
+    CLONE_RETRY_BASE_MS: z.coerce.number().int().min(10).max(10_000).default(500),
   })
   .superRefine((value, context) => {
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {

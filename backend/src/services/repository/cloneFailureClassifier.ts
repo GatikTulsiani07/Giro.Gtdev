@@ -15,7 +15,7 @@ function errorMessage(error: unknown): string {
   return "unknown error";
 }
 
-function classifyCloneFailure(message: string): CloneFailureKind {
+export function classifyCloneFailure(message: string): CloneFailureKind {
   const normalized = message.toLowerCase();
 
   if (

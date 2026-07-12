@@ -15,7 +15,7 @@ export interface ChatResult {
   };
 }
 
-export async function runRepositoryChat(query: string, options: { signal?: AbortSignal } = {}): Promise<ChatResult> {
+export async function runRepositoryChat(query: string, options: { signal?: AbortSignal; requestId?: string } = {}): Promise<ChatResult> {
   const context = await buildContext(query, undefined, options);
 
   const { systemPrompt, userPrompt, citations } = buildPrompt(query, context);
@@ -23,7 +23,7 @@ export async function runRepositoryChat(query: string, options: { signal?: Abort
   const rawStream = await streamCompletion([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
-  ], { signal: options.signal });
+  ], { signal: options.signal, requestId: options.requestId });
 
   return {
     stream: safeStream(rawStream),

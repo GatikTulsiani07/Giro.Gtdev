@@ -1,7 +1,11 @@
-import OpenAI, { APIConnectionTimeoutError } from "openai";
+import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError, RateLimitError } from "openai";
 import { env } from "../../config/env.js";
 import { generateMockEmbedding } from "./mockEmbedder.js";
 import { createDeadline, DeadlineExceededError, isDeadlineExceeded } from "../../runtime/deadline.js";
+import { isTransientTransportError, retry, type RetryRuntimeOptions } from "../../runtime/retry.js";
+import { createRetryObservability, type RetryLogger, type RetryMetrics } from "../../observability/retryObservability.js";
+import { logger } from "../../lib/logger.js";
+import { runtimeMetrics } from "../../observability/metrics.js";
 
 const openai =
   env.EMBEDDINGS_PROVIDER === "openai"
@@ -18,9 +22,68 @@ export function normalizeEmbeddingProviderError(error: unknown, signal?: AbortSi
   return new Error("Embedding generation failed.");
 }
 
+export function isTransientEmbeddingError(error: unknown): boolean {
+  if (error instanceof RateLimitError || error instanceof APIConnectionTimeoutError || error instanceof APIConnectionError) return true;
+  if (error instanceof APIError) return error.status === 408 || error.status === 429 || error.status === 502 || error.status === 503 || error.status === 504;
+  return isTransientTransportError(error);
+}
+
+export interface EmbeddingProviderOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  client?: OpenAI;
+  requestId?: string;
+  logger?: RetryLogger;
+  metrics?: RetryMetrics;
+  retryRuntime?: RetryRuntimeOptions;
+}
+
+export async function requestOpenAIEmbedding(
+  normalized: string,
+  options: EmbeddingProviderOptions,
+): Promise<number[]> {
+  const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? env.EMBEDDING_REQUEST_TIMEOUT_MS, env.EMBEDDING_REQUEST_TIMEOUT_MS));
+  const deadline = createDeadline(timeoutMs, { parentSignal: options.signal });
+  const observability = createRetryObservability({
+    category: "embedding",
+    operation: "embedding_generation",
+    logger: options.logger ?? logger,
+    metrics: options.metrics ?? runtimeMetrics,
+    fields: { requestId: options.requestId },
+  });
+  try {
+    const response = await retry(
+      async (attempt) => {
+        const attemptsRemaining = env.EMBEDDING_MAX_RETRIES + 2 - attempt;
+        const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
+        return (options.client ?? openai!).embeddings.create({
+          model: EMBEDDING_MODEL,
+          input: normalized,
+        }, { signal: deadline.signal, timeout: attemptTimeoutMs, maxRetries: 0 });
+      },
+      {
+        maxAttempts: env.EMBEDDING_MAX_RETRIES + 1,
+        baseDelayMs: env.EMBEDDING_RETRY_BASE_MS,
+        maxDelayMs: 5_000,
+        deadline,
+        isRetryable: isTransientEmbeddingError,
+        ...observability,
+        ...options.retryRuntime,
+      },
+    );
+    const vector = response.data[0]?.embedding;
+    if (!vector) throw new Error("Embedding response contained no data");
+    return vector;
+  } catch (err) {
+    throw normalizeEmbeddingProviderError(err, deadline.signal);
+  } finally {
+    deadline.dispose();
+  }
+}
+
 export async function generateEmbedding(
   text: string,
-  options: { signal?: AbortSignal; timeoutMs?: number; client?: OpenAI } = {},
+  options: EmbeddingProviderOptions = {},
 ): Promise<number[]> {
   let normalized = text.replace(/\s+/g, " ").trim();
 
@@ -35,19 +98,5 @@ export async function generateEmbedding(
     return generateMockEmbedding(normalized);
   }
 
-  const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? env.EMBEDDING_REQUEST_TIMEOUT_MS, env.EMBEDDING_REQUEST_TIMEOUT_MS));
-  const deadline = createDeadline(timeoutMs, { parentSignal: options.signal });
-  try {
-    const response = await (options.client ?? openai!).embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: normalized,
-    }, { signal: deadline.signal, timeout: timeoutMs });
-    const vector = response.data[0]?.embedding;
-    if (!vector) throw new Error("Embedding response contained no data");
-    return vector;
-  } catch (err) {
-    throw normalizeEmbeddingProviderError(err, deadline.signal);
-  } finally {
-    deadline.dispose();
-  }
+  return requestOpenAIEmbedding(normalized, options);
 }

@@ -8,11 +8,12 @@ import { supabase } from "../../lib/supabase.js";
 import type { ContextBuildResult } from "./types.js";
 import { env } from "../../config/env.js";
 import { createDeadline } from "../../runtime/deadline.js";
+import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
 
 export async function buildRepositoryContext(
   clonePath: string,
   repository: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; requestId?: string; logger?: RetryLogger; metrics?: RetryMetrics } = {},
 ): Promise<ContextBuildResult> {
   const files = await readSourceFiles(clonePath);
   const chunks = files.flatMap((file) => chunkSourceFile(file));
