@@ -91,6 +91,21 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.MODEL_NAME, "gpt-4.1-mini");
   assert.equal(result.INDEXING_WORKER_ID, undefined);
   assert.equal(result.SHUTDOWN_TIMEOUT_MS, 10_000);
+  assert.equal(result.RATE_LIMIT_WINDOW_MS, 60_000);
+  assert.equal(result.RATE_LIMIT_MAX_REQUESTS, 100);
+});
+
+test("rate limit configuration accepts positive integers", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    RATE_LIMIT_WINDOW_MS: "1500",
+    RATE_LIMIT_MAX_REQUESTS: "25",
+  });
+
+  assert.equal(result.RATE_LIMIT_WINDOW_MS, 1500);
+  assert.equal(result.RATE_LIMIT_MAX_REQUESTS, 25);
+  assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_WINDOW_MS: "0" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RATE_LIMIT_MAX_REQUESTS: "1.5" }));
 });
 
 test("shutdown timeout is bounded", () => {

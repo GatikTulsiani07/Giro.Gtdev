@@ -13,6 +13,8 @@ import sessionsRouter from "./sessions.js";
 import architectureRouter from "./architecture.js";
 import indexingRouter from "./indexing.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
+import { env } from "../config/env.js";
+import { rateLimiter } from "../middleware/rateLimiter.js";
 
 export function createRoutes(readinessCheck: ReadinessCheck) {
   const routes = new Hono();
@@ -31,6 +33,17 @@ export function createRoutes(readinessCheck: ReadinessCheck) {
   routes.use("/sessions/*", authMiddleware());
   routes.use("/architecture/*", authMiddleware());
   routes.use("/indexing/*", authMiddleware());
+
+  const expensiveEndpointLimiter = rateLimiter({
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+  });
+  routes.use("/repos/connect", expensiveEndpointLimiter);
+  routes.use("/repos/search/*", expensiveEndpointLimiter);
+  routes.use("/search/*", expensiveEndpointLimiter);
+  routes.use("/chat/*", expensiveEndpointLimiter);
+  routes.use("/retrieval/*", expensiveEndpointLimiter);
+  routes.use("/sessions/:id/ask", expensiveEndpointLimiter);
 
   // Protected routes.
   routes.route("/repos", repositoriesRoute);

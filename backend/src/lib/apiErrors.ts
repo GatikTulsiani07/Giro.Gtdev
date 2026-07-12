@@ -16,6 +16,7 @@ export type ApiErrorCode =
   | "openai_unavailable"
   | "supabase_unavailable"
   | "rate_limited"
+  | "rate_limit_exceeded"
   | "payload_too_large"
   | "internal_error";
 
@@ -84,6 +85,7 @@ const ERROR_DEFAULTS: Record<ApiErrorCode, ApiErrorDefaults> = {
   openai_unavailable: { status: 503, category: "external", retryable: true },
   supabase_unavailable: { status: 503, category: "external", retryable: true },
   rate_limited: { status: 429, category: "rate_limit", retryable: true },
+  rate_limit_exceeded: { status: 429, category: "rate_limit", retryable: true },
   payload_too_large: { status: 413, category: "validation", retryable: false },
   internal_error: { status: 500, category: "internal", retryable: false },
 };

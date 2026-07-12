@@ -40,6 +40,8 @@ const EnvSchema = z
       .min(1_000)
       .max(60_000)
       .default(10_000),
+    RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+    RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
   })
   .superRefine((value, context) => {
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {

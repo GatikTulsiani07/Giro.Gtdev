@@ -49,7 +49,12 @@ export function createApp(options: CreateAppOptions = {}) {
       origin: env.CORS_ORIGINS,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
-      exposeHeaders: ["X-Request-ID"],
+      exposeHeaders: [
+        "X-Request-ID",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "Retry-After",
+      ],
       credentials: true,
     }),
   );
