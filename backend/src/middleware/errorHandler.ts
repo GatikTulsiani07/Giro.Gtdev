@@ -7,9 +7,20 @@ import { ZodError } from "zod";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 import { fail } from "../lib/response.js";
+import { createApiError } from "../lib/apiErrors.js";
+import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 
 export const onError: ErrorHandler = (err, c) => {
   const requestId = c.get("requestId");
+
+  if (isDependencyUnavailable(err)) {
+    logger.warn("dependency_unavailable", { request_id: requestId });
+    return fail(
+      c,
+      createApiError("dependency_unavailable", "A required service is temporarily unavailable."),
+      503,
+    );
+  }
 
   if (err instanceof HTTPException) {
     const res = err.getResponse();

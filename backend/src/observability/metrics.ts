@@ -1,3 +1,5 @@
+import type { CircuitDependency, CircuitState } from "../runtime/circuitBreaker.js";
+
 const DEFAULT_DURATION_BUCKETS_SECONDS = [
   0.005,
   0.01,
@@ -72,6 +74,9 @@ export class MetricsRegistry {
   private readiness = 0;
   private readonly timeouts = new Map<TimeoutMetricCategory, number>();
   private readonly retries = new Map<string, { category: RetryMetricCategory; result: RetryMetricResult; attempt: number; value: number }>();
+  private readonly circuitStates = new Map<CircuitDependency, CircuitState>();
+  private readonly circuitTransitions = new Map<string, { dependency: CircuitDependency; from: CircuitState; to: CircuitState; value: number }>();
+  private readonly circuitRejections = new Map<CircuitDependency, number>();
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
@@ -143,6 +148,21 @@ export class MetricsRegistry {
     else this.retries.set(key, { category, result, attempt: boundedAttempt, value: 1 });
   }
 
+  setCircuitState(dependency: CircuitDependency, state: CircuitState): void {
+    this.circuitStates.set(dependency, state);
+  }
+
+  incrementCircuitTransition(dependency: CircuitDependency, from: CircuitState, to: CircuitState): void {
+    const key = `${dependency}:${from}:${to}`;
+    const existing = this.circuitTransitions.get(key);
+    if (existing) existing.value += 1;
+    else this.circuitTransitions.set(key, { dependency, from, to, value: 1 });
+  }
+
+  incrementCircuitRejection(dependency: CircuitDependency): void {
+    this.circuitRejections.set(dependency, (this.circuitRejections.get(dependency) ?? 0) + 1);
+  }
+
   render(): string {
     const lines = [
       "# HELP giro_http_requests_total Total HTTP requests.",
@@ -202,6 +222,30 @@ export class MetricsRegistry {
     );
     for (const metric of this.retries.values()) {
       lines.push(`giro_retries_total{category="${metric.category}",result="${metric.result}",attempt="${metric.attempt}"} ${metric.value}`);
+    }
+    lines.push(
+      "# HELP giro_circuit_state Current dependency circuit state.",
+      "# TYPE giro_circuit_state gauge",
+    );
+    for (const dependency of ["ai", "embedding", "database", "clone"] as const) {
+      const active = this.circuitStates.get(dependency) ?? "closed";
+      for (const state of ["closed", "open", "half_open"] as const) {
+        lines.push(`giro_circuit_state{dependency="${dependency}",state="${state}"} ${active === state ? 1 : 0}`);
+      }
+    }
+    lines.push(
+      "# HELP giro_circuit_transitions_total Dependency circuit state transitions.",
+      "# TYPE giro_circuit_transitions_total counter",
+    );
+    for (const metric of this.circuitTransitions.values()) {
+      lines.push(`giro_circuit_transitions_total{dependency="${metric.dependency}",from="${metric.from}",to="${metric.to}"} ${metric.value}`);
+    }
+    lines.push(
+      "# HELP giro_circuit_rejections_total Calls rejected by open dependency circuits.",
+      "# TYPE giro_circuit_rejections_total counter",
+    );
+    for (const dependency of ["ai", "embedding", "database", "clone"] as const) {
+      lines.push(`giro_circuit_rejections_total{dependency="${dependency}"} ${this.circuitRejections.get(dependency) ?? 0}`);
     }
     return `${lines.join("\n")}\n`;
   }

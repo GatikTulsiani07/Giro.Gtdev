@@ -17,6 +17,7 @@ import { requireSessionRepositoryOwnership } from "../services/sessions/sessionR
 import { answerSessionQuestion } from "../services/sessions/questionService.js";
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
+import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 import {
   QuestionTextSchema,
   RepositoryNameSchema,
@@ -271,7 +272,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
 
     return ok(c, result);
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     const message = err instanceof Error ? err.message : "Ask failed";
 
     logger.error("session_ask_failed", {

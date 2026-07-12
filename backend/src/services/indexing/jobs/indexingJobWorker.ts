@@ -38,6 +38,7 @@ import type { IndexingMetricStatus, RetryMetricCategory, RetryMetricResult, Time
 import { env } from "../../../config/env.js";
 import { createDeadline } from "../../../runtime/deadline.js";
 import { isDeadlineExceeded } from "../../../runtime/deadline.js";
+import type { DependencyCircuitBreakers } from "../../../runtime/dependencyCircuitBreakers.js";
 
 export interface IndexingPipelineStageProgress {
   stage: IndexingJobStage;
@@ -50,6 +51,7 @@ export interface IndexingPipelineInput {
   signal?: AbortSignal;
   retryLogger?: { info(event: string, fields?: Record<string, unknown>): void };
   retryMetrics?: { incrementRetry(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void };
+  circuitBreakers?: DependencyCircuitBreakers;
 }
 
 export interface IndexingPipelineResult {
@@ -78,6 +80,7 @@ export interface ProcessNextIndexingJobInput {
     incrementTimeout?(category: TimeoutMetricCategory): void;
     incrementRetry?(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void;
   };
+  circuitBreakers?: DependencyCircuitBreakers;
 }
 
 export interface IndexingJobWorkerLogger {
@@ -224,6 +227,7 @@ export async function executeRepositoryIndexingPipeline(
       jobId: job.jobId,
       logger: input.retryLogger,
       metrics: input.retryMetrics,
+      circuitBreaker: input.circuitBreakers?.clone,
     }));
   } finally {
     cloneDeadline.dispose();
@@ -268,6 +272,7 @@ export async function executeRepositoryIndexingPipeline(
     requestId: job.createdByRequestId ?? undefined,
     logger: input.retryLogger,
     metrics: input.retryMetrics,
+    embeddingCircuitBreaker: input.circuitBreakers?.embedding,
   });
 
   await reportStage({ stage: "finalize", progress: 95 });
@@ -305,6 +310,7 @@ export async function processNextIndexingJob(
     executeIndexingPipeline = executeRepositoryIndexingPipeline,
     logger = silentWorkerLogger,
     metrics,
+    circuitBreakers,
   } = input;
 
   const claimed = await jobStore.claimNextJob(workerId);
@@ -356,6 +362,7 @@ export async function processNextIndexingJob(
       retryMetrics: metrics?.incrementRetry ? {
         incrementRetry: (category, result, attempt) => metrics.incrementRetry!(category, result, attempt),
       } : undefined,
+      circuitBreakers,
     });
 
     currentStage = "finalize";

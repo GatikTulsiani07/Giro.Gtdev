@@ -9,11 +9,18 @@ import type { ContextBuildResult } from "./types.js";
 import { env } from "../../config/env.js";
 import { createDeadline } from "../../runtime/deadline.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
+import type { CircuitBreaker } from "../../runtime/circuitBreaker.js";
 
 export async function buildRepositoryContext(
   clonePath: string,
   repository: string,
-  options: { signal?: AbortSignal; requestId?: string; logger?: RetryLogger; metrics?: RetryMetrics } = {},
+  options: {
+    signal?: AbortSignal;
+    requestId?: string;
+    logger?: RetryLogger;
+    metrics?: RetryMetrics;
+    embeddingCircuitBreaker?: CircuitBreaker;
+  } = {},
 ): Promise<ContextBuildResult> {
   const files = await readSourceFiles(clonePath);
   const chunks = files.flatMap((file) => chunkSourceFile(file));
@@ -41,7 +48,10 @@ export async function buildRepositoryContext(
 
     if (existing) continue;
 
-    const embedding = await generateEmbedding(chunk.content, options);
+    const embedding = await generateEmbedding(chunk.content, {
+      ...options,
+      circuitBreaker: options.embeddingCircuitBreaker,
+    });
     await storeChunkEmbedding({
       repository,
       filePath: chunk.filePath,

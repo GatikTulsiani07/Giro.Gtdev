@@ -106,6 +106,39 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.EMBEDDING_RETRY_BASE_MS, 200);
   assert.equal(result.DATABASE_RETRY_BASE_MS, 100);
   assert.equal(result.CLONE_RETRY_BASE_MS, 500);
+  assert.equal(result.AI_CIRCUIT_MIN_SAMPLES, 5);
+  assert.equal(result.AI_CIRCUIT_FAILURE_THRESHOLD, 5);
+  assert.equal(result.AI_CIRCUIT_WINDOW_MS, 60_000);
+  assert.equal(result.AI_CIRCUIT_OPEN_MS, 30_000);
+  assert.equal(result.EMBEDDING_CIRCUIT_MIN_SAMPLES, 5);
+  assert.equal(result.EMBEDDING_CIRCUIT_FAILURE_THRESHOLD, 5);
+  assert.equal(result.DATABASE_CIRCUIT_MIN_SAMPLES, 5);
+  assert.equal(result.DATABASE_CIRCUIT_FAILURE_THRESHOLD, 5);
+  assert.equal(result.DATABASE_CIRCUIT_OPEN_MS, 15_000);
+  assert.equal(result.CLONE_CIRCUIT_MIN_SAMPLES, 3);
+  assert.equal(result.CLONE_CIRCUIT_FAILURE_THRESHOLD, 3);
+  assert.equal(result.CIRCUIT_HALF_OPEN_MAX_CALLS, 1);
+});
+
+test("circuit configuration validates thresholds and bounds", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    AI_CIRCUIT_MIN_SAMPLES: "10",
+    AI_CIRCUIT_FAILURE_THRESHOLD: "4",
+    AI_CIRCUIT_WINDOW_MS: "1000",
+    AI_CIRCUIT_OPEN_MS: "100",
+    CIRCUIT_HALF_OPEN_MAX_CALLS: "2",
+  });
+  assert.equal(result.AI_CIRCUIT_MIN_SAMPLES, 10);
+  assert.equal(result.AI_CIRCUIT_FAILURE_THRESHOLD, 4);
+  assert.equal(result.CIRCUIT_HALF_OPEN_MAX_CALLS, 2);
+  assert.throws(() => validateEnv({
+    ...REQUIRED,
+    AI_CIRCUIT_MIN_SAMPLES: "2",
+    AI_CIRCUIT_FAILURE_THRESHOLD: "3",
+  }));
+  assert.throws(() => validateEnv({ ...REQUIRED, DATABASE_CIRCUIT_WINDOW_MS: "999" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, CIRCUIT_HALF_OPEN_MAX_CALLS: "11" }));
 });
 
 test("retry configuration supports disabling and enforces safe bounds", () => {

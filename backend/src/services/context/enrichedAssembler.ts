@@ -22,6 +22,7 @@ import type {
   EnrichedContextChunk,
 } from "./contextTypes.js";
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
+import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -102,7 +103,7 @@ export async function assembleEnrichedContext(
     }, options);
     hybridResults = res.results;
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.warn("enriched_hybrid_failed", {
       repository,
       message: err instanceof Error ? err.message : "unknown",

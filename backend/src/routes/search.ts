@@ -3,6 +3,7 @@ import { z } from "zod";
 import { semanticSearch } from "../services/embeddings/search.js";
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
+import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 
 const SearchBody = z.object({
   query: z.string().min(1, "Query must not be empty"),
@@ -26,7 +27,7 @@ searchRouter.post("/context", async (c) => {
     const results = await semanticSearch(parsed.data.query, parsed.data.limit, { signal: getRequestDeadline(c)?.signal });
     return c.json({ success: true, requestId, count: results.length, results });
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     return c.json(
       {
         success: false,

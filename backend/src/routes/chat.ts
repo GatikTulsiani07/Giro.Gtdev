@@ -6,6 +6,7 @@ import { stream } from "hono/streaming";
 import { runRepositoryChat } from "../services/ai/chat.js";
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
+import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
 
 const ChatBody = z.object({
   query: z.string().min(1, "Query must not be empty"),
@@ -43,7 +44,7 @@ chatRouter.post("/", async (c) => {
       }
     });
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     return c.json(
       {
         success: false,

@@ -6,6 +6,8 @@ import { isTransientTransportError, retry, type RetryRuntimeOptions } from "../.
 import { createRetryObservability, type RetryLogger, type RetryMetrics } from "../../observability/retryObservability.js";
 import { logger } from "../../lib/logger.js";
 import { runtimeMetrics } from "../../observability/metrics.js";
+import { isDependencyUnavailable, type CircuitBreaker } from "../../runtime/circuitBreaker.js";
+import { runtimeDependencyCircuitBreakers } from "../../runtime/dependencyCircuitBreakers.js";
 
 const openai =
   env.EMBEDDINGS_PROVIDER === "openai"
@@ -16,6 +18,7 @@ export const EMBEDDING_MODEL = "text-embedding-3-small";
 export const MAX_EMBEDDING_CHARS = 8000;
 
 export function normalizeEmbeddingProviderError(error: unknown, signal?: AbortSignal): Error {
+  if (isDependencyUnavailable(error)) return error as Error;
   if ((signal?.aborted && isDeadlineExceeded(signal.reason)) || error instanceof APIConnectionTimeoutError) {
     return new DeadlineExceededError();
   }
@@ -36,6 +39,7 @@ export interface EmbeddingProviderOptions {
   logger?: RetryLogger;
   metrics?: RetryMetrics;
   retryRuntime?: RetryRuntimeOptions;
+  circuitBreaker?: CircuitBreaker;
 }
 
 export async function requestOpenAIEmbedding(
@@ -52,24 +56,27 @@ export async function requestOpenAIEmbedding(
     fields: { requestId: options.requestId },
   });
   try {
-    const response = await retry(
-      async (attempt) => {
-        const attemptsRemaining = env.EMBEDDING_MAX_RETRIES + 2 - attempt;
-        const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
-        return (options.client ?? openai!).embeddings.create({
-          model: EMBEDDING_MODEL,
-          input: normalized,
-        }, { signal: deadline.signal, timeout: attemptTimeoutMs, maxRetries: 0 });
-      },
-      {
-        maxAttempts: env.EMBEDDING_MAX_RETRIES + 1,
-        baseDelayMs: env.EMBEDDING_RETRY_BASE_MS,
-        maxDelayMs: 5_000,
-        deadline,
-        isRetryable: isTransientEmbeddingError,
-        ...observability,
-        ...options.retryRuntime,
-      },
+    const response = await (options.circuitBreaker ?? runtimeDependencyCircuitBreakers.embedding).execute(
+      () => retry(
+        async (attempt) => {
+          const attemptsRemaining = env.EMBEDDING_MAX_RETRIES + 2 - attempt;
+          const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
+          return (options.client ?? openai!).embeddings.create({
+            model: EMBEDDING_MODEL,
+            input: normalized,
+          }, { signal: deadline.signal, timeout: attemptTimeoutMs, maxRetries: 0 });
+        },
+        {
+          maxAttempts: env.EMBEDDING_MAX_RETRIES + 1,
+          baseDelayMs: env.EMBEDDING_RETRY_BASE_MS,
+          maxDelayMs: 5_000,
+          deadline,
+          isRetryable: isTransientEmbeddingError,
+          ...observability,
+          ...options.retryRuntime,
+        },
+      ),
+      { requestId: options.requestId, signal: options.signal },
     );
     const vector = response.data[0]?.embedding;
     if (!vector) throw new Error("Embedding response contained no data");

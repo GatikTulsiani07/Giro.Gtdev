@@ -55,6 +55,23 @@ const EnvSchema = z
     EMBEDDING_RETRY_BASE_MS: z.coerce.number().int().min(10).max(10_000).default(200),
     DATABASE_RETRY_BASE_MS: z.coerce.number().int().min(10).max(10_000).default(100),
     CLONE_RETRY_BASE_MS: z.coerce.number().int().min(10).max(10_000).default(500),
+    AI_CIRCUIT_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(5),
+    AI_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(100).default(5),
+    AI_CIRCUIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
+    AI_CIRCUIT_OPEN_MS: z.coerce.number().int().min(100).max(600_000).default(30_000),
+    EMBEDDING_CIRCUIT_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(5),
+    EMBEDDING_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(100).default(5),
+    EMBEDDING_CIRCUIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
+    EMBEDDING_CIRCUIT_OPEN_MS: z.coerce.number().int().min(100).max(600_000).default(30_000),
+    DATABASE_CIRCUIT_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(5),
+    DATABASE_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(100).default(5),
+    DATABASE_CIRCUIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
+    DATABASE_CIRCUIT_OPEN_MS: z.coerce.number().int().min(100).max(600_000).default(15_000),
+    CLONE_CIRCUIT_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(3),
+    CLONE_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(100).default(3),
+    CLONE_CIRCUIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
+    CLONE_CIRCUIT_OPEN_MS: z.coerce.number().int().min(100).max(600_000).default(30_000),
+    CIRCUIT_HALF_OPEN_MAX_CALLS: z.coerce.number().int().min(1).max(10).default(1),
   })
   .superRefine((value, context) => {
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {
@@ -63,6 +80,17 @@ const EnvSchema = z
         path: ["SUPABASE_SERVICE_ROLE_KEY"],
         message: "A Supabase service-role or anon key is required.",
       });
+    }
+    for (const dependency of ["AI", "EMBEDDING", "DATABASE", "CLONE"] as const) {
+      const threshold = value[`${dependency}_CIRCUIT_FAILURE_THRESHOLD`];
+      const minimumSamples = value[`${dependency}_CIRCUIT_MIN_SAMPLES`];
+      if (threshold > minimumSamples) {
+        context.addIssue({
+          code: "custom",
+          path: [`${dependency}_CIRCUIT_FAILURE_THRESHOLD`],
+          message: "Circuit failure threshold must not exceed minimum samples.",
+        });
+      }
     }
   });
 
@@ -107,3 +135,20 @@ function loadStartupEnv(): Env {
 }
 
 export const env = loadStartupEnv();
+
+function circuitConfig(prefix: "AI" | "EMBEDDING" | "DATABASE" | "CLONE") {
+  return Object.freeze({
+    minimumSamples: env[`${prefix}_CIRCUIT_MIN_SAMPLES`],
+    failureThreshold: env[`${prefix}_CIRCUIT_FAILURE_THRESHOLD`],
+    rollingWindowMs: env[`${prefix}_CIRCUIT_WINDOW_MS`],
+    openDurationMs: env[`${prefix}_CIRCUIT_OPEN_MS`],
+    halfOpenMaxCalls: env.CIRCUIT_HALF_OPEN_MAX_CALLS,
+  });
+}
+
+export const dependencyCircuitConfig = Object.freeze({
+  ai: circuitConfig("AI"),
+  embedding: circuitConfig("EMBEDDING"),
+  database: circuitConfig("DATABASE"),
+  clone: circuitConfig("CLONE"),
+});

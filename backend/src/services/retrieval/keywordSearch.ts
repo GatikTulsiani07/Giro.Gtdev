@@ -8,6 +8,7 @@ import { createDeadline, isDeadlineExceeded } from "../../runtime/deadline.js";
 import { retryDatabaseRead } from "../database/retryPolicy.js";
 import type { RetryRuntimeOptions } from "../../runtime/retry.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
+import { isDependencyUnavailable, type CircuitBreaker } from "../../runtime/circuitBreaker.js";
 
 interface ChunkRow {
   repository: string;
@@ -29,6 +30,7 @@ export async function keywordSearch(
     logger?: RetryLogger;
     metrics?: RetryMetrics;
     retryRuntime?: RetryRuntimeOptions;
+    circuitBreaker?: CircuitBreaker;
   } = {},
 ): Promise<RetrievalResult[]> {
   const repository = `${owner}/${repo}`;
@@ -62,13 +64,14 @@ export async function keywordSearch(
         logger: options.logger,
         metrics: options.metrics,
         retryRuntime: options.retryRuntime,
+        circuitBreaker: options.circuitBreaker,
       },
     );
     if (deadline.signal.aborted) throw deadline.signal.reason;
     if (error) throw new Error("Keyword search failed.");
     rows = (data ?? []) as ChunkRow[];
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.error("keyword_search_failed", {
       repository,
       message: "Keyword search failed.",

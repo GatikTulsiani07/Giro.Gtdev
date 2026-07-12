@@ -8,6 +8,8 @@ import { retry, isTransientTransportError, type RetryRuntimeOptions } from "../.
 import { createRetryObservability, type RetryLogger, type RetryMetrics } from "../../observability/retryObservability.js";
 import { logger } from "../../lib/logger.js";
 import { runtimeMetrics } from "../../observability/metrics.js";
+import type { CircuitBreaker } from "../../runtime/circuitBreaker.js";
+import { runtimeDependencyCircuitBreakers } from "../../runtime/dependencyCircuitBreakers.js";
 
 const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
@@ -33,6 +35,7 @@ export async function streamCompletion(
     logger?: RetryLogger;
     metrics?: RetryMetrics;
     retryRuntime?: RetryRuntimeOptions;
+    circuitBreaker?: CircuitBreaker;
   } = {},
 ): Promise<AsyncIterable<string>> {
   const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? env.AI_REQUEST_TIMEOUT_MS, env.AI_REQUEST_TIMEOUT_MS));
@@ -46,26 +49,29 @@ export async function streamCompletion(
     fields: { requestId: options.requestId },
   });
   try {
-    stream = await retry(
-      async (attempt) => {
-        const attemptsRemaining = env.AI_MAX_RETRIES + 2 - attempt;
-        const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
-        return (options.client ?? openai).chat.completions.create({
-          model: env.MODEL_NAME,
-          messages,
-          temperature: 0.1,
-          stream: true,
-        }, { signal: deadline.signal, timeout: attemptTimeoutMs, maxRetries: 0 });
-      },
-      {
-        maxAttempts: env.AI_MAX_RETRIES + 1,
-        baseDelayMs: env.AI_RETRY_BASE_MS,
-        maxDelayMs: 5_000,
-        deadline,
-        isRetryable: isTransientAiError,
-        ...observability,
-        ...options.retryRuntime,
-      },
+    stream = await (options.circuitBreaker ?? runtimeDependencyCircuitBreakers.ai).execute(
+      () => retry(
+        async (attempt) => {
+          const attemptsRemaining = env.AI_MAX_RETRIES + 2 - attempt;
+          const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
+          return (options.client ?? openai).chat.completions.create({
+            model: env.MODEL_NAME,
+            messages,
+            temperature: 0.1,
+            stream: true,
+          }, { signal: deadline.signal, timeout: attemptTimeoutMs, maxRetries: 0 });
+        },
+        {
+          maxAttempts: env.AI_MAX_RETRIES + 1,
+          baseDelayMs: env.AI_RETRY_BASE_MS,
+          maxDelayMs: 5_000,
+          deadline,
+          isRetryable: isTransientAiError,
+          ...observability,
+          ...options.retryRuntime,
+        },
+      ),
+      { requestId: options.requestId, signal: options.signal },
     );
   } catch (error) {
     deadline.dispose();

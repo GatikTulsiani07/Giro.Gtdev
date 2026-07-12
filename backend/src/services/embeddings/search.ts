@@ -6,6 +6,7 @@ import { createDeadline, DeadlineExceededError, isDeadlineExceeded } from "../..
 import { retryDatabaseRead } from "../database/retryPolicy.js";
 import type { RetryRuntimeOptions } from "../../runtime/retry.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
+import { isDependencyUnavailable, type CircuitBreaker } from "../../runtime/circuitBreaker.js";
 
 export async function semanticSearch(
   query: string,
@@ -16,6 +17,7 @@ export async function semanticSearch(
     logger?: RetryLogger;
     metrics?: RetryMetrics;
     retryRuntime?: RetryRuntimeOptions;
+    circuitBreaker?: CircuitBreaker;
   } = {},
 ): Promise<SemanticSearchResult[]> {
   const embedding = await generateEmbedding(query, options);
@@ -34,6 +36,7 @@ export async function semanticSearch(
         logger: options.logger,
         metrics: options.metrics,
         retryRuntime: options.retryRuntime,
+        circuitBreaker: options.circuitBreaker,
       },
     );
 
@@ -53,7 +56,7 @@ export async function semanticSearch(
     }));
   } catch (error) {
     if (deadline.signal.aborted) throw deadline.signal.reason;
-    if (isDeadlineExceeded(error)) throw error;
+    if (isDeadlineExceeded(error) || isDependencyUnavailable(error)) throw error;
     throw new Error("Semantic search failed.");
   } finally {
     deadline.dispose();

@@ -21,6 +21,7 @@ import { scanRepo } from "../repository/scanner.js";
 import { analyzeRepository } from "../repository/analyzer.js";
 import { logger } from "../../lib/logger.js";
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
+import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 
 type QuestionResult = AskResult | "session_not_found";
 
@@ -71,7 +72,7 @@ export async function answerSessionQuestion(
     summary.primaryLanguage = analysis.primaryLanguage;
     summary.entrypoints = analysis.entrypoints;
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.warn("repo_summary_unavailable", {
       sessionId,
       owner,
@@ -88,7 +89,7 @@ export async function answerSessionQuestion(
     summary.centralModules = graph.insights.centralModules;
     usedDependencyGraph = true;
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.warn("dependency_graph_unavailable", {
       sessionId,
       owner,
@@ -130,7 +131,7 @@ export async function answerSessionQuestion(
       limit: 25,
     }, options);
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.error("enriched_context_failed", {
       sessionId,
       owner,
@@ -154,7 +155,7 @@ export async function answerSessionQuestion(
       limit: 10,
     });
   } catch (err) {
-    if (isDeadlineExceeded(err)) throw err;
+    if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.warn("file_search_failed", {
       sessionId,
       owner,

@@ -12,6 +12,7 @@ import type {
   RetrievalResult,
 } from "./types.js";
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
+import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -43,7 +44,10 @@ export async function hybridSearch(
   let semantic: RetrievalResult[] = [];
 
   for (const settled of [semanticSettled, keywordSettled]) {
-    if (settled.status === "rejected" && isDeadlineExceeded(settled.reason)) throw settled.reason;
+    if (
+      settled.status === "rejected" &&
+      (isDeadlineExceeded(settled.reason) || isDependencyUnavailable(settled.reason))
+    ) throw settled.reason;
   }
 
   if (semanticSettled.status === "fulfilled") {

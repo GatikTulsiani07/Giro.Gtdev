@@ -18,6 +18,7 @@ export type ApiErrorCode =
   | "rate_limited"
   | "rate_limit_exceeded"
   | "request_timeout"
+  | "dependency_unavailable"
   | "payload_too_large"
   | "internal_error";
 
@@ -90,6 +91,7 @@ const ERROR_DEFAULTS: Record<ApiErrorCode, ApiErrorDefaults> = {
   rate_limited: { status: 429, category: "rate_limit", retryable: true },
   rate_limit_exceeded: { status: 429, category: "rate_limit", retryable: true },
   request_timeout: { status: 504, category: "timeout", retryable: true },
+  dependency_unavailable: { status: 503, category: "external", retryable: true },
   payload_too_large: { status: 413, category: "validation", retryable: false },
   internal_error: { status: 500, category: "internal", retryable: false },
 };

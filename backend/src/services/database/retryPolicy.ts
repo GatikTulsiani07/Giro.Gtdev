@@ -4,6 +4,8 @@ import { runtimeMetrics } from "../../observability/metrics.js";
 import { createRetryObservability, type RetryLogger, type RetryMetrics } from "../../observability/retryObservability.js";
 import type { Deadline } from "../../runtime/deadline.js";
 import { isTransientTransportError, retry, type RetryRuntimeOptions } from "../../runtime/retry.js";
+import type { CircuitBreaker } from "../../runtime/circuitBreaker.js";
+import { runtimeDependencyCircuitBreakers } from "../../runtime/dependencyCircuitBreakers.js";
 
 export interface DatabaseRetryOptions {
   deadline: Deadline;
@@ -12,6 +14,7 @@ export interface DatabaseRetryOptions {
   logger?: RetryLogger;
   metrics?: RetryMetrics;
   retryRuntime?: RetryRuntimeOptions;
+  circuitBreaker?: CircuitBreaker;
 }
 
 function errorCode(error: unknown): string {
@@ -38,20 +41,23 @@ export async function retryDatabaseRead<T>(
     metrics: options.metrics ?? runtimeMetrics,
     fields: { requestId: options.requestId },
   });
-  return retry(
-    async () => {
-      const result = await operation();
-      if (result.error) throw result.error;
-      return result;
-    },
-    {
-      maxAttempts: env.DATABASE_MAX_RETRIES + 1,
-      baseDelayMs: env.DATABASE_RETRY_BASE_MS,
-      maxDelayMs: 2_000,
-      deadline: options.deadline,
-      isRetryable: isTransientDatabaseError,
-      ...observability,
-      ...options.retryRuntime,
-    },
+  return (options.circuitBreaker ?? runtimeDependencyCircuitBreakers.database).execute(
+    () => retry(
+      async () => {
+        const result = await operation();
+        if (result.error) throw result.error;
+        return result;
+      },
+      {
+        maxAttempts: env.DATABASE_MAX_RETRIES + 1,
+        baseDelayMs: env.DATABASE_RETRY_BASE_MS,
+        maxDelayMs: 2_000,
+        deadline: options.deadline,
+        isRetryable: isTransientDatabaseError,
+        ...observability,
+        ...options.retryRuntime,
+      },
+    ),
+    { requestId: options.requestId, signal: options.deadline.signal },
   );
 }

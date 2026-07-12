@@ -197,3 +197,16 @@ test("rejects unsafe histogram bucket configuration", () => {
   assert.throws(() => new MetricsRegistry({ durationBucketsSeconds: [1, 0.5] }));
   assert.throws(() => new MetricsRegistry({ durationBucketsSeconds: [Number.NaN] }));
 });
+
+test("circuit metrics expose one active state per dependency", () => {
+  const metrics = new MetricsRegistry();
+  metrics.setCircuitState("database", "open");
+  metrics.incrementCircuitTransition("database", "closed", "open");
+  metrics.incrementCircuitRejection("database");
+  const output = metrics.render();
+  assert.match(output, /giro_circuit_state\{dependency="database",state="closed"\} 0/);
+  assert.match(output, /giro_circuit_state\{dependency="database",state="open"\} 1/);
+  assert.match(output, /giro_circuit_state\{dependency="database",state="half_open"\} 0/);
+  assert.match(output, /giro_circuit_transitions_total\{dependency="database",from="closed",to="open"\} 1/);
+  assert.match(output, /giro_circuit_rejections_total\{dependency="database"\} 1/);
+});
