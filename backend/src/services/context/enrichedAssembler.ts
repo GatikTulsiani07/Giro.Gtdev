@@ -23,6 +23,7 @@ import type {
 } from "./contextTypes.js";
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
+import type { RetrievalCache } from "../retrieval/cache/retrievalCache.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -81,7 +82,7 @@ function dedupe(chunks: EnrichedContextChunk[]): {
 
 export async function assembleEnrichedContext(
   request: EnrichedAssemblyRequest,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; cache?: RetrievalCache } = {},
 ): Promise<EnrichedAssembledContext> {
   const maxChars = request.maxChars ?? 16_000;
   const limit = request.limit ?? 25;
@@ -100,7 +101,7 @@ export async function assembleEnrichedContext(
       owner: request.owner,
       repo: request.repo,
       limit: limit * 2,
-    }, options);
+    }, { signal: options.signal, cache: options.cache });
     hybridResults = res.results;
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;

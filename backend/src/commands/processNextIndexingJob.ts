@@ -15,10 +15,12 @@ import {
   type IndexingJobRepositoryStore,
   type IndexingJobWorkerLogger,
   type IndexingJobProgressPublisher,
+  type RetrievalCacheInvalidator,
 } from "../services/indexing/jobs/indexingJobWorker.js";
 import { runtimeIndexingJobStore } from "../services/indexing/jobs/runtimeIndexingJobStore.js";
 import { runtimeMetrics, type IndexingMetricStatus } from "../observability/metrics.js";
 import { runtimeIndexingProgressPublisher } from "../services/indexing/events/runtimeIndexingProgressPublisher.js";
+import { runtimeRetrievalCache } from "../services/retrieval/cache/runtimeRetrievalCache.js";
 
 const COMMAND_NAME = "indexing:work-once" as const;
 const DEFAULT_WORKER_ID = "manual-worker";
@@ -43,6 +45,7 @@ export interface RunProcessNextIndexingJobCommandInput {
   logger?: IndexingJobWorkerLogger;
   metrics?: { incrementIndexing(status: IndexingMetricStatus): void };
   progressPublisher?: IndexingJobProgressPublisher;
+  retrievalCacheInvalidator?: RetrievalCacheInvalidator;
 }
 
 function safeFailure(failure: IndexingJobFailure | null): IndexingJobFailure | null {
@@ -118,6 +121,7 @@ export async function runProcessNextIndexingJobCommand(
         logger: input.logger,
         metrics: input.metrics,
         progressPublisher: input.progressPublisher,
+        retrievalCacheInvalidator: input.retrievalCacheInvalidator,
       });
       result = {
         command: COMMAND_NAME,
@@ -154,6 +158,7 @@ async function runExecutable(): Promise<void> {
         logger: stderrLogger,
         metrics: runtimeMetrics,
         progressPublisher: runtimeIndexingProgressPublisher,
+        retrievalCacheInvalidator: runtimeRetrievalCache,
       }),
     writeOutput: (output) => console.log(output),
     interruptedOutput: JSON.stringify(

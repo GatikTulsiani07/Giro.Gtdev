@@ -51,12 +51,14 @@ import {
 } from "../services/repository/indexingService.js";
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
 import type { IndexingProgressPublisher } from "../services/indexing/events/indexingProgressPublisher.js";
+import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 
 type Variables = {
   requestId: string;
   authenticatedUser: AuthenticatedUser;
   indexingJobStore: IndexingJobStore;
   indexingProgressPublisher: IndexingProgressPublisher;
+  retrievalCache: RetrievalCache;
 };
 
 export const repositoriesRoute = new Hono<{ Variables: Variables }>();
@@ -496,6 +498,15 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
   }
 
   const report = cleanupRepository({ owner, repo });
+  try {
+    c.get("retrievalCache").invalidateRepository(repoId, "repository_deleted");
+  } catch {
+    logger.error("retrieval_cache_invalidation_failed", {
+      requestId: c.get("requestId"),
+      repositoryId: repoId,
+      reason: "repository_deleted",
+    });
+  }
 
   return ok(c, report);
 });

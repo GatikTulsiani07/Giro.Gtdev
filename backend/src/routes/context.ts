@@ -18,6 +18,7 @@ import {
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
+import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 
 const STORAGE_PATH_GUARD = ".storage/repos";
 
@@ -35,7 +36,9 @@ const AssembleBody = z.object({
   }).optional().default(25),
 });
 
-const contextRouter = new Hono<{ Variables: { requestId: string } }>();
+const contextRouter = new Hono<{
+  Variables: { requestId: string; retrievalCache: RetrievalCache };
+}>();
 
 contextRouter.post("/build", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -91,7 +94,10 @@ contextRouter.post("/assemble", async (c) => {
   try {
     const result = await assembleEnrichedContext(
       { query, owner, repo, maxChars, limit },
-      { signal: getRequestDeadline(c)?.signal },
+      {
+        signal: getRequestDeadline(c)?.signal,
+        cache: c.get("retrievalCache"),
+      },
     );
     return ok(c, result);
   } catch (err) {

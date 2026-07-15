@@ -32,6 +32,8 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.EMBEDDINGS_PROVIDER, "openai");
   assert.equal(result.MODEL_NAME, "gpt-test");
   assert.equal(result.INDEXING_WORKER_ID, "worker-1");
+  assert.equal(result.RETRIEVAL_CACHE_TTL_MS, 60_000);
+  assert.equal(result.RETRIEVAL_CACHE_MAX_ENTRIES, 500);
   assert.equal(Object.isFrozen(result), true);
 });
 
@@ -205,6 +207,20 @@ test("shutdown timeout is bounded", () => {
   );
   assert.throws(() => validateEnv({ ...REQUIRED, SHUTDOWN_TIMEOUT_MS: "999" }));
   assert.throws(() => validateEnv({ ...REQUIRED, SHUTDOWN_TIMEOUT_MS: "60001" }));
+});
+
+test("retrieval cache configuration is bounded", () => {
+  const result = validateEnv({
+    ...REQUIRED,
+    RETRIEVAL_CACHE_TTL_MS: "1000",
+    RETRIEVAL_CACHE_MAX_ENTRIES: "10000",
+  });
+  assert.equal(result.RETRIEVAL_CACHE_TTL_MS, 1_000);
+  assert.equal(result.RETRIEVAL_CACHE_MAX_ENTRIES, 10_000);
+  assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_CACHE_TTL_MS: "999" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_CACHE_TTL_MS: "3600001" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_CACHE_MAX_ENTRIES: "0" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_CACHE_MAX_ENTRIES: "10001" }));
 });
 
 test("anon key remains a valid fallback when service role is absent", () => {

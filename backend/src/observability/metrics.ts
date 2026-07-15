@@ -83,6 +83,10 @@ export class MetricsRegistry {
     ["completed", 0],
     ["failed", 0],
   ]);
+  private retrievalCacheHits = 0;
+  private retrievalCacheMisses = 0;
+  private retrievalCacheEvictions = 0;
+  private retrievalCacheEntries = 0;
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
@@ -185,6 +189,22 @@ export class MetricsRegistry {
     this.sseStreams.set(outcome, (this.sseStreams.get(outcome) ?? 0) + 1);
   }
 
+  incrementRetrievalCacheHit(): void {
+    this.retrievalCacheHits += 1;
+  }
+
+  incrementRetrievalCacheMiss(): void {
+    this.retrievalCacheMisses += 1;
+  }
+
+  incrementRetrievalCacheEviction(): void {
+    this.retrievalCacheEvictions += 1;
+  }
+
+  setRetrievalCacheEntries(entries: number): void {
+    this.retrievalCacheEntries = Math.max(0, Math.trunc(entries));
+  }
+
   render(): string {
     const lines = [
       "# HELP giro_http_requests_total Total HTTP requests.",
@@ -282,6 +302,20 @@ export class MetricsRegistry {
     for (const outcome of ["completed", "failed"] as const) {
       lines.push(`giro_indexing_sse_streams_total{outcome="${outcome}"} ${this.sseStreams.get(outcome) ?? 0}`);
     }
+    lines.push(
+      "# HELP giro_retrieval_cache_hits_total Retrieval cache hits, including shared in-flight work.",
+      "# TYPE giro_retrieval_cache_hits_total counter",
+      `giro_retrieval_cache_hits_total ${this.retrievalCacheHits}`,
+      "# HELP giro_retrieval_cache_misses_total Retrieval cache misses.",
+      "# TYPE giro_retrieval_cache_misses_total counter",
+      `giro_retrieval_cache_misses_total ${this.retrievalCacheMisses}`,
+      "# HELP giro_retrieval_cache_evictions_total Retrieval cache TTL and capacity evictions.",
+      "# TYPE giro_retrieval_cache_evictions_total counter",
+      `giro_retrieval_cache_evictions_total ${this.retrievalCacheEvictions}`,
+      "# HELP giro_retrieval_cache_entries Current retrieval cache entries.",
+      "# TYPE giro_retrieval_cache_entries gauge",
+      `giro_retrieval_cache_entries ${this.retrievalCacheEntries}`,
+    );
     return `${lines.join("\n")}\n`;
   }
 }

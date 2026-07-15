@@ -23,6 +23,7 @@ import {
   RepositoryNameSchema,
   RepositoryOwnerSchema,
 } from "../validation/repositorySchemas.js";
+import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 
 const CitationSchema = z
   .object({
@@ -53,7 +54,9 @@ const AskBody = z.object({
   }),
 });
 
-const sessionsRouter = new Hono<{ Variables: { requestId: string } }>();
+const sessionsRouter = new Hono<{
+  Variables: { requestId: string; retrievalCache: RetrievalCache };
+}>();
 
 function getSessionAccessFailureResponse(
   c: Parameters<typeof fail>[0],
@@ -264,6 +267,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
 
     const result = await answerSessionQuestion(id, parsed.data.question, {
       signal: getRequestDeadline(c)?.signal,
+      cache: c.get("retrievalCache"),
     });
 
     if (result === "session_not_found") {

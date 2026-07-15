@@ -15,8 +15,9 @@ import {
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import { isDeadlineExceeded } from "../runtime/deadline.js";
 import { isDependencyUnavailable } from "../runtime/circuitBreaker.js";
+import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 
-type Variables = { requestId: string };
+type Variables = { requestId: string; retrievalCache: RetrievalCache };
 
 const HybridBody = z.object({
   query: SearchQuerySchema.refine((value) => value.length > 0, {
@@ -43,7 +44,10 @@ retrievalRouter.post("/hybrid", async (c) => {
   }
 
   try {
-    const result = await hybridSearch(parsed.data, { signal: getRequestDeadline(c)?.signal });
+    const result = await hybridSearch(parsed.data, {
+      signal: getRequestDeadline(c)?.signal,
+      cache: c.get("retrievalCache"),
+    });
     return ok(c, result);
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;

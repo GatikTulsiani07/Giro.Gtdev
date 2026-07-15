@@ -22,6 +22,7 @@ import { analyzeRepository } from "../repository/analyzer.js";
 import { logger } from "../../lib/logger.js";
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
+import type { RetrievalCache } from "../retrieval/cache/retrievalCache.js";
 
 type QuestionResult = AskResult | "session_not_found";
 
@@ -43,7 +44,7 @@ function toRelativePath(filePath: string): string {
 export async function answerSessionQuestion(
   sessionId: string,
   question: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; cache?: RetrievalCache } = {},
 ): Promise<QuestionResult> {
   options.signal?.throwIfAborted();
   const session = getSessionById(sessionId);

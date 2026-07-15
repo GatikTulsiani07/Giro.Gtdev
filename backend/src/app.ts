@@ -20,10 +20,13 @@ import { runtimeMetrics, type MetricsRegistry } from "./observability/metrics.js
 import { logger } from "./lib/logger.js";
 import { IndexingProgressPublisher } from "./services/indexing/events/indexingProgressPublisher.js";
 import { runtimeIndexingProgressPublisher } from "./services/indexing/events/runtimeIndexingProgressPublisher.js";
+import { RetrievalCache } from "./services/retrieval/cache/retrievalCache.js";
+import { runtimeRetrievalCache } from "./services/retrieval/cache/runtimeRetrievalCache.js";
 
 type Variables = RequestContextVariables & {
   indexingJobStore: IndexingJobStore;
   indexingProgressPublisher: IndexingProgressPublisher;
+  retrievalCache: RetrievalCache;
 };
 
 export interface CreateAppOptions {
@@ -33,6 +36,7 @@ export interface CreateAppOptions {
   requestContext?: RequestContextOptions;
   metrics?: MetricsRegistry;
   indexingProgressPublisher?: IndexingProgressPublisher;
+  retrievalCache?: RetrievalCache;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -42,6 +46,22 @@ export function createApp(options: CreateAppOptions = {}) {
     indexingJobStore === runtimeIndexingJobStore && metrics === runtimeMetrics
       ? runtimeIndexingProgressPublisher
       : new IndexingProgressPublisher({ jobStore: indexingJobStore, metrics, logger })
+  );
+  const retrievalCache = options.retrievalCache ?? (
+    indexingJobStore === runtimeIndexingJobStore && metrics === runtimeMetrics
+      ? runtimeRetrievalCache
+      : new RetrievalCache({
+          ttlMs: env.RETRIEVAL_CACHE_TTL_MS,
+          maxEntries: env.RETRIEVAL_CACHE_MAX_ENTRIES,
+          metrics,
+          logger,
+          versionProvider: async (repositoryId) => {
+            const job = await indexingJobStore.getLatestRepositoryJob(repositoryId);
+            return job
+              ? [job.jobId, job.attempt, job.status, job.currentStage, job.progress].join(":")
+              : "unversioned";
+          },
+        })
   );
   const readinessCheck =
     options.readinessCheck ??
@@ -57,6 +77,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("*", async (c, next) => {
     c.set("indexingJobStore", indexingJobStore);
     c.set("indexingProgressPublisher", indexingProgressPublisher);
+    c.set("retrievalCache", retrievalCache);
     await next();
   });
   app.use(

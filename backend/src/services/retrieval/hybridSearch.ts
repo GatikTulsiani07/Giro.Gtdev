@@ -13,6 +13,8 @@ import type {
 } from "./types.js";
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
+import { runtimeRetrievalCache } from "./cache/runtimeRetrievalCache.js";
+import type { RetrievalCache } from "./cache/retrievalCache.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -26,7 +28,13 @@ export function resolveHybridFetchLimit(limit?: number): number {
   return resolveHybridSearchLimit(limit) * FETCH_MULTIPLIER;
 }
 
-export async function hybridSearch(
+export interface HybridSearchOptions {
+  signal?: AbortSignal;
+  cache?: RetrievalCache;
+  execute?: typeof executeHybridSearch;
+}
+
+export async function executeHybridSearch(
   request: HybridSearchRequest,
   options: { signal?: AbortSignal } = {},
 ): Promise<HybridSearchResponse> {
@@ -132,4 +140,32 @@ export async function hybridSearch(
       returned: results.length,
     },
   };
+}
+
+export async function hybridSearch(
+  request: HybridSearchRequest,
+  options: HybridSearchOptions = {},
+): Promise<HybridSearchResponse> {
+  const effectiveLimit = resolveHybridSearchLimit(request.limit);
+  const cache = options.cache ?? runtimeRetrievalCache;
+  const cached = await cache.getOrLoad(
+    {
+      repositoryId: `${request.owner}/${request.repo}`,
+      query: request.query,
+      mode: "hybrid",
+      limits: {
+        requested: request.limit,
+        effective: effectiveLimit,
+        fetch: resolveHybridFetchLimit(request.limit),
+      },
+      selectedContext: null,
+      options: {},
+    },
+    (signal) => (options.execute ?? executeHybridSearch)(request, { signal }),
+    { signal: options.signal },
+  );
+  const query = request.query;
+  const repository = `${request.owner}/${request.repo}`;
+  if (cached.query === query && cached.repository === repository) return cached;
+  return Object.freeze({ ...cached, query, repository });
 }

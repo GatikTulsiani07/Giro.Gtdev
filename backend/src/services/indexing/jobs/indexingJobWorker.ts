@@ -44,6 +44,10 @@ export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
 }
 
+export interface RetrievalCacheInvalidator {
+  invalidateRepository(repositoryId: string, reason?: string): number;
+}
+
 export interface IndexingPipelineStageProgress {
   stage: IndexingJobStage;
   progress: number;
@@ -86,6 +90,7 @@ export interface ProcessNextIndexingJobInput {
   };
   circuitBreakers?: DependencyCircuitBreakers;
   progressPublisher?: IndexingJobProgressPublisher;
+  retrievalCacheInvalidator?: RetrievalCacheInvalidator;
 }
 
 export interface IndexingJobWorkerLogger {
@@ -331,6 +336,7 @@ export async function processNextIndexingJob(
     metrics,
     circuitBreakers,
     progressPublisher,
+    retrievalCacheInvalidator,
   } = input;
 
   const claimed = await jobStore.claimNextJob(workerId);
@@ -395,6 +401,14 @@ export async function processNextIndexingJob(
     }
     logger.info("indexing_job_succeeded", jobLogFields(claimed, workerId));
     metrics?.incrementIndexing("completed");
+    try {
+      retrievalCacheInvalidator?.invalidateRepository(
+        claimed.repositoryId,
+        "indexing_completed",
+      );
+    } catch {
+      logger.error("retrieval_cache_invalidation_failed", jobLogFields(claimed, workerId));
+    }
     await publishProgressSafely(progressPublisher, succeeded, logger, workerId);
 
     stagesCompleted.push("complete");
