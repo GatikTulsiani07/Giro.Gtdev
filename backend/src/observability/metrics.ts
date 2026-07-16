@@ -87,6 +87,13 @@ export class MetricsRegistry {
   private retrievalCacheMisses = 0;
   private retrievalCacheEvictions = 0;
   private retrievalCacheEntries = 0;
+  private citationsGenerated = 0;
+  private citationChunks = 0;
+  private citationMerges = 0;
+  private symbolGraphNodes = 0;
+  private symbolGraphEdges = 0;
+  private symbolExpansions = 0;
+  private symbolExpansionBudgetDrops = 0;
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
@@ -205,6 +212,31 @@ export class MetricsRegistry {
     this.retrievalCacheEntries = Math.max(0, Math.trunc(entries));
   }
 
+  incrementCitationsGenerated(): void {
+    this.citationsGenerated += 1;
+  }
+
+  addCitationChunks(count: number): void {
+    this.citationChunks += Math.max(0, Math.trunc(count));
+  }
+
+  addCitationMerges(count: number): void {
+    this.citationMerges += Math.max(0, Math.trunc(count));
+  }
+
+  setSymbolGraphSize(nodes: number, edges: number): void {
+    this.symbolGraphNodes = Math.max(0, Math.trunc(nodes));
+    this.symbolGraphEdges = Math.max(0, Math.trunc(edges));
+  }
+
+  incrementSymbolExpansion(count = 1): void {
+    this.symbolExpansions += Math.max(0, Math.trunc(count));
+  }
+
+  incrementSymbolExpansionBudgetDrop(count = 1): void {
+    this.symbolExpansionBudgetDrops += Math.max(0, Math.trunc(count));
+  }
+
   render(): string {
     const lines = [
       "# HELP giro_http_requests_total Total HTTP requests.",
@@ -315,6 +347,27 @@ export class MetricsRegistry {
       "# HELP giro_retrieval_cache_entries Current retrieval cache entries.",
       "# TYPE giro_retrieval_cache_entries gauge",
       `giro_retrieval_cache_entries ${this.retrievalCacheEntries}`,
+      "# HELP giro_citations_generated_total Citation sets generated from retrieved chunks.",
+      "# TYPE giro_citations_generated_total counter",
+      `giro_citations_generated_total ${this.citationsGenerated}`,
+      "# HELP giro_citation_chunks_total Grounded citation chunks emitted.",
+      "# TYPE giro_citation_chunks_total counter",
+      `giro_citation_chunks_total ${this.citationChunks}`,
+      "# HELP giro_citation_merge_total Duplicate citation locations merged.",
+      "# TYPE giro_citation_merge_total counter",
+      `giro_citation_merge_total ${this.citationMerges}`,
+      "# HELP giro_symbol_graph_nodes Repository symbol graph nodes.",
+      "# TYPE giro_symbol_graph_nodes gauge",
+      `giro_symbol_graph_nodes ${this.symbolGraphNodes}`,
+      "# HELP giro_symbol_graph_edges Repository symbol graph edges.",
+      "# TYPE giro_symbol_graph_edges gauge",
+      `giro_symbol_graph_edges ${this.symbolGraphEdges}`,
+      "# HELP giro_symbol_expansions_total Retrieval chunks added by symbol graph expansion.",
+      "# TYPE giro_symbol_expansions_total counter",
+      `giro_symbol_expansions_total ${this.symbolExpansions}`,
+      "# HELP giro_symbol_expansion_budget_drops_total Symbol graph expansions dropped by context budget.",
+      "# TYPE giro_symbol_expansion_budget_drops_total counter",
+      `giro_symbol_expansion_budget_drops_total ${this.symbolExpansionBudgetDrops}`,
     );
     return `${lines.join("\n")}\n`;
   }

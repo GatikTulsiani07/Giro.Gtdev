@@ -2,6 +2,12 @@ export interface RetrievalCandidate {
   filePath: string;
   content: string;
   score: number;
+  language?: string;
+  startLine?: number;
+  endLine?: number;
+  symbol?: string;
+  repositoryVersion?: string;
+  expansion?: boolean;
 }
 
 export interface RetrievalCandidateFilterOptions {

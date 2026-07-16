@@ -25,14 +25,23 @@ function languageOf(ext: string): "typescript" | "javascript" {
 // Ordered so the most specific keyword wins per line.
 const SYMBOL_RULES: Array<{ re: RegExp; kind: SymbolKind }> = [
   { re: /\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/, kind: "function" },
-  { re: /\bexport\s+(?:default\s+)?class\s+([A-Za-z0-9_$]+)/, kind: "class" },
-  { re: /\bexport\s+interface\s+([A-Za-z0-9_$]+)/, kind: "interface" },
+  { re: /\bexport\s+(?:default\s+)?class\s+([A-Za-z0-9_$]+)(?:\s+extends\s+([A-Za-z0-9_$.]+))?(?:\s+implements\s+([^<{]+))?/, kind: "class" },
+  { re: /\bexport\s+interface\s+([A-Za-z0-9_$]+)(?:\s+extends\s+([^<{]+))?/, kind: "interface" },
   { re: /\bexport\s+type\s+([A-Za-z0-9_$]+)/, kind: "type" },
   { re: /\bexport\s+enum\s+([A-Za-z0-9_$]+)/, kind: "enum" },
   { re: /\bexport\s+(?:const|let|var)\s+([A-Za-z0-9_$]+)/, kind: "variable" },
 ];
 
-function extractImport(line: string): FileImport | null {
+function namesFromList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((part) => part.trim().split(/[<\s.]/)[0]?.trim())
+    .filter((part): part is string => Boolean(part))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function extractImport(line: string, lineNumber: number): FileImport | null {
   const from = /\bimport\s+(?:type\s+)?(.+?)\s+from\s+["']([^"']+)["']/.exec(line);
   if (from) {
     const clause = from[1] ?? "";
@@ -51,11 +60,11 @@ function extractImport(line: string): FileImport | null {
     if (def && def[1] && !clause.trim().startsWith("{") && !clause.trim().startsWith("*")) {
       specifiers.push(def[1]);
     }
-    return { source, specifiers, isRelative: source.startsWith(".") };
+    return { source, specifiers, isRelative: source.startsWith("."), line: lineNumber };
   }
   const bare = /\bimport\s+["']([^"']+)["']/.exec(line);
   if (bare && bare[1]) {
-    return { source: bare[1], specifiers: [], isRelative: bare[1].startsWith(".") };
+    return { source: bare[1], specifiers: [], isRelative: bare[1].startsWith("."), line: lineNumber };
   }
   return null;
 }
@@ -93,12 +102,25 @@ export async function extractFileSymbols(
     for (const rule of SYMBOL_RULES) {
       const m = rule.re.exec(line);
       if (m && m[1]) {
-        symbols.push({ name: m[1], kind: rule.kind, exported: true, line: i + 1 });
+        const symbol: ExtractedSymbol = {
+          name: m[1],
+          kind: rule.kind,
+          exported: true,
+          line: i + 1,
+        };
+        if (rule.kind === "class") {
+          symbol.extends = namesFromList(m[2]);
+          symbol.implements = namesFromList(m[3]);
+        }
+        if (rule.kind === "interface") {
+          symbol.extends = namesFromList(m[2]);
+        }
+        symbols.push(symbol);
         break;
       }
     }
     if (/\bimport\b/.test(line)) {
-      const imp = extractImport(line);
+      const imp = extractImport(line, i + 1);
       if (imp) imports.push(imp);
     }
   }

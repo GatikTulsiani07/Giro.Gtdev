@@ -15,6 +15,8 @@ import {
   computeStats,
   detectInsights,
 } from "../graph/graphBuilder.js";
+import { buildRepositorySymbolGraph } from "../repositoryGraph/graphBuilder.js";
+import { saveRepositorySymbolGraph } from "../repositoryGraph/runtimeRepositoryGraph.js";
 import type { DependencyGraph, FileSymbolMap } from "../graph/types.js";
 
 export function applyGraphUpdate(
@@ -34,6 +36,11 @@ export function applyGraphUpdate(
 
   const maps = getFileSymbolMaps(repoId);
   const { nodes, edges } = buildDependencyGraph(maps);
+  saveRepositorySymbolGraph(buildRepositorySymbolGraph({
+    repositoryId: repoId,
+    repositoryVersion: "unversioned",
+    symbolMaps: maps,
+  }));
   const stats = computeStats(nodes, edges);
   const insights = detectInsights(nodes, edges);
 

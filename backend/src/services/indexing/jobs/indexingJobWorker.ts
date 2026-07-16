@@ -4,6 +4,8 @@ import { scanRepo } from "../../repository/scanner.js";
 import { analyzeRepository } from "../../repository/analyzer.js";
 import { extractRepoSymbols } from "../../graph/symbolExtractor.js";
 import { applyGraphUpdate } from "../../repository/graphUpdateExecutor.js";
+import { buildRepositorySymbolGraph } from "../../repositoryGraph/graphBuilder.js";
+import { saveRepositorySymbolGraph } from "../../repositoryGraph/runtimeRepositoryGraph.js";
 import {
   getRepositoryFileSnapshot,
   saveRepositoryFileSnapshot,
@@ -39,6 +41,8 @@ import { env } from "../../../config/env.js";
 import { createDeadline } from "../../../runtime/deadline.js";
 import { isDeadlineExceeded } from "../../../runtime/deadline.js";
 import type { DependencyCircuitBreakers } from "../../../runtime/dependencyCircuitBreakers.js";
+import { runtimeMetrics } from "../../../observability/metrics.js";
+import { logger } from "../../../lib/logger.js";
 
 export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
@@ -277,6 +281,21 @@ export async function executeRepositoryIndexingPipeline(
     added: symbolMaps,
     modified: [],
     removed: indexingPlan.removedFiles,
+  });
+  const repositoryVersion = `${job.jobId}:${job.attempt}`;
+  const symbolGraph = buildRepositorySymbolGraph({
+    repositoryId: repoId,
+    repositoryVersion,
+    symbolMaps,
+  });
+  saveRepositorySymbolGraph(symbolGraph);
+  runtimeMetrics.setSymbolGraphSize(symbolGraph.nodes.length, symbolGraph.edges.length);
+  const graphLogger = input.retryLogger ?? logger;
+  graphLogger.info("symbol_graph_built", {
+    repositoryId: repoId,
+    repositoryVersion,
+    nodes: symbolGraph.nodes.length,
+    edges: symbolGraph.edges.length,
   });
 
   await reportStage({ stage: "chunk", progress: 80 });

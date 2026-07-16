@@ -10,10 +10,16 @@ import {
   assembleRetrievalContext,
   type RetrievalContext,
 } from "./contextAssembler.js";
+import { expandRetrievalCandidatesWithRepositoryGraph } from "../repositoryGraph/repositoryGraph.js";
+import type { RepositoryGraphExpansionMetrics, RepositoryGraphLogger } from "../repositoryGraph/graphTypes.js";
 
 export interface RetrievalPipelineOptions
   extends RetrievalCandidateFilterOptions {
   maxCharacters: number;
+  repositoryId?: string;
+  repositoryVersion?: string;
+  metrics?: RepositoryGraphExpansionMetrics;
+  logger?: RepositoryGraphLogger;
 }
 
 export function buildRetrievalPipeline(
@@ -32,13 +38,23 @@ export function buildRetrievalPipeline(
   const ranked =
     rankRetrievalCandidates(filtered);
 
-  const budgeted =
+  const primaryBudgeted =
     applyRetrievalTokenBudget(
       ranked,
       {
         maxCharacters: options.maxCharacters,
       },
     );
+
+  const budgeted = options.repositoryId
+    ? expandRetrievalCandidatesWithRepositoryGraph(primaryBudgeted, {
+        repositoryId: options.repositoryId,
+        repositoryVersion: options.repositoryVersion,
+        maxCharacters: options.maxCharacters,
+        metrics: options.metrics,
+        logger: options.logger,
+      })
+    : primaryBudgeted;
 
   return assembleRetrievalContext(budgeted);
 }

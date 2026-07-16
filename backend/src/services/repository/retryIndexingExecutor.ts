@@ -15,6 +15,8 @@ import {
 import { setFileSymbols, getRepositorySymbolCount } from "./symbolIndexStore.js";
 import { setFileSymbolMap, getFileSymbolMaps } from "./graphSourceStore.js";
 import { buildDependencyGraph } from "../graph/graphBuilder.js";
+import { buildRepositorySymbolGraph } from "../repositoryGraph/graphBuilder.js";
+import { saveRepositorySymbolGraph } from "../repositoryGraph/runtimeRepositoryGraph.js";
 import type { FileSymbolMap } from "../graph/types.js";
 
 export function executeRetryIndexing(
@@ -37,7 +39,13 @@ export function executeRetryIndexing(
 
   // Recompute counts from the full persisted set (completed + newly added).
   const symbolCount = getRepositorySymbolCount(repoId);
-  const { nodes, edges } = buildDependencyGraph(getFileSymbolMaps(repoId));
+  const maps = getFileSymbolMaps(repoId);
+  const { nodes, edges } = buildDependencyGraph(maps);
+  saveRepositorySymbolGraph(buildRepositorySymbolGraph({
+    repositoryId: repoId,
+    repositoryVersion: "unversioned",
+    symbolMaps: maps,
+  }));
 
   setRepositoryIndexed(owner, repo, {
     chunkCount: meta.chunkCount,

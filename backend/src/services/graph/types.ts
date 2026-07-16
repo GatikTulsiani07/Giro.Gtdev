@@ -13,12 +13,15 @@ export interface ExtractedSymbol {
   kind: SymbolKind;
   exported: boolean;
   line: number;
+  extends?: string[];
+  implements?: string[];
 }
 
 export interface FileImport {
   source: string;
   specifiers: string[];
   isRelative: boolean;
+  line?: number;
 }
 
 export interface FileSymbolMap {

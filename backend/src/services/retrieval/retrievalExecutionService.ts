@@ -10,6 +10,8 @@ export interface RetrievalExecutionInput {
   minScore: number;
   maxCandidates: number;
   maxCharacters: number;
+  repositoryId?: string;
+  repositoryVersion?: string;
 }
 
 export interface RetrievalExecutionResult {
@@ -27,6 +29,8 @@ export function executeRetrieval(
       minScore: input.minScore,
       maxCandidates: input.maxCandidates,
       maxCharacters: input.maxCharacters,
+      repositoryId: input.repositoryId,
+      repositoryVersion: input.repositoryVersion,
     },
   );
 

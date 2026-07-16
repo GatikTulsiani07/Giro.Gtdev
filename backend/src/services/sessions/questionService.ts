@@ -176,6 +176,11 @@ export async function answerSessionQuestion(
       filePath: toRelativePath(item.filePath),
       content: item.content,
       score: item.score,
+      language: item.language,
+      startLine: item.startLine,
+      endLine: item.endLine,
+      symbol: item.symbol,
+      repositoryVersion: item.repositoryVersion,
     })),
   );
 
@@ -185,6 +190,7 @@ export async function answerSessionQuestion(
     minScore: 0,
     maxCandidates: 8,
     maxCharacters: 16000,
+    repositoryId: `${owner}/${repo}`,
   });
 
   const { answer, sources, citations } = assembleAnswer(
@@ -216,6 +222,10 @@ export async function answerSessionQuestion(
         startLine: item.startLine,
         endLine: item.endLine,
         score: round3(item.score ?? 0),
+        chunkId: item.chunkId,
+        symbol: item.symbol,
+        repositoryVersion: item.repositoryVersion,
+        citationRetrievalType: item.citationRetrievalType,
       });
     }
 
