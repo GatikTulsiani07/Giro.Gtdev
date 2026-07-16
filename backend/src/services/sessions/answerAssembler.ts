@@ -1,6 +1,10 @@
 // Deterministic repository answer assembly. No randomness, timestamps, or AI.
 
-import { buildCitations, type Citation } from "../retrieval/citations.js";
+import {
+  buildCitations,
+  repositoryRelativePath,
+  type Citation,
+} from "../retrieval/citations.js";
 import type { AnswerSource, RepositorySummaryView } from "./answerTypes.js";
 import type {
   EnrichedAssembledContext,
@@ -91,19 +95,43 @@ export function assembleAnswer(
   const chunks = context.context;
   const sources = buildSources(question, chunks, fileResults);
   const repositoryVersion = context.citations?.[0]?.repositoryVersion ?? "unversioned";
+  const carriedCitations = context.citations ?? [];
   const citations = buildCitations(
-    chunks.map((chunk) => ({
-      repositoryId: context.repository,
-      filePath: chunk.filePath,
-      language: chunk.language,
-      chunkId: chunk.chunkId,
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
-      retrievalType: chunk.citationRetrievalType ?? chunk.source,
-      score: chunk.score,
-      symbol: chunk.symbol,
-      repositoryVersion: chunk.repositoryVersion ?? repositoryVersion,
-    })),
+    chunks.flatMap((chunk) => {
+      const relativePath = repositoryRelativePath(chunk.filePath, context.repository);
+      const preserved = carriedCitations.filter((citation) =>
+        citation.repositoryId === context.repository &&
+        citation.relativeFilePath === relativePath &&
+        citation.startLine >= chunk.startLine &&
+        citation.endLine <= chunk.endLine
+      );
+      if (preserved.length > 0) {
+        return preserved.map((citation) => ({
+          repositoryId: citation.repositoryId,
+          filePath: citation.relativeFilePath,
+          language: citation.language,
+          chunkId: citation.chunkId,
+          startLine: citation.startLine,
+          endLine: citation.endLine,
+          retrievalType: citation.retrievalType,
+          score: citation.score,
+          symbol: citation.symbol,
+          repositoryVersion: citation.repositoryVersion,
+        }));
+      }
+      return [{
+        repositoryId: context.repository,
+        filePath: chunk.filePath,
+        language: chunk.language,
+        chunkId: chunk.chunkId,
+        startLine: chunk.startLine,
+        endLine: chunk.endLine,
+        retrievalType: chunk.citationRetrievalType ?? chunk.source,
+        score: chunk.score,
+        symbol: chunk.symbol,
+        repositoryVersion: chunk.repositoryVersion ?? repositoryVersion,
+      }];
+    }),
     { surface: "session" },
   );
   const answer = buildAnswer(question, context, summary, sources);

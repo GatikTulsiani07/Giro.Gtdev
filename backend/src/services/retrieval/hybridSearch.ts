@@ -15,7 +15,8 @@ import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 import { runtimeRetrievalCache } from "./cache/runtimeRetrievalCache.js";
 import type { RetrievalCache } from "./cache/retrievalCache.js";
-import { buildCitations } from "./citations.js";
+import { buildCitations, type CitationCandidate } from "./citations.js";
+import { stitchRuntimeChunks } from "./stitching/runtimeChunkStitcher.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -115,23 +116,50 @@ export async function executeHybridSearch(
       ).size
     : 0;
 
-  const results = mergeAndRerank(
+  const rankedPool = mergeAndRerank(
     combined,
     graphNodes,
-    effectiveLimit,
+    combined.length,
   );
+  const primaryChunkCount = Math.min(effectiveLimit, rankedPool.length);
+  const stitchingInputs = rankedPool.map((result) => ({
+    repositoryId: repository,
+    filePath: result.filePath,
+    repositoryVersion: options.repositoryVersion ?? "unversioned",
+    retrievalOperation: "hybrid",
+    content: result.content,
+    startLine: result.startLine,
+    endLine: result.endLine,
+    score: result.score,
+    symbol: result.symbol,
+    citations: [] as CitationCandidate[],
+    result,
+  }));
+  const stitched = stitchRuntimeChunks(stitchingInputs, { primaryChunkCount });
+  const results = stitched.chunks.map((block) => {
+    const primary = block.primaryChunk as (typeof stitchingInputs)[number];
+    return {
+      ...primary.result,
+      content: block.content,
+      startLine: block.startLine,
+      endLine: block.endLine,
+    };
+  });
   const citations = buildCitations(
-    results.map((result) => ({
-      repositoryId: repository,
-      filePath: result.filePath,
-      language: result.language,
-      chunkId: result.chunkId,
-      startLine: result.startLine,
-      endLine: result.endLine,
-      retrievalType: "hybrid",
-      score: result.score,
-      symbol: result.symbol,
-      repositoryVersion: options.repositoryVersion ?? "unversioned",
+    stitched.chunks.flatMap((block) => block.contributors.map((contributor) => {
+      const original = contributor as (typeof stitchingInputs)[number];
+      return {
+        repositoryId: original.repositoryId,
+        filePath: original.filePath,
+        language: original.result.language,
+        chunkId: original.result.chunkId,
+        startLine: original.startLine,
+        endLine: original.endLine,
+        retrievalType: "hybrid" as const,
+        score: original.score,
+        symbol: original.symbol,
+        repositoryVersion: original.repositoryVersion,
+      };
     })),
     { surface: "hybrid" },
   );

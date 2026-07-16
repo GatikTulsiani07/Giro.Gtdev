@@ -224,6 +224,51 @@ test("session answer integration emits grounded citations and no fabricated cita
   assert.deepEqual(empty.citations, []);
 });
 
+test("session answer preserves every citation from a stitched context block", () => {
+  const context = {
+    query: "widgets",
+    repository: "acme/widgets",
+    totalChunks: 1,
+    estimatedTokens: 20,
+    context: [{
+      filePath: "src/widgets.ts",
+      language: "typescript",
+      content: "first\nsecond",
+      startLine: 1,
+      endLine: 4,
+      score: 0.99,
+      source: "semantic" as const,
+      signals: { semantic: 0.99 },
+      citationRetrievalType: "hybrid" as const,
+      repositoryVersion: "v-stitched",
+    }],
+    citations: buildCitations([
+      { ...base, chunkId: "first", startLine: 1, endLine: 2, repositoryVersion: "v-stitched" },
+      { ...base, chunkId: "second", startLine: 3, endLine: 4, repositoryVersion: "v-stitched" },
+    ], { surface: "context", metrics: new MetricsRegistry(), logger: { info: () => undefined } }),
+    stats: {
+      hybridResults: 2,
+      fileSearchResults: 0,
+      deduplicatedCount: 0,
+      finalCount: 1,
+      sourceCounts: { semantic: 1, keyword: 0, symbol: 0, graph: 0, fileSearch: 0 },
+    },
+  };
+  const answer = assembleAnswer("widgets", context, [], {
+    available: false,
+    framework: "unknown",
+    primaryLanguage: "unknown",
+    entrypoints: [],
+    centralModules: [],
+  });
+
+  assert.deepEqual(answer.citations.map((citation) => citation.chunkId), ["first", "second"]);
+  assert.deepEqual(answer.citations.map((citation) => [citation.startLine, citation.endLine]), [
+    [1, 2],
+    [3, 4],
+  ]);
+});
+
 test("legacy session citation shape remains assignable for backward compatibility", () => {
   const legacy: LegacyCitation = {
     filePath: "src/legacy.ts",

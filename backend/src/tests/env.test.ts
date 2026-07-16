@@ -34,6 +34,7 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.INDEXING_WORKER_ID, "worker-1");
   assert.equal(result.RETRIEVAL_CACHE_TTL_MS, 60_000);
   assert.equal(result.RETRIEVAL_CACHE_MAX_ENTRIES, 500);
+  assert.equal(result.RETRIEVAL_STITCH_LINE_GAP, 0);
   assert.equal(Object.isFrozen(result), true);
 });
 
@@ -221,6 +222,12 @@ test("retrieval cache configuration is bounded", () => {
   assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_CACHE_TTL_MS: "3600001" }));
   assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_CACHE_MAX_ENTRIES: "0" }));
   assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_CACHE_MAX_ENTRIES: "10001" }));
+});
+
+test("adjacent chunk line-gap configuration is bounded", () => {
+  assert.equal(validateEnv({ ...REQUIRED, RETRIEVAL_STITCH_LINE_GAP: "8" }).RETRIEVAL_STITCH_LINE_GAP, 8);
+  assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_STITCH_LINE_GAP: "-1" }));
+  assert.throws(() => validateEnv({ ...REQUIRED, RETRIEVAL_STITCH_LINE_GAP: "1001" }));
 });
 
 test("anon key remains a valid fallback when service role is absent", () => {

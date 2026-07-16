@@ -90,6 +90,9 @@ export class MetricsRegistry {
   private citationsGenerated = 0;
   private citationChunks = 0;
   private citationMerges = 0;
+  private chunkStitches = 0;
+  private chunksMerged = 0;
+  private stitchBudgetDrops = 0;
   private symbolGraphNodes = 0;
   private symbolGraphEdges = 0;
   private symbolExpansions = 0;
@@ -225,6 +228,18 @@ export class MetricsRegistry {
 
   addCitationMerges(count: number): void {
     this.citationMerges += Math.max(0, Math.trunc(count));
+  }
+
+  incrementChunkStitches(count = 1): void {
+    this.chunkStitches += Math.max(0, Math.trunc(count));
+  }
+
+  incrementChunksMerged(count = 1): void {
+    this.chunksMerged += Math.max(0, Math.trunc(count));
+  }
+
+  incrementStitchBudgetDrops(count = 1): void {
+    this.stitchBudgetDrops += Math.max(0, Math.trunc(count));
   }
 
   setSymbolGraphSize(nodes: number, edges: number): void {
@@ -371,6 +386,15 @@ export class MetricsRegistry {
       "# HELP giro_citation_merge_total Duplicate citation locations merged.",
       "# TYPE giro_citation_merge_total counter",
       `giro_citation_merge_total ${this.citationMerges}`,
+      "# HELP giro_chunk_stitches_total Adjacent chunk stitch groups created.",
+      "# TYPE giro_chunk_stitches_total counter",
+      `giro_chunk_stitches_total ${this.chunkStitches}`,
+      "# HELP giro_chunks_merged_total Chunks contributing to stitched blocks.",
+      "# TYPE giro_chunks_merged_total counter",
+      `giro_chunks_merged_total ${this.chunksMerged}`,
+      "# HELP giro_stitch_budget_drops_total Stitched blocks dropped by context budgets.",
+      "# TYPE giro_stitch_budget_drops_total counter",
+      `giro_stitch_budget_drops_total ${this.stitchBudgetDrops}`,
       "# HELP giro_symbol_graph_nodes Repository symbol graph nodes.",
       "# TYPE giro_symbol_graph_nodes gauge",
       `giro_symbol_graph_nodes ${this.symbolGraphNodes}`,

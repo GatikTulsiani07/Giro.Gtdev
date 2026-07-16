@@ -36,6 +36,7 @@ const EnvSchema = z
     INDEXING_WORKER_ID: optionalNonEmptyString,
     RETRIEVAL_CACHE_TTL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
     RETRIEVAL_CACHE_MAX_ENTRIES: z.coerce.number().int().min(1).max(10_000).default(500),
+    RETRIEVAL_STITCH_LINE_GAP: z.coerce.number().int().min(0).max(1_000).default(0),
     SHUTDOWN_TIMEOUT_MS: z.coerce
       .number()
       .int()

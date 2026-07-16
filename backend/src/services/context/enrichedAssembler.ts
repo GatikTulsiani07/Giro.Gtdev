@@ -25,8 +25,13 @@ import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../retrieval/cache/retrievalCache.js";
 import { runtimeRetrievalCache } from "../retrieval/cache/runtimeRetrievalCache.js";
-import { buildCitations } from "../retrieval/citations.js";
+import {
+  buildCitations,
+  repositoryRelativePath,
+  type Citation,
+} from "../retrieval/citations.js";
 import { getRepositorySummary } from "../repositorySummary/runtimeRepositorySummary.js";
+import { recordRuntimeStitchBudgetDrops } from "../retrieval/stitching/runtimeChunkStitcher.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -51,20 +56,52 @@ export function buildContextCitations(
   repositoryId: string,
   chunks: readonly EnrichedContextChunk[],
   repositoryVersion: string,
+  carriedCitations: readonly Citation[] = [],
 ) {
-  return buildCitations(
-    chunks.map((chunk) => ({
-      repositoryId,
-      filePath: chunk.filePath,
-      language: chunk.language,
-      chunkId: chunk.chunkId,
+  const finalizedHybridRanges = chunks
+    .filter((chunk) => chunk.citationRetrievalType === "hybrid")
+    .map((chunk) => ({
+      path: repositoryRelativePath(chunk.filePath, repositoryId),
       startLine: chunk.startLine,
       endLine: chunk.endLine,
-      retrievalType: chunk.citationRetrievalType ?? chunk.source,
-      score: chunk.score,
-      symbol: chunk.symbol,
-      repositoryVersion: chunk.repositoryVersion ?? repositoryVersion,
-    })),
+    }));
+  const preserved = carriedCitations.filter((citation) =>
+    citation.repositoryId === repositoryId &&
+    finalizedHybridRanges.some((range) =>
+      range.path === citation.relativeFilePath &&
+      citation.startLine >= range.startLine &&
+      citation.endLine <= range.endLine,
+    )
+  );
+  return buildCitations(
+    [
+      ...chunks
+        .filter((chunk) => chunk.citationRetrievalType !== "hybrid")
+        .map((chunk) => ({
+          repositoryId,
+          filePath: chunk.filePath,
+          language: chunk.language,
+          chunkId: chunk.chunkId,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          retrievalType: chunk.citationRetrievalType ?? chunk.source,
+          score: chunk.score,
+          symbol: chunk.symbol,
+          repositoryVersion: chunk.repositoryVersion ?? repositoryVersion,
+        })),
+      ...preserved.map((citation) => ({
+        repositoryId: citation.repositoryId,
+        filePath: citation.relativeFilePath,
+        language: citation.language,
+        chunkId: citation.chunkId,
+        startLine: citation.startLine,
+        endLine: citation.endLine,
+        retrievalType: citation.retrievalType,
+        score: citation.score,
+        symbol: citation.symbol,
+        repositoryVersion: citation.repositoryVersion,
+      })),
+    ],
     { surface: "context" },
   );
 }
@@ -174,6 +211,7 @@ export async function assembleEnrichedContext(
   }
 
   let hybridResults: Awaited<ReturnType<typeof hybridSearch>>["results"] = [];
+  let hybridCitations: readonly Citation[] = [];
   let repositoryVersion = await cache.repositoryVersion(repository, options.signal);
   const summaryChunk = buildRepositorySummaryContextChunk(repository, repositoryVersion);
   try {
@@ -184,6 +222,7 @@ export async function assembleEnrichedContext(
       limit: limit * 2,
     }, { signal: options.signal, cache });
     hybridResults = res.results;
+    hybridCitations = res.citations ?? [];
     repositoryVersion = res.citations?.[0]?.repositoryVersion ?? repositoryVersion;
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
@@ -254,13 +293,23 @@ export async function assembleEnrichedContext(
   // Character budget enforcement with optional trim.
   const finalChunks: EnrichedContextChunk[] = [];
   let usedChars = 0;
+  let stitchBudgetDrops = 0;
   if (summaryChunk && summaryChunk.content.length <= maxChars) {
     finalChunks.push(summaryChunk);
     usedChars += summaryChunk.content.length;
   }
   for (const chunk of rankedChunks) {
+    const isStitchedHybridChunk = chunk.citationRetrievalType === "hybrid" &&
+      hybridCitations.filter((citation) =>
+        citation.relativeFilePath === repositoryRelativePath(chunk.filePath, repository) &&
+        citation.startLine >= chunk.startLine &&
+        citation.endLine <= chunk.endLine
+      ).length > 1;
     const remaining = maxChars - usedChars;
-    if (remaining <= 0) break;
+    if (remaining <= 0) {
+      if (isStitchedHybridChunk) stitchBudgetDrops += 1;
+      continue;
+    }
 
     if (chunk.content.length <= remaining) {
       finalChunks.push(chunk);
@@ -273,8 +322,12 @@ export async function assembleEnrichedContext(
       finalChunks.push({ ...chunk, content: trimmed });
       usedChars += trimmed.length;
     }
+    else if (isStitchedHybridChunk) {
+      stitchBudgetDrops += 1;
+    }
     // else: skip chunk, keep scanning for smaller ones.
   }
+  recordRuntimeStitchBudgetDrops(stitchBudgetDrops);
 
   const sourceCounts = {
     semantic: 0,
@@ -295,6 +348,7 @@ export async function assembleEnrichedContext(
     repository,
     finalChunks,
     repositoryVersion,
+    hybridCitations,
   );
 
   // Confidence metadata derived from the finalized chunk set (no mutation).
