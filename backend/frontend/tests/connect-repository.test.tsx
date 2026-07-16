@@ -1,0 +1,35 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConnectRepositoryForm, validateGitHubUrl } from "@/features/repositories/connect-repository-form";
+
+const push = vi.fn();
+const mutateAsync = vi.fn();
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("@/hooks/use-repositories", () => ({ useConnectRepository: () => ({ mutateAsync, isPending: false, error: null }) }));
+
+describe("repository connection", () => {
+  beforeEach(() => { push.mockReset(); mutateAsync.mockReset(); });
+
+  it("validates only full GitHub repository URLs", () => {
+    expect(validateGitHubUrl("https://github.com/acme/platform")).toBeNull();
+    expect(validateGitHubUrl("git@github.com:acme/platform.git")).toMatch(/full GitHub URL/);
+    expect(validateGitHubUrl("https://example.com/acme/platform")).toMatch(/full GitHub URL/);
+  });
+
+  it("shows validation without issuing an API request", () => {
+    render(<ConnectRepositoryForm />);
+    fireEvent.change(screen.getByLabelText("GitHub repository URL"), { target: { value: "not-a-url" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect and index" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a full GitHub URL");
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("connects and redirects to live indexing progress", async () => {
+    mutateAsync.mockResolvedValue({ repositoryId: "acme/platform", jobId: "job-1", status: "queued" });
+    render(<ConnectRepositoryForm />);
+    fireEvent.change(screen.getByLabelText("GitHub repository URL"), { target: { value: "https://github.com/acme/platform" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect and index" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/repositories/acme/platform/indexing?jobId=job-1"));
+  });
+});

@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --background: 42 21% 8%;
+  --foreground: 43 19% 83%;
+  --card: 43 17% 10%;
+  --panel: 38 19% 11%;
+  --muted: 41 14% 15%;
+  --muted-foreground: 43 11% 53%;
+  --border: 41 14% 20%;
+  --accent: 76 70% 38%;
+  --primary: 77 72% 30%;
+  --primary-foreground: 45 25% 91%;
+}
+
+* { border-color: hsl(var(--border)); }
+html { background: hsl(var(--background)); }
+body {
+  min-height: 100vh;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  text-rendering: optimizeLegibility;
+}
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+  background: radial-gradient(circle at 48% -20%, hsl(var(--primary) / 0.045), transparent 38rem);
+}
+h1 { font-family: var(--font-instrument-serif), Georgia, serif; font-weight: 400; }
+::selection { background: hsl(var(--primary) / 0.38); color: hsl(var(--primary-foreground)); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: hsl(var(--foreground) / 0.12); border-radius: 999px; }
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .focus-ring { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}

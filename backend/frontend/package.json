@@ -1,0 +1,47 @@
+{
+  "name": "@giro/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "1.2.3",
+    "@tanstack/react-query": "5.90.5",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.468.0",
+    "next": "15.5.20",
+    "prism-react-renderer": "2.4.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-markdown": "9.0.1",
+    "react-resizable-panels": "2.1.7",
+    "remark-gfm": "4.0.1",
+    "tailwind-merge": "2.6.0",
+    "zustand": "5.0.8"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.2.0",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@testing-library/user-event": "14.5.2",
+    "@types/node": "22.10.5",
+    "@types/react": "19.0.3",
+    "@types/react-dom": "19.0.2",
+    "@vitejs/plugin-react": "4.3.4",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.17.0",
+    "eslint-config-next": "15.5.20",
+    "jsdom": "25.0.1",
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.7.2",
+    "vitest": "2.1.9"
+  }
+}
