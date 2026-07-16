@@ -9,6 +9,7 @@ import type { RetrievalHotspots } from "../retrieval/retrievalHotspots.js";
 import type { RetrievalDiversity } from "../retrieval/retrievalDiversity.js";
 import type { RetrievalBlindSpots } from "../retrieval/retrievalBlindSpots.js";
 import type { RetrievalQualityScore } from "../retrieval/retrievalQualityScore.js";
+import type { Citation, CitationRetrievalType } from "../retrieval/citations.js";
 
 export interface EnrichedContextChunk {
   filePath: string;
@@ -26,6 +27,10 @@ export interface EnrichedContextChunk {
     fileSearch?: number;
   };
   reason?: string;
+  chunkId?: string;
+  symbol?: string;
+  repositoryVersion?: string;
+  citationRetrievalType?: CitationRetrievalType;
 }
 
 export interface EnrichedAssembledContext {
@@ -34,6 +39,7 @@ export interface EnrichedAssembledContext {
   totalChunks: number;
   estimatedTokens: number;
   context: EnrichedContextChunk[];
+  citations?: Citation[];
   stats: {
     hybridResults: number;
     fileSearchResults: number;

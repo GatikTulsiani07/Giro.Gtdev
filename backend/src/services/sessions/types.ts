@@ -3,10 +3,18 @@
 export type MessageRole = "user" | "assistant";
 
 export interface Citation {
-  filePath: string;
+  filePath?: string;
   startLine: number;
   endLine: number;
-  snippet: string;
+  snippet?: string;
+  repositoryId?: string;
+  relativeFilePath?: string;
+  language?: string;
+  chunkId?: string;
+  retrievalType?: "semantic" | "keyword" | "symbol" | "graph" | "hybrid" | "file-search";
+  score?: number;
+  symbol?: string;
+  repositoryVersion?: string;
 }
 
 // Compatible with the existing enriched retrieval chunk shape.
@@ -27,6 +35,10 @@ export interface SelectedContextChunk {
     graph?: number;
     fileSearch?: number;
   };
+  chunkId?: string;
+  symbol?: string;
+  repositoryVersion?: string;
+  citationRetrievalType?: "semantic" | "keyword" | "symbol" | "graph" | "hybrid" | "file-search";
 }
 
 export interface Message {

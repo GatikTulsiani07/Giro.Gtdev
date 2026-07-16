@@ -18,4 +18,5 @@ export interface SemanticSearchResult {
   similarity: number;
   startLine: number;
   endLine: number;
+  chunkId?: string;
 }

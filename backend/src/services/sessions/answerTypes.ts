@@ -1,6 +1,6 @@
 // Types for the deterministic answer synthesis layer.
 
-import type { Citation } from "./types.js";
+import type { Citation } from "../retrieval/citations.js";
 
 export interface AnswerSource {
   path: string;

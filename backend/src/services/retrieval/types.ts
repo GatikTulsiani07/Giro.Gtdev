@@ -19,6 +19,8 @@ export interface RetrievalResult {
   score: number;
   source: RetrievalSource;
   signals: RetrievalSignals;
+  chunkId?: string;
+  symbol?: string;
 }
 
 export interface HybridSearchRequest {
@@ -32,6 +34,7 @@ export interface HybridSearchResponse {
   query: string;
   repository: string;
   results: RetrievalResult[];
+  citations?: import("./citations.js").Citation[];
   stats: {
     semanticResults: number;
     keywordResults: number;

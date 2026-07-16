@@ -9,8 +9,19 @@ import { retryDatabaseRead } from "../database/retryPolicy.js";
 import type { RetryRuntimeOptions } from "../../runtime/retry.js";
 import type { RetryLogger, RetryMetrics } from "../../observability/retryObservability.js";
 import { isDependencyUnavailable, type CircuitBreaker } from "../../runtime/circuitBreaker.js";
+import { buildCitations, type Citation } from "./citations.js";
+
+export interface KeywordSearchOptions {
+  signal?: AbortSignal;
+  requestId?: string;
+  logger?: RetryLogger;
+  metrics?: RetryMetrics;
+  retryRuntime?: RetryRuntimeOptions;
+  circuitBreaker?: CircuitBreaker;
+}
 
 interface ChunkRow {
+  id?: string;
   repository: string;
   file_path: string;
   language: string;
@@ -24,14 +35,7 @@ export async function keywordSearch(
   owner: string,
   repo: string,
   limit: number = 20,
-  options: {
-    signal?: AbortSignal;
-    requestId?: string;
-    logger?: RetryLogger;
-    metrics?: RetryMetrics;
-    retryRuntime?: RetryRuntimeOptions;
-    circuitBreaker?: CircuitBreaker;
-  } = {},
+  options: KeywordSearchOptions = {},
 ): Promise<RetrievalResult[]> {
   const repository = `${owner}/${repo}`;
   const tokens = query
@@ -52,7 +56,7 @@ export async function keywordSearch(
     const { data, error } = await retryDatabaseRead(
       () => supabase
         .from("repository_chunks")
-        .select("repository,file_path,language,content,start_line,end_line")
+        .select("id,repository,file_path,language,content,start_line,end_line")
         .eq("repository", repository)
         .or(orFilter)
         .limit(limit * 3)
@@ -108,6 +112,7 @@ export async function keywordSearch(
       score: Math.min(1, s.raw / maxRaw),
       source: "keyword" as const,
       signals: { keyword: Math.min(1, s.raw / maxRaw) },
+      chunkId: s.row.id,
     }))
     .sort(
       (a, b) =>
@@ -116,4 +121,29 @@ export async function keywordSearch(
         a.startLine - b.startLine,
     )
     .slice(0, limit);
+}
+
+export async function keywordSearchWithCitations(
+  query: string,
+  owner: string,
+  repo: string,
+  limit: number = 20,
+  options: KeywordSearchOptions & { repositoryVersion?: string } = {},
+): Promise<{ results: RetrievalResult[]; citations: Citation[] }> {
+  const results = await keywordSearch(query, owner, repo, limit, options);
+  const repositoryId = `${owner}/${repo}`;
+  return {
+    results,
+    citations: buildCitations(results.map((result) => ({
+      repositoryId,
+      filePath: result.filePath,
+      language: result.language,
+      chunkId: result.chunkId,
+      startLine: result.startLine,
+      endLine: result.endLine,
+      retrievalType: "keyword",
+      score: result.score,
+      repositoryVersion: options.repositoryVersion ?? "unversioned",
+    })), { surface: "keyword" }),
+  };
 }

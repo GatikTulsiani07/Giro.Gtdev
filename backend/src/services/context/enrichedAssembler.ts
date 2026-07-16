@@ -24,6 +24,8 @@ import type {
 import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 import type { RetrievalCache } from "../retrieval/cache/retrievalCache.js";
+import { runtimeRetrievalCache } from "../retrieval/cache/runtimeRetrievalCache.js";
+import { buildCitations } from "../retrieval/citations.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -41,6 +43,28 @@ function roundSignals(
     if (v !== undefined) out[key] = round3(v);
   }
   return out;
+}
+
+export function buildContextCitations(
+  repositoryId: string,
+  chunks: readonly EnrichedContextChunk[],
+  repositoryVersion: string,
+) {
+  return buildCitations(
+    chunks.map((chunk) => ({
+      repositoryId,
+      filePath: chunk.filePath,
+      language: chunk.language,
+      chunkId: chunk.chunkId,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      retrievalType: chunk.citationRetrievalType ?? chunk.source,
+      score: chunk.score,
+      symbol: chunk.symbol,
+      repositoryVersion,
+    })),
+    { surface: "context" },
+  );
 }
 
 function dedupe(chunks: EnrichedContextChunk[]): {
@@ -72,7 +96,11 @@ function dedupe(chunks: EnrichedContextChunk[]): {
       existing.content = chunk.content;
       existing.source = chunk.source;
       existing.language = chunk.language;
+      existing.chunkId = chunk.chunkId ?? existing.chunkId;
+      existing.symbol = chunk.symbol ?? existing.symbol;
+      existing.citationRetrievalType = chunk.citationRetrievalType;
     }
+    existing.symbol ??= chunk.symbol;
     // Preserve any reason.
     if (!existing.reason && chunk.reason) existing.reason = chunk.reason;
   }
@@ -95,6 +123,7 @@ export async function assembleEnrichedContext(
   }
 
   let hybridResults: Awaited<ReturnType<typeof hybridSearch>>["results"] = [];
+  let repositoryVersion: string | undefined;
   try {
     const res = await hybridSearch({
       query: request.query,
@@ -103,6 +132,7 @@ export async function assembleEnrichedContext(
       limit: limit * 2,
     }, { signal: options.signal, cache: options.cache });
     hybridResults = res.results;
+    repositoryVersion = res.citations?.[0]?.repositoryVersion;
   } catch (err) {
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
     logger.warn("enriched_hybrid_failed", {
@@ -137,6 +167,10 @@ export async function assembleEnrichedContext(
     source: r.source,
     signals: r.signals,
     reason: undefined,
+    chunkId: r.chunkId,
+    symbol: r.symbol,
+    repositoryVersion,
+    citationRetrievalType: "hybrid",
   }));
 
   const fileChunks: EnrichedContextChunk[] = fileResults.map((r) => ({
@@ -149,6 +183,7 @@ export async function assembleEnrichedContext(
     source: "file-search",
     signals: { fileSearch: r.score },
     reason: r.reason,
+    citationRetrievalType: "file-search",
   }));
 
   const { merged, removedCount } = dedupe([...hybridChunks, ...fileChunks]);
@@ -200,6 +235,14 @@ export async function assembleEnrichedContext(
   const totalContentLength = finalChunks.reduce((s, c) => s + c.content.length, 0);
   const estimatedTokens = Math.ceil(totalContentLength / 4);
 
+  repositoryVersion ??= await (options.cache ?? runtimeRetrievalCache)
+    .repositoryVersion(repository, options.signal);
+  const citations = buildContextCitations(
+    repository,
+    finalChunks,
+    repositoryVersion,
+  );
+
   // Confidence metadata derived from the finalized chunk set (no mutation).
   const confidenceMeta = buildConfidenceMetadata(finalChunks);
 
@@ -250,6 +293,7 @@ export async function assembleEnrichedContext(
     totalChunks: finalChunks.length,
     estimatedTokens,
     context: finalChunks,
+    citations,
     stats: {
       hybridResults: hybridResults.length,
       fileSearchResults: fileResults.length,

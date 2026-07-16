@@ -86,6 +86,7 @@ export async function symbolSearch(
           score,
           source: "symbol" as const,
           signals: { symbol: score },
+          symbol: s.matched[0]?.name,
         };
       })
       .sort(

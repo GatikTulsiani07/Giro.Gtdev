@@ -15,6 +15,7 @@ import { isDeadlineExceeded } from "../../runtime/deadline.js";
 import { isDependencyUnavailable } from "../../runtime/circuitBreaker.js";
 import { runtimeRetrievalCache } from "./cache/runtimeRetrievalCache.js";
 import type { RetrievalCache } from "./cache/retrievalCache.js";
+import { buildCitations } from "./citations.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -36,7 +37,7 @@ export interface HybridSearchOptions {
 
 export async function executeHybridSearch(
   request: HybridSearchRequest,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; repositoryVersion?: string } = {},
 ): Promise<HybridSearchResponse> {
   const { query, owner, repo } = request;
   const repository = `${owner}/${repo}`;
@@ -71,6 +72,7 @@ export async function executeHybridSearch(
         score: r.similarity,
         source: "semantic" as const,
         signals: { semantic: r.similarity },
+        chunkId: r.chunkId,
       }));
   } else {
     logger.error("semantic_search_failed", {
@@ -118,6 +120,21 @@ export async function executeHybridSearch(
     graphNodes,
     effectiveLimit,
   );
+  const citations = buildCitations(
+    results.map((result) => ({
+      repositoryId: repository,
+      filePath: result.filePath,
+      language: result.language,
+      chunkId: result.chunkId,
+      startLine: result.startLine,
+      endLine: result.endLine,
+      retrievalType: "hybrid",
+      score: result.score,
+      symbol: result.symbol,
+      repositoryVersion: options.repositoryVersion ?? "unversioned",
+    })),
+    { surface: "hybrid" },
+  );
 
   logger.info("hybrid_search_complete", {
     repository,
@@ -132,6 +149,7 @@ export async function executeHybridSearch(
     query,
     repository,
     results,
+    citations,
     stats: {
       semanticResults: semantic.length,
       keywordResults: keyword.length,
@@ -161,7 +179,10 @@ export async function hybridSearch(
       selectedContext: null,
       options: {},
     },
-    (signal) => (options.execute ?? executeHybridSearch)(request, { signal }),
+    (signal, context) => (options.execute ?? executeHybridSearch)(request, {
+      signal,
+      repositoryVersion: context.repositoryVersion,
+    }),
     { signal: options.signal },
   );
   const query = request.query;

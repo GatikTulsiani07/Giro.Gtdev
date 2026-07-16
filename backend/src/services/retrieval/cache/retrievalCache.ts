@@ -32,6 +32,10 @@ export interface RetrievalCacheLoadOptions {
   signal?: AbortSignal;
 }
 
+export interface RetrievalCacheLoadContext {
+  repositoryVersion: string;
+}
+
 interface CacheEntry {
   repositoryId: string;
   value: unknown;
@@ -134,7 +138,7 @@ export class RetrievalCache {
 
   async getOrLoad<T>(
     input: RetrievalCacheKeyInput,
-    loader: (signal: AbortSignal) => Promise<T>,
+    loader: (signal: AbortSignal, context: RetrievalCacheLoadContext) => Promise<T>,
     options: RetrievalCacheLoadOptions = {},
   ): Promise<T> {
     if (options.signal?.aborted) throw abortReason(options.signal);
@@ -165,7 +169,9 @@ export class RetrievalCache {
           waiters: 0,
           settled: false,
         };
-        entry.promise = loader(controller.signal)
+        entry.promise = loader(controller.signal, {
+          repositoryVersion: "version_unavailable",
+        })
           .then(immutableCopy)
           .finally(() => {
             entry.settled = true;
@@ -205,7 +211,9 @@ export class RetrievalCache {
       waiters: 0,
       settled: false,
     };
-    entry.promise = loader(controller.signal)
+    entry.promise = loader(controller.signal, {
+      repositoryVersion: repositoryVersion ?? "unversioned",
+    })
       .then((result) => {
         const immutable = immutableCopy(result);
         const unchanged = (this.repositoryGenerations.get(repositoryId) ?? 0) === generation;
@@ -254,6 +262,22 @@ export class RetrievalCache {
 
   size(): number {
     return this.entries.size;
+  }
+
+  async repositoryVersion(
+    repositoryId: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (!this.versionProvider) return "unversioned";
+    try {
+      return await this.resolveVersion(
+        normalizeWhitespace(repositoryId).toLowerCase(),
+        signal,
+      );
+    } catch {
+      if (signal?.aborted) throw abortReason(signal);
+      return "version_unavailable";
+    }
   }
 
   private observeRepositoryVersion(repositoryId: string, version: string): void {

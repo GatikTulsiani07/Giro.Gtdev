@@ -108,7 +108,10 @@ export function mergeAndRerank(
     if (strongestSignal(result.signals) > strongestSignal(existing.signals)) {
       existing.content = result.content;
       existing.source = result.source;
+      existing.language = result.language;
+      existing.chunkId = result.chunkId ?? existing.chunkId;
     }
+    existing.symbol ??= result.symbol;
   }
 
   const output: RetrievalResult[] = [];

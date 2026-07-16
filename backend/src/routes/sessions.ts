@@ -25,7 +25,7 @@ import {
 } from "../validation/repositorySchemas.js";
 import type { RetrievalCache } from "../services/retrieval/cache/retrievalCache.js";
 
-const CitationSchema = z
+const LegacyCitationSchema = z
   .object({
     filePath: z.string().min(1),
     startLine: z.number().int(),
@@ -35,6 +35,27 @@ const CitationSchema = z
   .refine((c) => c.endLine >= c.startLine, {
     message: "endLine must be >= startLine",
   });
+
+const GroundedCitationSchema = z
+  .object({
+    repositoryId: z.string().min(1),
+    relativeFilePath: z.string().min(1).refine(
+      (path) => !path.startsWith("/") && !path.split("/").includes(".."),
+    ),
+    language: z.string().min(1),
+    chunkId: z.string().min(1),
+    startLine: z.number().int().min(1),
+    endLine: z.number().int().min(1),
+    retrievalType: z.enum(["semantic", "keyword", "symbol", "graph", "hybrid", "file-search"]),
+    score: z.number().finite(),
+    symbol: z.string().min(1).optional(),
+    repositoryVersion: z.string().min(1),
+  })
+  .refine((citation) => citation.endLine >= citation.startLine, {
+    message: "endLine must be >= startLine",
+  });
+
+const CitationSchema = z.union([LegacyCitationSchema, GroundedCitationSchema]);
 
 const CreateSessionBody = z.object({
   owner: RepositoryOwnerSchema,

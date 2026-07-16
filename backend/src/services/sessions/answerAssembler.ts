@@ -1,6 +1,6 @@
 // Deterministic repository answer assembly. No randomness, timestamps, or AI.
 
-import type { Citation } from "./types.js";
+import { buildCitations, type Citation } from "../retrieval/citations.js";
 import type { AnswerSource, RepositorySummaryView } from "./answerTypes.js";
 import type {
   EnrichedAssembledContext,
@@ -9,17 +9,9 @@ import type {
 import type { FileSearchResult } from "../fileSearch/types.js";
 
 const MAX_SOURCES = 6;
-const MAX_CITATIONS = 6;
-const SNIPPET_LEN = 160;
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
-}
-
-function snippetOf(content: string): string {
-  const collapsed = content.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= SNIPPET_LEN) return collapsed;
-  return collapsed.slice(0, SNIPPET_LEN) + "…";
 }
 
 function buildSources(
@@ -52,23 +44,6 @@ function buildSources(
   return sources
     .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
     .slice(0, MAX_SOURCES);
-}
-
-function buildCitations(chunks: EnrichedContextChunk[]): Citation[] {
-  return [...chunks]
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        a.filePath.localeCompare(b.filePath) ||
-        a.startLine - b.startLine,
-    )
-    .slice(0, MAX_CITATIONS)
-    .map((chunk) => ({
-      filePath: chunk.filePath,
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
-      snippet: snippetOf(chunk.content),
-    }));
 }
 
 function buildAnswer(
@@ -115,7 +90,22 @@ export function assembleAnswer(
 ): { answer: string; sources: AnswerSource[]; citations: Citation[] } {
   const chunks = context.context;
   const sources = buildSources(question, chunks, fileResults);
-  const citations = buildCitations(chunks);
+  const repositoryVersion = context.citations?.[0]?.repositoryVersion ?? "unversioned";
+  const citations = buildCitations(
+    chunks.map((chunk) => ({
+      repositoryId: context.repository,
+      filePath: chunk.filePath,
+      language: chunk.language,
+      chunkId: chunk.chunkId,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      retrievalType: chunk.citationRetrievalType ?? chunk.source,
+      score: chunk.score,
+      symbol: chunk.symbol,
+      repositoryVersion: chunk.repositoryVersion ?? repositoryVersion,
+    })),
+    { surface: "session" },
+  );
   const answer = buildAnswer(question, context, summary, sources);
   return { answer, sources, citations };
 }
