@@ -6,6 +6,7 @@ import { repository } from "./fixtures";
 
 const routerPush = vi.fn();
 let currentSearchParams = "";
+const repositoryMocks = vi.hoisted(() => ({ status: "indexed" }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
@@ -16,7 +17,7 @@ vi.mock("@/hooks/use-sessions", () => ({
   useSessions: () => ({ data: { sessions: [] }, isLoading: false, isError: false, refetch: vi.fn() }),
 }));
 vi.mock("@/hooks/use-repositories", () => ({
-  useRepositories: () => ({ data: { repositories: [repository], count: 1 } }),
+  useRepositories: () => ({ data: { repositories: [{ ...repository, status: repositoryMocks.status }], count: 1 } }),
   useRepository: () => ({
     isLoading: false,
     isError: false,
@@ -45,6 +46,7 @@ vi.mock("@/hooks/use-repositories", () => ({
 describe("repository page", () => {
   beforeEach(() => {
     currentSearchParams = "";
+    repositoryMocks.status = "indexed";
     routerPush.mockReset();
   });
 
@@ -99,5 +101,16 @@ describe("repository page", () => {
     render(<RepositoryOverview owner="acme" repo="platform" />);
     expect(screen.getByRole("option", { name: "Entry points: server, src/index.ts" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("server details")).toHaveTextContent("src/index.ts");
+  });
+
+  it("offers Ask Giro only for a selected item in a Ready repository", () => {
+    currentSearchParams = "tab=architecture";
+    const view = render(<RepositoryOverview owner="acme" repo="platform" />);
+    expect(screen.getByRole("button", { name: "Ask Giro about this" })).toBeInTheDocument();
+    view.unmount();
+
+    repositoryMocks.status = "indexing";
+    render(<RepositoryOverview owner="acme" repo="platform" />);
+    expect(screen.queryByRole("button", { name: "Ask Giro about this" })).not.toBeInTheDocument();
   });
 });

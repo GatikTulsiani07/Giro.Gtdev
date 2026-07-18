@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, FileCode2, LoaderCircle, MessageSquare, Play, Settings } from "lucide-react";
@@ -11,6 +12,7 @@ import { InlineAlert } from "@/components/ui/inline-alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getRepositoryStatus, RepositoryStatusBadge } from "@/components/ui/status-badge";
 import { Tabs } from "@/components/ui/tabs";
+import { AskGiroDialog, type AskGiroTarget } from "@/features/repositories/ask-giro-dialog";
 import { RepositoryExplorerDetail } from "@/features/repositories/repository-explorer-detail";
 import { RepositoryExplorerList } from "@/features/repositories/repository-explorer-list";
 import { useRepositories, useRepository } from "@/hooks/use-repositories";
@@ -42,6 +44,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
   const repositories = useRepositories();
   const create = useCreateSession();
   const sessions = useSessions();
+  const [askTarget, setAskTarget] = useState<AskGiroTarget | null>(null);
   const activeTab = repositoryTab(searchParams.get("tab"));
   const indexed = repositories.data?.repositories.find((item) => item.owner === owner && item.repo === repo);
   const repositoryStatus = getRepositoryStatus(indexed?.status);
@@ -113,25 +116,26 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
           <aside className="min-w-0" aria-label="Repository index summary"><Panel className="border border-border-subtle p-4"><h2 className="type-panel-title">Latest indexing run</h2><dl className="mt-4 divide-y divide-border-subtle"><Row label="Status" value={repositoryStatus.label} /><Row label="Version" value={details?.repositoryVersion} mono /><Row label="Indexed" value={indexed?.lastIndexedAt ? formatDate(indexed.lastIndexedAt) : undefined} /><Row label="Mode" value={indexed?.lastIndexMode ?? undefined} /><Row label="Changed files" value={indexed ? String(indexed.lastChangedFileCount) : undefined} /><Row label="Retries" value={indexed ? String(indexed.retryCount) : undefined} /></dl></Panel></aside>
         </div> : null}
 
-        {activeTab === "architecture" ? <ExplorerTab title="Architecture summary" description="Languages, frameworks, entry points, and repository surfaces exposed by indexing." empty="No architecture summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} /> : null}
+        {activeTab === "architecture" ? <ExplorerTab tab="architecture" title="Architecture summary" description="Languages, frameworks, entry points, and repository surfaces exposed by indexing." empty="No architecture summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "architecture" } }) : undefined} /> : null}
 
-        {activeTab === "files" ? <ExplorerTab title="Important files and directories" description="A curated summary of important directories and configuration files. It does not represent every repository path." empty="No important files were detected." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} /> : null}
+        {activeTab === "files" ? <ExplorerTab tab="files" title="Important files and directories" description="A curated summary of important directories and configuration files. It does not represent every repository path." empty="No important files were detected." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "files" } }) : undefined} /> : null}
 
-        {activeTab === "symbols" ? <ExplorerTab title="Exported symbols" description="Modules and API surfaces exposed by the repository summary." empty="No exported symbols were detected." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} /> : null}
+        {activeTab === "symbols" ? <ExplorerTab tab="symbols" title="Exported symbols" description="Modules and API surfaces exposed by the repository summary." empty="No exported symbols were detected." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "symbols" } }) : undefined} /> : null}
 
-        {activeTab === "dependencies" ? <ExplorerTab title="Dependency summary" description="Central modules, dependency hotspots, and detected cycles exposed by indexing." empty="No dependency summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} /> : null}
+        {activeTab === "dependencies" ? <ExplorerTab tab="dependencies" title="Dependency summary" description="Central modules, dependency hotspots, and detected cycles exposed by indexing." empty="No dependency summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "dependencies" } }) : undefined} /> : null}
 
         {activeTab === "sessions" ? <section aria-label="Repository sessions" className="layout-editorial ml-0"><div className="divide-y divide-border-subtle border-y border-border-subtle">{sessions.isError ? <div className="p-3"><ErrorState error={sessions.error} retry={() => void sessions.refetch()} compact /></div> : null}{sessions.isLoading ? <div className="space-y-3 p-3"><Skeleton className="h-10" /><Skeleton className="h-10" /></div> : null}{repositorySessions.map((session) => <Link key={session.id} href={`/chat/${session.id}`} className="flex min-h-10 items-center gap-3 px-3 py-2 hover:bg-hover focus-ring"><MessageSquare className="size-3.5 text-muted-foreground" /><span className="min-w-0 flex-1 truncate type-compact-strong">{session.title}</span><span className="type-metadata text-muted-foreground">{session.messageCount} messages</span></Link>)}</div>{!sessions.isLoading && !sessions.isError && repositorySessions.length === 0 ? <EmptyState icon={MessageSquare} title="No repository sessions" description="Start a session from the primary action when repository intelligence is ready." /> : null}</section> : null}
 
         {activeTab === "settings" ? <EmptyState icon={Settings} title="No repository settings exposed" description="The current backend does not expose repository-specific settings." /> : null}
       </div>
+      {askTarget ? <AskGiroDialog open owner={owner} repo={repo} target={askTarget} onClose={() => setAskTarget(null)} /> : null}
     </div>
   );
 }
 
-function ExplorerTab({ title, description, empty, categories, selectedItem, onSelect }: { title: string; description: string; empty: string; categories: ReturnType<typeof extractRepositoryExplorerCategories>; selectedItem: RepositoryExplorerItem | undefined; onSelect(item: RepositoryExplorerItem): void }) {
+function ExplorerTab({ title, description, empty, categories, selectedItem, onSelect, onAsk }: { tab: RepositoryExplorerTab; title: string; description: string; empty: string; categories: ReturnType<typeof extractRepositoryExplorerCategories>; selectedItem: RepositoryExplorerItem | undefined; onSelect(item: RepositoryExplorerItem): void; onAsk?: (item: RepositoryExplorerItem) => void }) {
   if (!selectedItem) return <EmptyState icon={FileCode2} title={title} description={empty} />;
-  return <section aria-labelledby={`repository-${selectedItem.category}-heading`}><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id={`repository-${selectedItem.category}-heading`} className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 grid gap-7 laptop:grid-cols-[minmax(0,1fr)_320px]"><RepositoryExplorerList categories={categories} selectedKey={selectedItem.key} onSelect={onSelect} label={title} /><aside className="min-w-0"><RepositoryExplorerDetail item={selectedItem} /></aside></div></section>;
+  return <section aria-labelledby={`repository-${selectedItem.category}-heading`}><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id={`repository-${selectedItem.category}-heading`} className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 grid gap-7 laptop:grid-cols-[minmax(0,1fr)_320px]"><RepositoryExplorerList categories={categories} selectedKey={selectedItem.key} onSelect={onSelect} label={title} /><aside className="min-w-0 space-y-3"><RepositoryExplorerDetail item={selectedItem} />{onAsk ? <Button variant="secondary" className="w-full" onClick={() => onAsk(selectedItem)}><MessageSquare className="size-4" />Ask Giro about this</Button> : null}</aside></div></section>;
 }
 
 function Metric({ label, value }: { label: string; value: number }) {

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { FileCode2, SearchX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FileCode2, MessageSquare, SearchX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/card";
 import { ListRow } from "@/components/ui/data-display";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/tabs";
+import { AskGiroDialog, type AskGiroTarget } from "@/features/repositories/ask-giro-dialog";
 import { RepositoryExplorerDetail } from "@/features/repositories/repository-explorer-detail";
 import { RepositoryExplorerList } from "@/features/repositories/repository-explorer-list";
 import { cn } from "@/lib/utils";
@@ -36,6 +38,9 @@ export function filterIndexedEvidence(results: readonly RetrievalResult[], filte
 export function RepositorySearchResults({
   intelligence,
   evidence,
+  owner,
+  repo,
+  query,
   selectedResult,
   filter,
   restoreFocus,
@@ -45,6 +50,9 @@ export function RepositorySearchResults({
 }: {
   intelligence: RepositoryExplorerCategory[];
   evidence: RetrievalResult[];
+  owner: string;
+  repo: string;
+  query: string;
   selectedResult: string | null;
   filter: EvidenceFilter;
   restoreFocus: boolean;
@@ -52,6 +60,7 @@ export function RepositorySearchResults({
   onSelectEvidence(item: RetrievalResult): void;
   onFilterChange(filter: EvidenceFilter): void;
 }) {
+  const [askTarget, setAskTarget] = useState<AskGiroTarget | null>(null);
   const intelligenceItems = intelligence.flatMap((category) => category.items);
   const selectedIntelligence = intelligenceItems.find((item) => repositoryIntelligenceResultKey(item) === selectedResult);
   const selectedEvidence = evidence.find((item) => indexedEvidenceResultKey(item) === selectedResult);
@@ -85,10 +94,11 @@ export function RepositorySearchResults({
         </section>
       </div>
 
-      <aside className="min-w-0">
-        {effectiveEvidence ? <EvidenceDetail result={effectiveEvidence} /> : effectiveIntelligence ? <RepositoryExplorerDetail item={effectiveIntelligence} /> : null}
+      <aside className="min-w-0 space-y-3">
+        {effectiveEvidence ? <><EvidenceDetail result={effectiveEvidence} /><Button variant="secondary" className="w-full" onClick={() => setAskTarget({ kind: "indexed-evidence", result: effectiveEvidence, query, resultKey: indexedEvidenceResultKey(effectiveEvidence) })}><MessageSquare className="size-4" />Ask Giro about this</Button></> : effectiveIntelligence ? <><RepositoryExplorerDetail item={effectiveIntelligence} /><Button variant="secondary" className="w-full" onClick={() => setAskTarget({ kind: "repository-item", item: effectiveIntelligence, location: { kind: "search", query, resultKey: repositoryIntelligenceResultKey(effectiveIntelligence) } })}><MessageSquare className="size-4" />Ask Giro about this</Button></> : null}
       </aside>
       </div>
+      {askTarget ? <AskGiroDialog open owner={owner} repo={repo} target={askTarget} onClose={() => setAskTarget(null)} /> : null}
     </div>
   );
 }

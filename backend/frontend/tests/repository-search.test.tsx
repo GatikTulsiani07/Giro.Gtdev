@@ -101,6 +101,7 @@ describe("repository search foundation", () => {
     expect(screen.getByRole("heading", { name: "Indexed Evidence" })).toBeInTheDocument();
     expect(screen.getByText("AUTHENTICATION_EVIDENCE")).toBeInTheDocument();
     expect(screen.getAllByText("authentication")).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Ask Giro about this" })).toBeInTheDocument();
   });
 
   it("stays idle for an empty query", () => {
@@ -120,6 +121,7 @@ describe("repository search foundation", () => {
     };
     render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
     expect(screen.getByText("Repository intelligence must be ready before searching.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ask Giro about this" })).not.toBeInTheDocument();
     expect(mocks.retrievalInspect).not.toHaveBeenCalled();
   });
 
