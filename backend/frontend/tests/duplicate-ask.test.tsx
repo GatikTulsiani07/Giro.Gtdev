@@ -23,7 +23,9 @@ vi.mock("@/hooks/use-sessions", () => ({
     title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt, messageCount: 0,
   }] } }),
   useCreateSession: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteSession: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
+vi.mock("@/hooks/use-repositories", () => ({ useRepository: () => ({ data: undefined }), useRepositories: () => ({ data: { repositories: [{ owner: "acme", repo: "platform", status: "indexed" }] }, isLoading: false }) }));
 vi.mock("@/services/api/sessions", () => ({ sessionsApi: { ask: (...args: unknown[]) => ask(...args) } }));
 vi.mock("@/services/api/retrieval", () => ({ retrievalApi: { inspect: (...args: unknown[]) => inspect(...args) } }));
 
@@ -49,13 +51,13 @@ describe("session ask integration", () => {
     ask.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><ChatWorkspace sessionId={session.id} /></QueryClientProvider>);
-    const suggestion = screen.getByRole("button", { name: "Where does the application start?" });
+    const suggestion = screen.getByRole("button", { name: "Where does this repository start?" });
     act(() => {
       fireEvent.click(suggestion);
       fireEvent.click(suggestion);
     });
     expect(ask).toHaveBeenCalledTimes(1);
-    expect(ask).toHaveBeenCalledWith("token", session.id, "Where does the application start?");
+    expect(ask).toHaveBeenCalledWith("token", session.id, "Where does this repository start?");
     finish({
       answer: "Grounded answer",
       sources: [],

@@ -51,9 +51,9 @@ export function ConnectRepositoryForm() {
 
   const error = validation ?? (connect.error ? getApiErrorMessage(connect.error) : null);
   return (
-    <form onSubmit={submit} noValidate className="mt-8 space-y-5">
-      <div><label htmlFor="repo-url" className="mb-2 block text-xs font-medium text-muted-foreground">GitHub repository URL</label><div className="relative"><Github className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input id="repo-url" value={url} onChange={(event) => { setUrl(event.target.value); setValidation(null); }} placeholder="https://github.com/owner/repository" className="pl-9" aria-invalid={Boolean(error)} aria-describedby="repo-url-help" autoFocus /></div><p id="repo-url-help" role={error ? "alert" : undefined} className={`mt-2 text-xs ${error ? "text-red-300" : "text-muted-foreground"}`}>{error ?? "The backend will clone and index this repository using your existing access."}</p></div>
-      <Button disabled={connect.isPending} className="w-full sm:w-auto">{connect.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <ArrowRight className="size-4" />}{connect.isPending ? "Connecting…" : "Connect and index"}</Button>
+    <form onSubmit={submit} noValidate className="mt-6 space-y-5">
+      <div><label htmlFor="repo-url" className="mb-2 block type-compact-strong text-text-secondary">GitHub repository URL</label><div className="relative"><Github className="absolute left-2.5 top-[13px] size-3.5 text-muted-foreground max-[820px]:top-[15px]" /><Input id="repo-url" value={url} onChange={(event) => { setUrl(event.target.value); setValidation(null); }} placeholder="https://github.com/owner/repository" className="pl-8 type-mono" aria-invalid={Boolean(error)} aria-describedby="repo-url-help" autoFocus /></div><p id="repo-url-help" role={error ? "alert" : undefined} className={`mt-2 type-compact ${error ? "text-danger" : "text-muted-foreground"}`}>{error ?? "The backend will clone and index this repository using your existing access."}</p></div>
+      <Button variant="accent" disabled={connect.isPending} className="w-full sm:w-auto">{connect.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <ArrowRight className="size-4" />}{connect.isPending ? "Connecting…" : "Connect and index"}</Button>
     </form>
   );
 }

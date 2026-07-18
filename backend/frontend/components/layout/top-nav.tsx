@@ -1,18 +1,47 @@
 "use client";
 
-import { Menu, PanelRight, Search } from "lucide-react";
+import { Menu, PanelRight } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Breadcrumbs } from "@/components/ui/data-display";
+import { RepositoryStatusBadge } from "@/components/ui/status-badge";
+import { useRepositories } from "@/hooks/use-repositories";
+import { useSessions } from "@/hooks/use-sessions";
 import { useUiStore } from "@/store/ui-store";
 
 export function TopNav() {
   const { setSidebarOpen, toggleInspector } = useUiStore();
+  const pathname = usePathname();
+  const repositories = useRepositories();
+  const sessions = useSessions();
+  const segments = pathname.split("/").filter(Boolean);
+  const inChat = segments[0] === "chat";
+  const routeRepository = segments[0] === "repositories" && segments.length >= 3
+    ? `${decodeURIComponent(segments[1] ?? "")}/${decodeURIComponent(segments[2] ?? "")}`
+    : null;
+  const activeSession = inChat ? sessions.data?.sessions.find((session) => session.id === segments[1]) : null;
+  const repository = routeRepository ?? (activeSession ? `${activeSession.owner}/${activeSession.repo}` : null);
+  const indexed = repository ? repositories.data?.repositories.find((item) => `${item.owner}/${item.repo}` === repository) : null;
+  const section = repository ? "Repository" : segments[0] === "repositories" ? "Repositories" : "Workspace";
+  const breadcrumbItems = inChat && activeSession
+    ? [
+        { label: "Giro", href: "/dashboard" },
+        { label: `${activeSession.owner}/${activeSession.repo}`, href: `/repositories/${encodeURIComponent(activeSession.owner)}/${encodeURIComponent(activeSession.repo)}` },
+        { label: activeSession.title },
+      ]
+    : [
+        { label: "Giro", href: "/dashboard" },
+        { label: section, href: repository ? "/dashboard" : undefined },
+        ...(repository ? [{ label: repository }] : []),
+      ];
   return (
-    <header className="flex h-14 shrink-0 items-center border-b border-border bg-background/80 px-3 backdrop-blur sm:px-5">
-      <Button aria-label="Open navigation" variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}><Menu className="size-4" /></Button>
-      <div className="ml-2 hidden items-center gap-2 text-xs text-muted-foreground sm:flex"><Search className="size-3.5" /><span>Repository workspace</span></div>
+    <header className="layout-gutter flex h-[52px] shrink-0 items-center border-b border-border-subtle bg-background">
+      <Button aria-label="Open navigation" title="Open navigation" variant="ghost" size="icon" className="mr-2 laptop:hidden" onClick={() => setSidebarOpen(true)}><Menu className="size-4" /></Button>
+      <div className="min-w-0"><Breadcrumbs items={breadcrumbItems} /></div>
       <div className="ml-auto flex items-center gap-1">
-        <Button aria-label="Toggle retrieval inspector" variant="ghost" size="icon" onClick={toggleInspector}><PanelRight className="size-4" /></Button>
-        <div className="ml-2 grid size-7 place-items-center rounded-full border border-border bg-muted font-display text-sm italic text-muted-foreground" aria-label="Signed in">G</div>
+        {indexed ? <RepositoryStatusBadge status={indexed.status} /> : null}
+        {inChat ? <Button aria-label="Toggle retrieval inspector" title="Toggle retrieval inspector" variant="ghost" size="icon" onClick={toggleInspector}><PanelRight className="size-4" /></Button> : null}
+        <div className="ml-2 grid size-8 place-items-center rounded-badge border border-border bg-interactive type-compact-strong text-text-secondary" aria-label="Signed in">G</div>
       </div>
     </header>
   );

@@ -1,19 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Circle, LoaderCircle, RefreshCcw, TriangleAlert, WifiOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { RefreshCcw, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Panel } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
+import { InlineAlert } from "@/components/ui/inline-alert";
+import { Progress } from "@/components/ui/progress";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Timeline, TimelineItem } from "@/components/ui/timeline";
 import { clamp } from "@/lib/utils";
 import { useIndexingProgress } from "@/hooks/use-indexing-progress";
 import type { IndexingStage } from "@/types/api";
 
 const stages: Array<{ id: IndexingStage; label: string }> = [
   { id: "queued", label: "Queued" }, { id: "cloning", label: "Cloning" }, { id: "parsing", label: "Parsing" },
-  { id: "chunking", label: "Chunking" }, { id: "embedding", label: "Embedding" }, { id: "uploading_vectors", label: "Uploading" },
+  { id: "chunking", label: "Chunking" }, { id: "embedding", label: "Embedding" }, { id: "uploading_vectors", label: "Uploading vectors" },
   { id: "finalizing", label: "Finalizing" }, { id: "completed", label: "Completed" },
 ];
 
@@ -21,8 +24,14 @@ export function IndexingProgressView({ owner, repo, jobId }: { owner: string; re
   const router = useRouter();
   const { progress, connected, disconnected, reconnecting, streamError, retry } = useIndexingProgress(`${owner}/${repo}`);
   const current = progress?.stage ?? "queued";
-  const currentIndex = stages.findIndex((stage) => stage.id === current);
   const failed = current === "failed";
+  const lastStage = useRef<IndexingStage>("queued");
+  if (!failed) lastStage.current = current;
+  const timelineStage = failed ? lastStage.current : current;
+  const currentIndex = stages.findIndex((stage) => stage.id === timelineStage);
+  const connectionLabel = connected ? "Live" : reconnecting ? "Reconnecting" : disconnected ? "Disconnected" : "Connecting";
+  const connectionTone = connected ? "success" : reconnecting ? "warning" : disconnected ? "danger" : "info";
+  const announcedStage = failed ? "Failed" : stages.find((stage) => stage.id === current)?.label ?? current;
 
   useEffect(() => {
     if (current !== "completed") return;
@@ -31,22 +40,24 @@ export function IndexingProgressView({ owner, repo, jobId }: { owner: string; re
   }, [current, owner, repo, router]);
 
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-8 lg:pt-16">
-      <div className="flex items-center gap-2"><Badge className={connected ? "border-primary/30 bg-primary/10 text-primary" : "text-muted-foreground"}>{connected ? "Live" : reconnecting ? "Reconnecting" : "Connecting"}</Badge>{disconnected ? <span className="flex items-center gap-1.5 text-xs text-amber-300"><WifiOff className="size-3" />{reconnecting ? "Reconnecting automatically" : "Progress stream disconnected"}</span> : null}</div>
-      <h1 className="mt-5 font-display text-5xl italic tracking-tight">Indexing {owner}/{repo}</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Building repository intelligence. You can safely leave this screen and return.</p>
-      <Card className="mt-8 overflow-hidden">
-        <div className="border-b border-border p-5"><div className="flex items-end justify-between"><div><p className="text-sm font-medium">{failed ? "Indexing failed" : progress?.message ?? "Indexing job queued."}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">JOB {jobId ?? progress?.jobId ?? "PENDING"}</p></div><span className="font-display text-4xl italic tabular-nums">{Math.round(clamp(progress?.percentage ?? 0))}%</span></div><div className="mt-4 h-1.5 overflow-hidden rounded-full bg-foreground/5"><div className={`h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none ${failed ? "bg-red-400" : "bg-primary"}`} style={{ width: `${clamp(progress?.percentage ?? 0)}%` }} /></div></div>
-        <ol className="divide-y divide-border p-2" aria-label="Indexing stages">
+    <div className="layout-editorial layout-gutter py-10 max-[820px]:py-8">
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">Indexing {announcedStage}, {Math.round(clamp(progress?.percentage ?? 0))} percent. {progress?.message ?? "Indexing job queued."}</p>
+      <div className="flex flex-wrap items-center gap-2"><StatusBadge label={connectionLabel} tone={connectionTone} />{disconnected ? <span className="flex items-center gap-1.5 type-compact text-warning"><WifiOff className="size-3.5" />{reconnecting ? "Reconnecting automatically" : "Progress stream disconnected"}</span> : null}</div>
+      <h1 className="mt-5 break-words type-page-title">Indexing <span className="italic text-primary">{owner}/{repo}</span><span className="not-italic">.</span></h1>
+      <p className="mt-2 type-body text-text-secondary">Building repository intelligence. You can safely leave this screen and return.</p>
+      <Panel className="mt-7 overflow-hidden border border-border-subtle p-0">
+        <div className="border-b border-border-subtle p-6"><div className="flex items-end justify-between gap-4"><div><p className="type-body-strong">{failed ? "Indexing failed" : progress?.message ?? "Indexing job queued."}</p><p className="mt-1 type-metadata text-muted-foreground">JOB {jobId ?? progress?.jobId ?? "PENDING"}</p>{progress?.timestamp ? <p className="mt-1 type-metadata text-muted-foreground">UPDATED {new Date(progress.timestamp).toLocaleTimeString()}</p> : null}</div><span className="type-mono-strong tabular-nums">{Math.round(clamp(progress?.percentage ?? 0))}%</span></div><Progress className="mt-4" value={progress?.percentage ?? 0} tone={failed ? "danger" : current === "completed" ? "success" : "info"} /></div>
+        <div className="p-6"><Timeline label="Indexing stages">
           {stages.map((stage, index) => {
             const complete = current === "completed" || index < currentIndex;
             const active = index === currentIndex && !failed;
-            return <li key={stage.id} className="flex items-center gap-3 rounded-md px-3 py-3"><span className={`grid size-6 place-items-center rounded-full border ${complete ? "border-primary/30 bg-primary/10 text-primary" : active ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>{complete ? <Check className="size-3" /> : active ? <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" /> : <Circle className="size-2" />}</span><span className={`text-sm ${active || complete ? "text-foreground" : "text-muted-foreground"}`}>{stage.label}</span>{active ? <span className="ml-auto text-xs text-muted-foreground">In progress</span> : null}</li>;
+            const stageFailed = failed && index === currentIndex;
+            return <TimelineItem key={stage.id} state={stageFailed ? "failed" : complete ? "complete" : active ? "active" : "pending"} title={stage.label} metadata={stageFailed ? "Failed" : complete ? "Complete" : active ? "In progress" : "Pending"} />;
           })}
-        </ol>
-      </Card>
+        </Timeline></div>
+      </Panel>
       {streamError && !reconnecting && !failed ? <div className="mt-4"><ErrorState error={streamError} retry={retry} compact /></div> : null}
-      {failed ? <div role="alert" className="mt-4 flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-4"><TriangleAlert className="mt-0.5 size-4 text-red-300" /><div className="flex-1"><p className="text-sm font-medium text-red-200">{progress?.message ?? "Indexing could not be completed."}</p><p className="mt-1 text-xs text-red-200/70">Return to repository connection to retry through the supported workflow.</p></div><Button variant="secondary" size="sm" onClick={() => router.push("/repositories/connect")}><RefreshCcw className="size-3.5" />Retry</Button></div> : null}
+      {failed ? <InlineAlert tone="danger" className="mt-4"><div className="flex flex-wrap items-center gap-3"><div className="min-w-0 flex-1"><p className="type-compact-strong text-danger">{progress?.message ?? "Indexing could not be completed."}</p><p className="mt-1">Return to repository connection to retry through the supported workflow.</p></div><Button variant="secondary" size="sm" onClick={() => router.push("/repositories/connect")}><RefreshCcw className="size-3.5" />Retry</Button></div></InlineAlert> : null}
     </div>
   );
 }

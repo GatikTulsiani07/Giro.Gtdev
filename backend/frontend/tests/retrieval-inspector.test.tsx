@@ -10,9 +10,12 @@ describe("retrieval inspector public contract", () => {
       results: [{ repository: "acme/platform", filePath: "src/auth.ts", language: "typescript", content: "private source", startLine: 1, endLine: 4, score: 0.8, source: "semantic", signals: { semantic: 0.8 } }],
       stats: { semanticResults: 1, keywordResults: 0, symbolResults: 0, graphBoosted: 0, returned: 1 },
     }} />);
-    expect(screen.getByText("stitched: not exposed")).toBeInTheDocument();
-    expect(screen.getByText("expanded: not exposed")).toBeInTheDocument();
-    expect(screen.queryByText("private source")).not.toBeInTheDocument();
+    expect(screen.getByText("Stitching")).toBeInTheDocument();
+    expect(screen.getByText("Expansion")).toBeInTheDocument();
+    expect(screen.getAllByText("Not exposed")).toHaveLength(3);
+    expect(screen.getByText("private source")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy path src/auth.ts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Source link unavailable" })).toBeDisabled();
     expect(screen.queryByText(/cache-hit|rank trace|graph-expanded/i)).not.toBeInTheDocument();
   });
 });

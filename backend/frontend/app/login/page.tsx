@@ -1,32 +1,19 @@
 import type { Metadata } from "next";
-import { GitBranch, ScanSearch, ShieldCheck } from "lucide-react";
 import { LoginForm } from "@/features/auth/login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
 export default function LoginPage() {
   return (
-    <main className="grid min-h-screen bg-background lg:grid-cols-[1.15fr_0.85fr]">
-      <section className="hidden border-r border-border bg-panel p-12 lg:flex lg:flex-col lg:justify-between">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-16 sm:px-6">
+      <section className="w-full max-w-[400px]" aria-labelledby="login-title">
         <Logo />
-        <div className="max-w-xl">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-primary">Repository intelligence</p>
-          <h1 className="mt-5 text-balance font-display text-6xl italic leading-[0.96] tracking-[-0.035em] text-foreground">Understand the codebase behind every answer.</h1>
-          <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground">Giro connects retrieval, repository structure, citations, and confidence into one engineering workspace.</p>
-          <div className="mt-10 grid grid-cols-3 gap-3">
-            {[{ icon: GitBranch, label: "Repository aware" }, { icon: ScanSearch, label: "Inspect retrieval" }, { icon: ShieldCheck, label: "Grounded evidence" }].map(({ icon: Icon, label }) => (
-              <div key={label} className="rounded-xl border border-border bg-card/70 p-4"><Icon className="size-4 text-primary" /><p className="mt-8 text-xs text-muted-foreground">{label}</p></div>
-            ))}
-          </div>
-        </div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Giro / engineering context</p>
-      </section>
-      <section className="flex items-center justify-center bg-background p-6 sm:p-10">
-        <div className="w-full max-w-sm">
-          <div className="mb-12 lg:hidden"><Logo /></div>
-          <h2 className="font-display text-4xl italic tracking-tight text-foreground">Welcome to Giro</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Sign in with an access token issued by your Giro deployment.</p>
+        <div className="mt-7 rounded-dialog border border-border-subtle bg-card p-7">
+          <p className="type-metadata-label text-muted-foreground">Engineering workspace</p>
+          <h1 id="login-title" aria-label="Welcome to Giro" className="mt-2 type-display text-foreground">Welcome to <span className="italic text-primary">Giro</span><span className="not-italic">.</span></h1>
+          <p className="mt-2 type-body text-text-secondary">Enter the access token issued by your Giro deployment to open your repository workspace.</p>
           <LoginForm />
+          <p className="mt-4 type-metadata text-muted-foreground">Tokens remain in this browser tab and are validated by your Giro backend.</p>
         </div>
       </section>
     </main>
@@ -34,5 +21,5 @@ export default function LoginPage() {
 }
 
 function Logo() {
-  return <div className="flex items-center gap-2.5"><span className="font-display text-3xl italic leading-none text-foreground">G</span><span className="font-display text-xl text-foreground">Giro</span><span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[9px] tracking-wider text-primary">DEV</span></div>;
+  return <div className="flex items-center justify-center gap-3"><span className="grid size-9 place-items-center rounded-control bg-primary type-body-strong text-primary-foreground">G</span><span className="type-panel-title text-foreground">Giro</span><span className="rounded-badge bg-inset px-1.5 type-metadata text-muted-foreground">DEV</span></div>;
 }

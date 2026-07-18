@@ -8,10 +8,10 @@ export function EmptyState({ icon: Icon, title, description, action }: {
   action?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 text-center">
-      <div className="mb-4 grid size-10 place-items-center rounded-lg border border-border bg-muted"><Icon className="size-4 text-muted-foreground" /></div>
-      <h2 className="text-sm font-medium">{title}</h2>
-      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
+    <div className="mx-auto flex min-h-64 max-w-[480px] flex-col items-center justify-center px-6 text-center">
+      <Icon className="mb-4 size-5 text-muted-foreground" strokeWidth={1.7} />
+      <h2 className="type-panel-title">{title}</h2>
+      <p className="mt-2 max-w-sm type-compact text-muted-foreground">{description}</p>
       {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );

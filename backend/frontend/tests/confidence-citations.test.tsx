@@ -15,7 +15,7 @@ describe("grounded answer evidence", () => {
   it("renders citation metadata, expands a real preview, and copies its path", async () => {
     render(<CitationList citations={[citation]} context={[{ filePath: "src/auth/login.ts", language: "typescript", content: "export function authenticate() {}", startLine: 8, endLine: 30, score: 0.9 }]} />);
     expect(screen.getByText("src/auth/login.ts")).toBeInTheDocument();
-    expect(screen.getByText(/Lines 10–24/)).toBeInTheDocument();
+    expect(screen.getByText(/L10–24/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^1 src\/auth\/login.ts/i }));
     expect(screen.getByText("export function authenticate() {}")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Copy path src/auth/login.ts" }));
@@ -26,7 +26,7 @@ describe("grounded answer evidence", () => {
     render(<CitationList citations={[citation]} />);
     fireEvent.click(screen.getByRole("button", { name: /^1 src\/auth\/login.ts/i }));
     expect(screen.queryByRole("code")).not.toBeInTheDocument();
-    expect(screen.queryByText(/preview was not included/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Preview not available")).toBeInTheDocument();
     expect(vi.mocked(navigator.clipboard.writeText)).not.toHaveBeenCalledWith("invented");
   });
 });

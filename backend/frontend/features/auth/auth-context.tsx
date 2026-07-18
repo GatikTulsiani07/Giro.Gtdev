@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { sessionsApi } from "@/services/api/sessions";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const TOKEN_KEY = "giro.access-token";
 
@@ -78,9 +79,9 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const { ready, token } = useAuth();
   if (!ready || !token) {
     return (
-      <div className="mx-auto w-full max-w-6xl space-y-4 p-6" aria-label="Loading authentication">
-        <div className="h-12 w-56 animate-pulse rounded-lg bg-foreground/[0.05] motion-reduce:animate-none" />
-        <div className="h-64 animate-pulse rounded-xl bg-foreground/[0.04] motion-reduce:animate-none" />
+      <div className="mx-auto w-full max-w-[1120px] space-y-4 p-6" aria-label="Loading authentication">
+        <Skeleton className="h-12 w-56" />
+        <Skeleton className="h-64" />
       </div>
     );
   }

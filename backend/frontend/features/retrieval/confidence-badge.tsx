@@ -1,23 +1,23 @@
+import { AlertTriangle, Check, CircleMinus, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ConfidenceLevel, RetrievalConfidence } from "@/types/api";
 
 const styles: Record<ConfidenceLevel, string> = {
-  high: "border-primary/40 bg-primary/10 text-primary",
-  medium: "border-lime-700/40 bg-lime-900/15 text-lime-300",
-  low: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  insufficient: "border-red-500/30 bg-red-500/10 text-red-300",
+  high: "bg-success/10 text-success",
+  medium: "bg-warning/10 text-warning",
+  low: "bg-danger/10 text-danger",
+  insufficient: "bg-inset text-text-secondary",
+};
+const icons = { high: Check, medium: Info, low: AlertTriangle, insufficient: CircleMinus };
+const explanations: Record<ConfidenceLevel, string> = {
+  high: "Repository evidence supports this answer.",
+  medium: "Repository evidence supports the answer with qualifications.",
+  low: "Repository evidence is limited; verify the cited files.",
+  insufficient: "Repository evidence is insufficient for a reliable answer.",
 };
 
 export function ConfidenceBadge({ confidence, compact = false }: { confidence: RetrievalConfidence; compact?: boolean }) {
-  return (
-    <div className={compact ? "" : "rounded-md border border-border bg-background/25 p-3"}>
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge className={cn("capitalize", styles[confidence.level])}>{confidence.level}</Badge>
-        <span className="font-mono text-xs text-muted-foreground">{Math.round(confidence.score * 100)}%</span>
-        {!compact ? <span className="text-xs text-muted-foreground">{confidence.answerable ? "Evidence supports an answer" : "Insufficient evidence"}</span> : null}
-      </div>
-      {!compact && confidence.reasons.length > 0 ? <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Confidence reasons">{confidence.reasons.map((reason) => <span key={reason} className="rounded bg-foreground/[0.04] px-2 py-1 font-mono text-[10px] text-muted-foreground">{reason.replaceAll("_", " ")}</span>)}</div> : null}
-    </div>
-  );
+  const Icon = icons[confidence.level];
+  return <div><div className="flex flex-wrap items-center gap-2"><Badge className={cn("capitalize", styles[confidence.level])}><Icon className="size-3" aria-hidden="true" />{confidence.level}</Badge><span className="type-metadata text-muted-foreground">{Math.round(confidence.score * 100)}%</span>{!compact ? <span className="type-compact text-text-secondary">{explanations[confidence.level]}</span> : null}</div>{!compact && confidence.reasons.length ? <details className="mt-2"><summary className="w-fit cursor-pointer rounded-control type-metadata text-muted-foreground focus-ring">WHY THIS CONFIDENCE</summary><ul className="mt-2 space-y-1 pl-4 type-compact text-text-secondary">{confidence.reasons.map((reason) => <li key={reason}>{reason.replaceAll("_", " ")}</li>)}</ul></details> : null}</div>;
 }
