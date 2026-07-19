@@ -3,6 +3,7 @@ import type {
   ConnectRepositoryResult,
   IndexedRepository,
   RepositorySummary,
+  RepositoryWorkspace,
 } from "@/types/api";
 
 export function encodeRepositoryId(owner: string, repo: string): string {
@@ -26,6 +27,12 @@ export const repositoriesApi = {
   summary(token: string, owner: string, repo: string) {
     return apiRequest<{ summary: RepositorySummary }>(
       `/repositories/${encodeRepositoryId(owner, repo)}/summary`,
+      { method: "GET", token },
+    );
+  },
+  workspace(token: string, owner: string, repo: string) {
+    return apiRequest<RepositoryWorkspace>(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/workspace`,
       { method: "GET", token },
     );
   },

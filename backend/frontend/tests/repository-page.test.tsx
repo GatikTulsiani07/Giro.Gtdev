@@ -41,6 +41,15 @@ vi.mock("@/hooks/use-repositories", () => ({
       },
     refetch: vi.fn(),
   }),
+  useRepositoryWorkspace: () => ({
+    data: {
+      repositoryId: "acme/platform",
+      health: { score: 88, grade: "good", healthy: true, warnings: [], recommendations: [] },
+      aiReadiness: { ready: true, score: 91, level: "ready", blockers: [], warnings: [], recommendations: [] },
+    },
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 describe("repository page", () => {

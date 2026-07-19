@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, FileCode2, LoaderCircle, MessageSquare, Play, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InlineAlert } from "@/components/ui/inline-alert";
@@ -15,7 +14,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { AskGiroDialog, type AskGiroTarget } from "@/features/repositories/ask-giro-dialog";
 import { RepositoryExplorerDetail } from "@/features/repositories/repository-explorer-detail";
 import { RepositoryExplorerList } from "@/features/repositories/repository-explorer-list";
-import { useRepositories, useRepository } from "@/hooks/use-repositories";
+import { useRepositories, useRepository, useRepositoryWorkspace } from "@/hooks/use-repositories";
 import { useCreateSession, useSessions } from "@/hooks/use-sessions";
 import {
   extractRepositoryExplorerCategories,
@@ -25,6 +24,7 @@ import {
   type RepositoryExplorerTab,
 } from "@/lib/repository-explorer";
 import { formatDate } from "@/lib/utils";
+import { RepositorySummaryOverview } from "./repository-summary-overview";
 
 const REPOSITORY_TAB_IDS = ["summary", "architecture", "files", "symbols", "dependencies", "sessions", "settings"] as const;
 type RepositoryTab = (typeof REPOSITORY_TAB_IDS)[number];
@@ -47,6 +47,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
   const [askTarget, setAskTarget] = useState<AskGiroTarget | null>(null);
   const activeTab = repositoryTab(searchParams.get("tab"));
   const indexed = repositories.data?.repositories.find((item) => item.owner === owner && item.repo === repo);
+  const workspace = useRepositoryWorkspace(owner, repo, activeTab === "summary" && Boolean(indexed));
   const repositoryStatus = getRepositoryStatus(indexed?.status);
   const details = summary.data?.summary;
 
@@ -98,7 +99,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
             {details?.repositoryVersion ? <span className="type-metadata text-muted-foreground">VERSION {details.repositoryVersion}</span> : null}
             {indexed?.lastIndexedAt ? <span className="type-metadata text-muted-foreground">INDEXED {formatDate(indexed.lastIndexedAt)}</span> : null}
           </div>
-          {details?.purpose ? <p className="mt-4 max-w-[68ch] type-body text-text-secondary">{details.purpose}</p> : null}
+          {activeTab !== "summary" && details?.purpose ? <p className="mt-4 max-w-[68ch] type-body text-text-secondary">{details.purpose}</p> : null}
         </div>
         <Button variant="accent" onClick={() => void openSession()} disabled={create.isPending || !repositoryStatus.ready}>{create.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <Play className="size-4" />}{create.isPending ? "Creating…" : "Open session"}</Button>
       </header>
@@ -111,10 +112,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
       <div className="mt-7"><Tabs label="Repository sections" items={tabs} value={activeTab} onValueChange={selectTab} /></div>
 
       <div id={`repository-${activeTab}-panel`} role="tabpanel" className="mt-7">
-        {activeTab === "summary" ? <div className="grid gap-7 desktop:grid-cols-[minmax(0,760px)_320px]">
-          <div className="min-w-0">{indexed ? <section className="grid grid-cols-2 divide-x divide-y divide-border-subtle border-y border-border-subtle sm:grid-cols-3 desktop:grid-cols-5" aria-label="Repository metrics"><Metric label="Files" value={indexed.fileCount} /><Metric label="Chunks" value={indexed.chunkCount} /><Metric label="Symbols" value={indexed.symbolCount} /><Metric label="Graph nodes" value={indexed.graphNodeCount} /><Metric label="Graph edges" value={indexed.graphEdgeCount} /></section> : <EmptyState icon={FileCode2} title="Repository metrics unavailable" description="Indexing has not exposed repository metrics yet." />}</div>
-          <aside className="min-w-0" aria-label="Repository index summary"><Panel className="border border-border-subtle p-4"><h2 className="type-panel-title">Latest indexing run</h2><dl className="mt-4 divide-y divide-border-subtle"><Row label="Status" value={repositoryStatus.label} /><Row label="Version" value={details?.repositoryVersion} mono /><Row label="Indexed" value={indexed?.lastIndexedAt ? formatDate(indexed.lastIndexedAt) : undefined} /><Row label="Mode" value={indexed?.lastIndexMode ?? undefined} /><Row label="Changed files" value={indexed ? String(indexed.lastChangedFileCount) : undefined} /><Row label="Retries" value={indexed ? String(indexed.retryCount) : undefined} /></dl></Panel></aside>
-        </div> : null}
+        {activeTab === "summary" ? <RepositorySummaryOverview owner={owner} repo={repo} summary={details} repository={indexed} workspace={workspace.data} workspaceLoading={workspace.isLoading} workspaceUnavailable={workspace.isError} onAsk={() => void openSession()} /> : null}
 
         {activeTab === "architecture" ? <ExplorerTab tab="architecture" title="Architecture summary" description="Languages, frameworks, entry points, and repository surfaces exposed by indexing." empty="No architecture summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "architecture" } }) : undefined} /> : null}
 
@@ -136,13 +134,4 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
 function ExplorerTab({ title, description, empty, categories, selectedItem, onSelect, onAsk }: { tab: RepositoryExplorerTab; title: string; description: string; empty: string; categories: ReturnType<typeof extractRepositoryExplorerCategories>; selectedItem: RepositoryExplorerItem | undefined; onSelect(item: RepositoryExplorerItem): void; onAsk?: (item: RepositoryExplorerItem) => void }) {
   if (!selectedItem) return <EmptyState icon={FileCode2} title={title} description={empty} />;
   return <section aria-labelledby={`repository-${selectedItem.category}-heading`}><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id={`repository-${selectedItem.category}-heading`} className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 grid gap-7 laptop:grid-cols-[minmax(0,1fr)_320px]"><RepositoryExplorerList categories={categories} selectedKey={selectedItem.key} onSelect={onSelect} label={title} /><aside className="min-w-0 space-y-3"><RepositoryExplorerDetail item={selectedItem} />{onAsk ? <Button variant="secondary" className="w-full" onClick={() => onAsk(selectedItem)}><MessageSquare className="size-4" />Ask Giro about this</Button> : null}</aside></div></section>;
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return <div className="p-3"><p className="type-metadata-label text-muted-foreground">{label}</p><p className="mt-2 type-mono-strong tabular-nums">{value.toLocaleString()}</p></div>;
-}
-
-function Row({ label, value, mono }: { label: string; value: string | undefined; mono?: boolean }) {
-  if (value === undefined) return null;
-  return <div className="flex min-h-10 items-start justify-between gap-4 py-2 type-compact"><dt className="text-muted-foreground">{label}</dt><dd className={mono ? "max-w-[65%] break-all text-right type-metadata text-foreground" : "max-w-[65%] break-words text-right text-foreground"}>{value}</dd></div>;
 }

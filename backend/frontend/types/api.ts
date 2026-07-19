@@ -93,6 +93,25 @@ export interface RepositorySummary {
   };
 }
 
+export interface RepositoryWorkspace {
+  repositoryId: string;
+  health: {
+    score: number;
+    grade: "excellent" | "good" | "fair" | "poor";
+    healthy: boolean;
+    warnings: string[];
+    recommendations: string[];
+  };
+  aiReadiness: {
+    ready: boolean;
+    score: number;
+    level: "ready" | "degraded" | "blocked";
+    blockers: string[];
+    warnings: string[];
+    recommendations: string[];
+  };
+}
+
 export interface ConnectRepositoryResult {
   repositoryId: string;
   jobId?: string;

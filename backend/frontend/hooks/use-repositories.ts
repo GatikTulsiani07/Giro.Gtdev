@@ -7,6 +7,7 @@ import { repositoriesApi } from "@/services/api/repositories";
 export const repositoryKeys = {
   all: ["repositories"] as const,
   summary: (owner: string, repo: string) => ["repository", owner, repo, "summary"] as const,
+  workspace: (owner: string, repo: string) => ["repository", owner, repo, "workspace"] as const,
 };
 
 export function useRepositories() {
@@ -27,6 +28,16 @@ export function useRepository(owner: string, repo: string) {
     retry: false,
   });
   return summary;
+}
+
+export function useRepositoryWorkspace(owner: string, repo: string, enabled = true) {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: repositoryKeys.workspace(owner, repo),
+    queryFn: () => repositoriesApi.workspace(token as string, owner, repo),
+    enabled: Boolean(token && owner && repo && enabled),
+    retry: false,
+  });
 }
 
 export function useConnectRepository() {
