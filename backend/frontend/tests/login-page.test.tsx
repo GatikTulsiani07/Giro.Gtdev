@@ -10,6 +10,7 @@ describe("login composition", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Welcome to Giro" })).toBeInTheDocument();
     expect(screen.getByRole("form", { name: "Access token sign in" })).toBeInTheDocument();
     expect(screen.getByText("Engineering workspace")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to overview" })).toHaveAttribute("href", "/");
     expect(screen.queryByText("Repository aware")).not.toBeInTheDocument();
   });
 });

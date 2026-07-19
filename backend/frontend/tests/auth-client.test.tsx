@@ -4,9 +4,10 @@ import { AuthProvider, useAuth } from "@/features/auth/auth-context";
 import { apiRequest } from "@/services/api/client";
 
 const replace = vi.fn();
+const navigation = vi.hoisted(() => ({ pathname: "/dashboard" }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/dashboard",
+  usePathname: () => navigation.pathname,
   useRouter: () => ({ replace }),
 }));
 
@@ -18,6 +19,7 @@ function AuthProbe() {
 describe("authentication integration", () => {
   beforeEach(() => {
     replace.mockReset();
+    navigation.pathname = "/dashboard";
     sessionStorage.clear();
     vi.unstubAllGlobals();
   });
@@ -37,5 +39,12 @@ describe("authentication integration", () => {
       expect(replace).toHaveBeenCalledWith("/login?next=%2Fdashboard");
     });
     expect(screen.getByText("signed-out")).toBeInTheDocument();
+  });
+
+  it("keeps the public homepage available without an access token", async () => {
+    navigation.pathname = "/";
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    await screen.findByText("signed-out");
+    expect(replace).not.toHaveBeenCalled();
   });
 });

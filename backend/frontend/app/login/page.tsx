@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { LoginForm } from "@/features/auth/login-form";
-import { PlatformNavigation } from "@/components/platform/platform-navigation";
+import { PublicBrand } from "@/components/marketing/public-brand";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -8,8 +11,8 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-col bg-background px-4 py-8 sm:px-6">
       <header className="mx-auto flex w-full max-w-[760px] flex-wrap items-center justify-between gap-4">
-        <Logo />
-        <PlatformNavigation />
+        <PublicBrand />
+        <Button asChild variant="ghost" size="sm"><Link href="/"><ArrowLeft className="size-3.5" />Back to overview</Link></Button>
       </header>
       <div className="flex flex-1 items-center justify-center py-8">
         <section className="w-full max-w-[400px]" aria-labelledby="login-title">
@@ -24,8 +27,4 @@ export default function LoginPage() {
       </div>
     </main>
   );
-}
-
-function Logo() {
-  return <div className="flex items-center justify-center gap-3"><span className="grid size-9 place-items-center rounded-control bg-primary type-body-strong text-primary-foreground">G</span><span className="type-panel-title text-foreground">Giro</span><span className="rounded-badge bg-inset px-1.5 type-metadata text-muted-foreground">DEV</span></div>;
 }

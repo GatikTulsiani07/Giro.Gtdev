@@ -6,6 +6,7 @@ import { sessionsApi } from "@/services/api/sessions";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const TOKEN_KEY = "giro.access-token";
+const PUBLIC_PATHS = new Set(["/", "/login"]);
 
 interface AuthContextValue {
   token: string | null;
@@ -31,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const handleUnauthorized = useCallback(() => {
     sessionStorage.removeItem(TOKEN_KEY);
     setToken(null);
-    const destination = pathname !== "/login"
+    const destination = !PUBLIC_PATHS.has(pathname)
       ? `${pathname}${window.location.search}`
       : null;
     router.replace(destination ? `/login?next=${encodeURIComponent(destination)}` : "/login");
@@ -49,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!ready) return;
-    if (!token && pathname !== "/login") router.replace("/login");
+    if (!token && !PUBLIC_PATHS.has(pathname)) router.replace("/login");
     if (token && pathname === "/login") router.replace("/dashboard");
   }, [pathname, ready, router, token]);
 
