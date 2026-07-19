@@ -15,10 +15,10 @@ export function DashboardScreen() {
 
   return (
     <div className="layout-standard layout-gutter py-10 max-[820px]:py-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="flex flex-col gap-4 border-b border-border-subtle pb-7 sm:flex-row sm:items-end sm:justify-between">
         <div><p className="type-section-eyebrow text-muted-foreground">Workspace</p><h1 className="mt-2 type-page-title">Repository <span className="italic text-primary">intelligence</span><span className="not-italic">.</span></h1><p className="mt-2 type-body text-text-secondary">Connect codebases, inspect evidence, and continue grounded conversations.</p></div>
         {hasRepositories ? <Button variant="accent" asChild><Link href="/repositories/connect"><Plus className="size-4" />Connect repository</Link></Button> : null}
-      </div>
+      </header>
       {empty ? <EmptyDashboardOnboarding /> : <DashboardCommandCenter repositories={repositories.data?.repositories} repositoryCount={repositories.data?.count} repositoriesLoading={repositories.isLoading} repositoryError={repositories.isError ? repositories.error : undefined} onRetryRepositories={() => void repositories.refetch()} sessions={sessions.data?.sessions} sessionsLoading={sessions.isLoading} sessionError={sessions.isError ? sessions.error : undefined} onRetrySessions={() => void sessions.refetch()} />}
     </div>
   );

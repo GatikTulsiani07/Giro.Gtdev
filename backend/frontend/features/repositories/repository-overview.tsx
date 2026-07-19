@@ -58,7 +58,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
   }
 
   if (repositories.isLoading || summary.isLoading) return <RepositoryWorkspaceSkeleton />;
-  if (repositories.isError) return <div className="layout-standard layout-gutter py-10"><ErrorState error={repositories.error} retry={() => void repositories.refetch()} /></div>;
+  if (repositories.isError) return <div className="layout-standard layout-gutter py-10 max-[820px]:py-8"><ErrorState error={repositories.error} retry={() => void repositories.refetch()} /></div>;
 
   const explorerCategories = isExplorerTab(activeTab) ? extractRepositoryExplorerCategories(activeTab, details) : [];
   const selectedExplorerCategory = normalizeRepositoryExplorerCategory(explorerCategories, searchParams.get("category"));
@@ -132,7 +132,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
 }
 
 function ExplorerTab({ title, description, empty, categories, selectedItem, onSelect, onAsk }: { tab: RepositoryExplorerTab; title: string; description: string; empty: string; categories: ReturnType<typeof extractRepositoryExplorerCategories>; selectedItem: RepositoryExplorerItem | undefined; onSelect(item: RepositoryExplorerItem): void; onAsk?: (item: RepositoryExplorerItem) => void }) {
-  if (!selectedItem) return <section aria-labelledby="repository-explorer-empty-heading"><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id="repository-explorer-empty-heading" className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 border-y border-border-subtle"><EmptyState icon={FileCode2} title="No indexed surfaces yet" description={empty} /></div></section>;
+  if (!selectedItem) return <section aria-labelledby="repository-explorer-empty-heading"><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id="repository-explorer-empty-heading" className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 border-y border-border-subtle"><EmptyState compact headingLevel={3} icon={FileCode2} title="No indexed surfaces yet" description={empty} /></div></section>;
   return <section aria-labelledby={`repository-${selectedItem.category}-heading`}><p className="type-section-eyebrow text-muted-foreground">Repository explorer</p><h2 id={`repository-${selectedItem.category}-heading`} className="mt-2 type-section-title">{title}</h2><p className="mt-2 max-w-[68ch] type-compact text-text-secondary">{description}</p><div className="mt-5 grid gap-7 laptop:grid-cols-[minmax(0,1fr)_320px]"><RepositoryExplorerList categories={categories} selectedKey={selectedItem.key} onSelect={onSelect} label={title} /><aside className="min-w-0 space-y-3"><RepositoryExplorerDetail item={selectedItem} />{onAsk ? <Button variant="secondary" className="w-full" onClick={() => onAsk(selectedItem)}><MessageSquare className="size-4" />Ask Giro about this</Button> : null}</aside></div></section>;
 }
 

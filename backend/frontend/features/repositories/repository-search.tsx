@@ -93,7 +93,7 @@ export function RepositorySearch({ owner, repo }: { owner: string; repo: string 
 
   return (
     <div className="layout-standard layout-gutter py-10 max-[820px]:py-8">
-      <header className="border-b border-border-subtle pb-6">
+      <header className="border-b border-border-subtle pb-7">
         <p className="type-section-eyebrow text-muted-foreground">Repository search · {owner}/{repo}</p>
         <h1 className="mt-2 type-page-title">Search <span className="italic text-primary">repository</span><span className="not-italic">.</span></h1>
         <p className="mt-2 max-w-[68ch] type-body text-text-secondary">Search indexed code, symbols, paths, and repository concepts without creating a chat session or generating an answer.</p>
@@ -123,7 +123,7 @@ export function RepositorySearch({ owner, repo }: { owner: string; repo: string 
         {!search.checkingReadiness && !search.error && !search.ready ? <InlineAlert tone={search.repositoryStatus.label === "Failed" ? "danger" : "warning"}><div className="flex flex-wrap items-center gap-3"><div className="min-w-0 flex-1"><p className="type-compact-strong">{search.repositoryStatus.label} repository</p><p className="mt-1">{search.repositoryStatus.label === "Failed" ? "Indexing failed. Reconnect the repository before searching." : search.repositoryStatus.label === "Stale" ? "Repository evidence is stale. Reindex before searching." : "Repository intelligence must be ready before searching."}</p></div><Button asChild variant="secondary" size="sm"><Link href={readinessHref}>{readinessAction}<ArrowRight className="size-3.5" /></Link></Button></div></InlineAlert> : null}
         {!search.checkingReadiness && search.ready && search.loading ? <RepositorySearchSkeleton owner={owner} repo={repo} /> : null}
         {!search.checkingReadiness && search.ready && search.success ? <RepositorySearchResults owner={owner} repo={repo} query={search.query} intelligence={intelligence} evidence={evidence} selectedResult={searchParams.get("result")} filter={evidenceFilter} restoreFocus={Boolean(searchParams.get("result"))} onSelectIntelligence={selectIntelligence} onSelectEvidence={selectEvidence} onFilterChange={updateFilter} onReturnToSearch={() => inputRef.current?.focus()} /> : null}
-        {!search.checkingReadiness && search.ready && search.idle && !search.query ? <div className="max-w-[680px] border-y border-border-subtle"><EmptyState icon={Search} title="Ready to search this repository" description="Choose an example or enter a technical concept, file, or symbol name. Results remain grounded in indexed repository evidence." /></div> : null}
+        {!search.checkingReadiness && search.ready && search.idle && !search.query ? <div className="max-w-[680px] border-y border-border-subtle"><EmptyState compact icon={Search} title="Ready to search this repository" description="Choose an example or enter a technical concept, file, or symbol name. Results remain grounded in indexed repository evidence." /></div> : null}
       </div>
     </div>
   );

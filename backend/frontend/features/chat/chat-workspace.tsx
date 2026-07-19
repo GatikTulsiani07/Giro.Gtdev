@@ -116,7 +116,7 @@ export function ChatWorkspace({ sessionId }: { sessionId: string }) {
     }
   }
 
-  if (session.isLoading) return <div className="grid h-full grid-cols-1 gap-px bg-border-subtle laptop:grid-cols-[220px_1fr] min-[1400px]:grid-cols-[220px_1fr_360px]"><Skeleton /><Skeleton className="hidden laptop:block" /><Skeleton className="hidden min-[1400px]:block" /></div>;
+  if (session.isLoading) return <div role="status" aria-live="polite" aria-label="Loading Ask Giro workspace" className="grid h-full grid-cols-1 gap-px bg-border-subtle laptop:grid-cols-[220px_1fr] min-[1400px]:grid-cols-[220px_1fr_360px]"><span className="sr-only">Loading Ask Giro workspace.</span><Skeleton /><Skeleton className="hidden laptop:block" /><Skeleton className="hidden min-[1400px]:block" /></div>;
   if (session.isError || !session.data) return <div className="p-6"><ErrorState error={session.error} retry={() => void session.refetch()} /></div>;
   const repositorySessions = sessions.data?.sessions.filter((item) => item.owner === session.data.owner && item.repo === session.data.repo) ?? [{
     id: session.data.id,

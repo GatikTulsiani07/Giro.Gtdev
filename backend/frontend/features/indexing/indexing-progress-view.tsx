@@ -40,13 +40,15 @@ export function IndexingProgressView({ owner, repo, jobId }: { owner: string; re
   return (
     <div className="layout-editorial layout-gutter py-10 max-[820px]:py-8">
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{ready ? `Repository ready. ${owner}/${repo} indexing completed.` : `Indexing ${announcedStage}, ${Math.round(clamp(progress?.percentage ?? 0))} percent. ${progress?.message ?? "Indexing job queued."}`}</p>
-      <div className="flex flex-wrap items-center gap-2"><StatusBadge label={connectionLabel} tone={connectionTone} />{disconnected ? <span className="flex items-center gap-1.5 type-compact text-warning"><WifiOff className="size-3.5" />{reconnecting ? "Reconnecting automatically" : "Progress stream disconnected"}</span> : null}</div>
-      <h1
-        aria-label={ready ? "Repository ready" : `Indexing ${owner}/${repo}`}
-        className="mt-5 break-words type-page-title"
-      >{ready ? "Repository " : "Indexing "}<span className="italic text-primary">{ready ? "ready" : `${owner}/${repo}`}</span><span className="not-italic">.</span></h1>
-      <p className="mt-2 type-body text-text-secondary">{ready ? `${owner}/${repo} is indexed and available for repository-scoped exploration.` : "Building repository intelligence from backend stage updates. You can safely leave this screen and return."}</p>
-      <Panel className="mt-7 overflow-hidden border border-border-subtle p-0">
+      <header className="border-b border-border-subtle pb-7">
+        <div className="flex flex-wrap items-center gap-2"><StatusBadge label={connectionLabel} tone={connectionTone} />{disconnected ? <span className="flex items-center gap-1.5 type-compact text-warning"><WifiOff className="size-3.5" />{reconnecting ? "Reconnecting automatically" : "Progress stream disconnected"}</span> : null}</div>
+        <h1
+          aria-label={ready ? "Repository ready" : `Indexing ${owner}/${repo}`}
+          className="mt-5 break-words type-page-title"
+        >{ready ? "Repository " : "Indexing "}<span className="italic text-primary">{ready ? "ready" : `${owner}/${repo}`}</span><span className="not-italic">.</span></h1>
+        <p className="mt-2 type-body text-text-secondary">{ready ? `${owner}/${repo} is indexed and available for repository-scoped exploration.` : "Building repository intelligence from backend stage updates. You can safely leave this screen and return."}</p>
+      </header>
+      <Panel className="mt-8 overflow-hidden border border-border-subtle p-0">
         <div className="border-b border-border-subtle p-6"><div className="flex items-end justify-between gap-4"><div><p className="type-body-strong">{ready ? "Repository index is ready" : failed ? "Indexing failed" : progress?.message ?? "Indexing job queued."}</p><p className="mt-1 type-metadata text-muted-foreground">JOB {jobId ?? progress?.jobId ?? "PENDING"}</p>{progress?.timestamp ? <p className="mt-1 type-metadata text-muted-foreground">UPDATED {new Date(progress.timestamp).toLocaleTimeString()}</p> : null}</div><span className="type-mono-strong tabular-nums">{Math.round(clamp(progress?.percentage ?? 0))}%</span></div><Progress className="mt-4" value={progress?.percentage ?? 0} tone={failed ? "danger" : ready ? "success" : "info"} /></div>
         <div className="p-6"><Timeline label="Indexing stages">
           {stages.map((stage, index) => {
