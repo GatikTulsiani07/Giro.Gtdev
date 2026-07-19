@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { AlertTriangle, Check, Info, X } from "lucide-react";
 import { Button } from "./button";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,45 @@ export function DropdownItem({ children, destructive, selected, onClick }: { chi
 
 export function Modal({ open, title, description, children, footer, onClose, width = "default" }: { open: boolean; title: string; description?: string; children: ReactNode; footer?: ReactNode; onClose(): void; width?: "default" | "wide" }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const dialog = ref.current; if (!dialog) return; if (open && !dialog.open) dialog.showModal(); if (!open && dialog.open) dialog.close(); }, [open]);
-  return <dialog ref={ref} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose} className={cn("m-auto max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] rounded-dialog border border-border bg-elevated p-0 text-foreground shadow-dialog backdrop:bg-overlay max-sm:mb-0 max-sm:max-h-[calc(100dvh-16px)] max-sm:w-full max-sm:rounded-b-none", width === "wide" ? "max-w-[640px]" : "max-w-[480px]")}><header className="flex items-start gap-4 border-b border-border-subtle p-6"><div className="min-w-0 flex-1"><h2 className="type-panel-title">{title}</h2>{description ? <p className="mt-1 type-compact text-muted-foreground">{description}</p> : null}</div><Button variant="ghost" size="icon-sm" aria-label="Close dialog" onClick={onClose}><X className="size-4" /></Button></header><div className="max-h-[60dvh] overflow-y-auto p-6">{children}</div>{footer ? <footer className="flex justify-end gap-2 border-t border-border-subtle p-6">{footer}</footer> : null}</dialog>;
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (open && !dialog.open) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      dialog.showModal();
+      window.setTimeout(() => focusFirstControl(dialog), 0);
+    }
+    if (!open && dialog.open) dialog.close();
+    if (!open) restoreFocus(returnFocusRef.current);
+    return () => {
+      if (dialog.open) dialog.close();
+      restoreFocus(returnFocusRef.current);
+    };
+  }, [open]);
+  return <dialog ref={ref} aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onKeyDown={(event) => trapDialogFocus(event, ref.current)} onCancel={(event) => { event.preventDefault(); onClose(); }} className={cn("m-auto max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] rounded-dialog border border-border bg-elevated p-0 text-foreground shadow-dialog backdrop:bg-overlay max-sm:mb-0 max-sm:max-h-[calc(100dvh-16px)] max-sm:w-full max-sm:rounded-b-none", width === "wide" ? "max-w-[640px]" : "max-w-[480px]")}><header className="flex items-start gap-4 border-b border-border-subtle p-6"><div className="min-w-0 flex-1"><h2 id={titleId} className="type-panel-title">{title}</h2>{description ? <p id={descriptionId} className="mt-1 type-compact text-muted-foreground">{description}</p> : null}</div><Button variant="ghost" size="icon-sm" aria-label="Close dialog" onClick={onClose}><X className="size-4" /></Button></header><div className="max-h-[60dvh] overflow-y-auto p-6">{children}</div>{footer ? <footer className="flex justify-end gap-2 border-t border-border-subtle p-6">{footer}</footer> : null}</dialog>;
+}
+
+const focusableSelector = "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
+export function trapDialogFocus(event: KeyboardEvent<HTMLDialogElement>, dialog: HTMLDialogElement | null) {
+  if (event.key !== "Tab" || !dialog) return;
+  const controls = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter((control) => !control.hidden);
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!first || !last) return;
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+}
+
+export function focusFirstControl(dialog: HTMLDialogElement) {
+  dialog.querySelector<HTMLElement>(focusableSelector)?.focus();
+}
+
+export function restoreFocus(target: HTMLElement | null) {
+  if (target?.isConnected) target.focus();
 }
 
 export function ConfirmationDialog({ open, title, objectName, children, onCancel, onConfirm }: { open: boolean; title: string; objectName: string; children: ReactNode; onCancel(): void; onConfirm(): void }) {

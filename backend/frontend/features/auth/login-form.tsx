@@ -43,6 +43,7 @@ export function LoginForm() {
             onChange={(event) => setToken(event.target.value)}
             placeholder="Paste your bearer token"
             className="pl-9"
+            aria-invalid={Boolean(error)}
             aria-describedby={error ? "login-error" : "login-help"}
           />
         </div>
@@ -50,6 +51,7 @@ export function LoginForm() {
           <p id="login-help" className="mt-2 type-compact text-muted-foreground">Authentication is validated before the workspace opens.</p>
         )}
       </div>
+      <p role="status" aria-live="polite" className="sr-only">{loading ? "Validating Giro access token." : ""}</p>
       <Button variant="accent" className="mt-6 w-full" disabled={loading}>
         {loading ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <ArrowRight className="size-4" />}
         {loading ? "Verifying…" : "Enter workspace"}

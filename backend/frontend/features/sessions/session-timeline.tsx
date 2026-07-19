@@ -12,11 +12,12 @@ interface SessionTimelineProps {
   onRetry?(): void;
   startHref: string;
   now?: Date;
+  announceLoading?: boolean;
 }
 
 type TimelineGroup = { label: "Today" | "Yesterday" | "Earlier"; sessions: SessionSummary[] };
 
-export function SessionTimeline({ sessions = [], loading = false, error, onRetry, startHref, now = new Date() }: SessionTimelineProps) {
+export function SessionTimeline({ sessions = [], loading = false, error, onRetry, startHref, now = new Date(), announceLoading = true }: SessionTimelineProps) {
   const ordered = orderSessions(sessions);
   const groups = groupSessions(ordered, now);
   const latestId = ordered[0]?.id;
@@ -29,7 +30,7 @@ export function SessionTimeline({ sessions = [], loading = false, error, onRetry
         {ordered.length ? <span className="type-metadata text-muted-foreground">{ordered.length} sessions</span> : null}
       </div>
       {error ? <ErrorState error={error} retry={onRetry} compact /> : null}
-      {loading ? <div role="status" aria-live="polite" aria-label="Loading investigation timeline" className="space-y-3 border-y border-border-subtle py-3"><span className="sr-only">Loading investigation timeline.</span><Skeleton className="h-24" /><Skeleton className="h-20" /></div> : null}
+      {loading ? <div role={announceLoading ? "status" : undefined} aria-live={announceLoading ? "polite" : undefined} aria-label={announceLoading ? "Loading investigation timeline" : undefined} aria-hidden={announceLoading ? undefined : true} className="space-y-3 border-y border-border-subtle py-3">{announceLoading ? <span className="sr-only">Loading investigation timeline.</span> : null}<Skeleton className="h-24" /><Skeleton className="h-20" /></div> : null}
       {!loading && !error && ordered.length === 0 ? <EmptySessionTimeline startHref={startHref} /> : null}
       {!loading && !error && ordered.length ? <div data-testid="session-timeline-layout" className="grid items-start gap-8 laptop:grid-cols-[minmax(0,1fr)_280px]"><div className="space-y-7">{groups.map((group) => <TimelineGroupSection key={group.label} group={group} latestId={latestId} />)}</div><RecentSessionActivity sessions={recentCreations} /></div> : null}
     </section>

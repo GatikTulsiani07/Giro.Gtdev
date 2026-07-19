@@ -30,6 +30,17 @@ describe("public Giro homepage", () => {
     expect(screen.getByRole("button", { name: "Play preview" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("supports arrow-key navigation between platform previews", () => {
+    render(<HomePage />);
+    const web = screen.getByRole("tab", { name: /Web AVAILABLE/ });
+    web.focus();
+    fireEvent.keyDown(web, { key: "ArrowDown" });
+    const cli = screen.getByRole("tab", { name: /CLI COMING SOON/ });
+    expect(cli).toHaveFocus();
+    expect(cli).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "platform-cli-tab");
+  });
+
   it("does not autoplay the platform preview when reduced motion is requested", () => {
     vi.mocked(window.matchMedia).mockReturnValue({
       matches: true,

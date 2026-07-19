@@ -72,12 +72,11 @@ describe("dashboard command center", () => {
     expect(within(actions).queryByRole("link", { name: /Search repository/ })).not.toBeInTheDocument();
   });
 
-  it("renders dashboard-shaped loading regions with live semantics", () => {
+  it("announces dashboard loading once while keeping skeletons presentational", () => {
     render(<DashboardCommandCenter repositoriesLoading sessionsLoading />);
-    expect(screen.getByRole("status", { name: "Loading continue investigation" })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Loading repository command center" })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Loading investigation timeline" })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Loading repository actions" })).toBeInTheDocument();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading dashboard repositories and investigations.");
+    expect(screen.getByLabelText("Engineering command center")).toHaveAttribute("aria-busy", "true");
   });
 
   it("keeps semantic landmarks and responsive grid composition", () => {

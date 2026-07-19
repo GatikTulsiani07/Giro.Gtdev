@@ -111,7 +111,7 @@ export function RepositoryOverview({ owner, repo }: { owner: string; repo: strin
 
       <div className="mt-6"><Tabs label="Repository sections" items={REPOSITORY_TABS} value={activeTab} onValueChange={selectTab} /></div>
 
-      <div id={`repository-${activeTab}-panel`} role="tabpanel" className="mt-8">
+      <div id={`repository-${activeTab}-panel`} role="tabpanel" aria-labelledby={`repository-${activeTab}-panel-tab`} className="mt-8">
         {activeTab === "summary" ? <RepositorySummaryOverview owner={owner} repo={repo} summary={details} repository={indexed} workspace={workspace.data} workspaceLoading={workspace.isLoading} workspaceUnavailable={workspace.isError} onAsk={() => void openSession()} /> : null}
 
         {activeTab === "architecture" ? <ExplorerTab tab="architecture" title="Architecture summary" description="Languages, frameworks, entry points, and repository surfaces exposed by indexing." empty="No architecture summary is available." categories={explorerCategories} selectedItem={selectedExplorerItem} onSelect={selectExplorerItem} onAsk={repositoryStatus.ready ? (item) => setAskTarget({ kind: "repository-item", item, location: { kind: "explorer", tab: "architecture" } }) : undefined} /> : null}

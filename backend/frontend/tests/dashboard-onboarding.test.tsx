@@ -35,7 +35,10 @@ describe("empty dashboard onboarding", () => {
   it("announces the repository-shaped loading state", () => {
     state.loading = true;
     render(<DashboardScreen />);
-    expect(screen.getByRole("status", { name: "Loading repository command center" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading dashboard repositories and investigations.",
+    );
+    expect(screen.getByLabelText("Engineering command center")).toHaveAttribute("aria-busy", "true");
     expect(screen.queryByRole("list", { name: "Repository onboarding steps" })).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Braces, FileCode2, Pause, Play, Search, ShieldCheck } from "lucide-react";
 import { PLATFORM_PRODUCTS } from "@/components/platform/platform-navigation";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ const webDescription = "Repository summaries, scoped search, sessions, retrieval
 export function PlatformShowcase() {
   const [selected, setSelected] = useState<ShowcaseId>("web");
   const [paused, setPaused] = useState(false);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -26,6 +27,13 @@ export function PlatformShowcase() {
 
   const product = PLATFORM_PRODUCTS.find((item) => item.id === selected);
   const description = selected === "web" ? webDescription : product && "description" in product ? product.description : "";
+
+  function selectTab(index: number) {
+    const next = SHOWCASE_IDS[index];
+    if (!next) return;
+    setSelected(next);
+    tabRefs.current[index]?.focus();
+  }
 
   return (
     <section aria-labelledby="platform-showcase-heading" className="mx-auto w-full max-w-[1280px] px-12 max-[1080px]:px-8 max-[820px]:px-4">
@@ -41,16 +49,16 @@ export function PlatformShowcase() {
 
         <div className="grid min-h-[560px] bg-selection/40 laptop:grid-cols-[220px_minmax(0,1fr)] max-[820px]:min-h-0">
           <div role="tablist" aria-label="Platform previews" className="flex gap-2 overflow-x-auto border-b border-border-subtle p-4 laptop:flex-col laptop:border-b-0 laptop:border-r">
-            {SHOWCASE_IDS.map((id) => {
+            {SHOWCASE_IDS.map((id, index) => {
               const item = PLATFORM_PRODUCTS.find((candidate) => candidate.id === id);
               if (!item) return null;
               const Icon = item.icon;
               const active = selected === id;
-              return <button key={id} type="button" role="tab" aria-selected={active} aria-controls="platform-preview-panel" onClick={() => setSelected(id)} className={cn("flex min-h-11 shrink-0 items-center gap-3 rounded-control px-3 text-left focus-ring", active ? "bg-selection text-foreground" : "text-text-secondary hover:bg-hover hover:text-foreground")}><Icon className={cn("size-4", active && "text-primary")} /><span className="min-w-0 flex-1"><span className="block type-compact-strong">{item.name}</span><span className={cn("block type-metadata", item.status === "available" ? "text-success" : "text-muted-foreground")}>{item.status === "available" ? "AVAILABLE" : "COMING SOON"}</span></span></button>;
+              return <button key={id} id={`platform-${id}-tab`} ref={(node) => { tabRefs.current[index] = node; }} type="button" role="tab" aria-selected={active} aria-controls="platform-preview-panel" tabIndex={active ? 0 : -1} onClick={() => setSelected(id)} onKeyDown={(event) => { if (!["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return; event.preventDefault(); if (event.key === "Home") selectTab(0); else if (event.key === "End") selectTab(SHOWCASE_IDS.length - 1); else { const direction = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1; selectTab((index + direction + SHOWCASE_IDS.length) % SHOWCASE_IDS.length); } }} className={cn("flex min-h-11 shrink-0 items-center gap-3 rounded-control px-3 text-left focus-ring", active ? "bg-selection text-foreground" : "text-text-secondary hover:bg-hover hover:text-foreground")}><Icon className={cn("size-4", active && "text-primary")} /><span className="min-w-0 flex-1"><span className="block type-compact-strong">{item.name}</span><span className={cn("block type-metadata", item.status === "available" ? "text-success" : "text-muted-foreground")}>{item.status === "available" ? "AVAILABLE" : "COMING SOON"}</span></span></button>;
             })}
           </div>
 
-          <div id="platform-preview-panel" role="tabpanel" className="min-w-0 p-8 max-[820px]:p-4">
+          <div id="platform-preview-panel" role="tabpanel" aria-labelledby={`platform-${selected}-tab`} className="min-w-0 p-8 max-[820px]:p-4">
             <div className="mb-5 flex flex-wrap items-start justify-between gap-4"><div><p className="type-metadata-label text-muted-foreground">{product?.status === "available" ? "Available product" : "Coming soon concept"}</p><h3 className="mt-2 type-current-value">Giro {product?.name}</h3><p className="mt-2 max-w-[58ch] type-compact text-text-secondary">{description}</p></div><span className={cn("rounded-badge px-2 py-1 type-metadata", product?.status === "available" ? "bg-success/10 text-success" : "bg-inset text-muted-foreground")}>{product?.status === "available" ? "LIVE" : "NOT YET AVAILABLE"}</span></div>
             <AnimatedPreview selected={selected} paused={paused} />
           </div>
