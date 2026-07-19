@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TopNav } from "@/components/layout/top-nav";
 import { RepositorySearch } from "@/features/repositories/repository-search";
 import { indexedEvidenceResultKey } from "@/features/repositories/repository-search-results";
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   retrievalInspect: vi.fn(),
   repositoriesState: {} as Record<string, unknown>,
+  createSession: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,7 +32,10 @@ vi.mock("@/hooks/use-repositories", () => ({
   },
   useRepositories: () => mocks.repositoriesState,
 }));
-vi.mock("@/hooks/use-sessions", () => ({ useSessions: () => ({ data: { sessions: [] } }) }));
+vi.mock("@/hooks/use-sessions", () => ({
+  useSessions: () => ({ data: { sessions: [] }, isLoading: false, isError: false }),
+  useCreateSession: () => ({ mutateAsync: mocks.createSession, isPending: false, isError: false }),
+}));
 vi.mock("@/services/api/retrieval", () => ({ retrievalApi: { inspect: mocks.retrievalInspect } }));
 
 const cachedSummary: RepositorySummary = {
@@ -62,11 +66,27 @@ const successfulSearch: HybridRetrievalResult = {
 };
 
 describe("repository search foundation", () => {
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function close() { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); };
+  });
+
   beforeEach(() => {
     mocks.currentPathname = "/repositories/acme/platform/search";
     mocks.currentSearchParams = "";
     mocks.routerPush.mockReset();
     mocks.retrievalInspect.mockReset().mockResolvedValue(successfulSearch);
+    mocks.createSession.mockReset().mockResolvedValue({ id: "new-session" });
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
     mocks.repositoriesState = {
       data: { repositories: [{ owner: "acme", repo: "platform", status: "indexed", lastIndexedAt: "2026-07-18T00:00:00Z" }] },
       isLoading: false,
@@ -88,6 +108,15 @@ describe("repository search foundation", () => {
     );
   });
 
+  it("populates the field from realistic query examples without submitting", () => {
+    render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
+    fireEvent.click(screen.getByRole("button", { name: "authentication flow" }));
+    expect(screen.getByLabelText("Search repository")).toHaveValue("authentication flow");
+    expect(screen.getByLabelText("Search repository")).toHaveFocus();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+    expect(mocks.retrievalInspect).not.toHaveBeenCalled();
+  });
+
   it("restores a submitted query and executes repository-scoped retrieval", async () => {
     mocks.currentSearchParams = "q=authentication";
     render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
@@ -97,16 +126,16 @@ describe("repository search foundation", () => {
       owner: "acme",
       repo: "platform",
     }));
-    expect(await screen.findByRole("heading", { name: "Repository Intelligence" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Indexed Evidence" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Repository intelligence" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Indexed evidence" })).toBeInTheDocument();
     expect(screen.getByText("AUTHENTICATION_EVIDENCE")).toBeInTheDocument();
     expect(screen.getAllByText("authentication")).not.toHaveLength(0);
-    expect(screen.getByRole("button", { name: "Ask Giro about this" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask Giro about this result" })).toBeInTheDocument();
   });
 
   it("stays idle for an empty query", () => {
     render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
-    expect(screen.getByText("Search indexed repository context")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ready to search this repository" })).toBeInTheDocument();
     expect(mocks.retrievalInspect).not.toHaveBeenCalled();
   });
 
@@ -137,6 +166,7 @@ describe("repository search foundation", () => {
     mocks.retrievalInspect.mockRejectedValueOnce(new ApiClientError({ code: "retrieval_error", message: "Retrieval unavailable", status: 500, retryable: true }));
     render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
     expect(screen.getByLabelText("Search repository")).toHaveValue("authentication");
+    expect(await screen.findByRole("heading", { name: "Repository search unavailable" })).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
     await waitFor(() => expect(mocks.retrievalInspect).toHaveBeenCalledTimes(2));
   });
@@ -179,7 +209,33 @@ describe("repository search foundation", () => {
     const restored = await screen.findByRole("option", { name: /src\/session.ts/ });
     expect(restored).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("src/session.ts evidence details")).toHaveTextContent("SESSION_SYMBOL_EVIDENCE");
+    expect(screen.getByLabelText("src/session.ts evidence details")).toHaveTextContent("lines 8–12");
+    expect(screen.getByLabelText("src/session.ts evidence details")).toHaveTextContent("createSession");
+    expect(screen.getByLabelText("src/session.ts evidence details")).toHaveTextContent("score 0.700");
     await waitFor(() => expect(restored).toHaveFocus());
+  });
+
+  it("opens selected evidence in a narrow detail sheet and restores focus on Escape", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(max-width: 1080px)",
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    mocks.currentSearchParams = "q=authentication";
+    render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
+    const result = await screen.findByRole("option", { name: /src\/session.ts/ });
+    result.focus();
+    fireEvent.click(result);
+    const sheet = screen.getByRole("dialog", { name: "Selected search result" });
+    expect(sheet).toHaveTextContent("SESSION_SYMBOL_EVIDENCE");
+    fireEvent(sheet, new Event("cancel", { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Selected search result" })).not.toBeInTheDocument());
+    expect(result).toHaveFocus();
   });
 
   it("falls back safely for an invalid result value", async () => {
@@ -192,9 +248,31 @@ describe("repository search foundation", () => {
     mocks.currentSearchParams = "q=unmatched";
     mocks.retrievalInspect.mockResolvedValueOnce({ ...successfulSearch, query: "unmatched", results: [] });
     render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
-    expect(await screen.findByText("No repository summary items matched this query.")).toBeInTheDocument();
-    expect(screen.getByText("No indexed evidence was returned for this query.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "No repository results" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Refine the search, not the repository" })).toBeInTheDocument();
+    expect(screen.getByText(/simpler terms, a file or symbol name/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Return to search field" }));
+    expect(screen.getByLabelText("Search repository")).toHaveFocus();
+  });
+
+  it("renders a result-shaped skeleton while retrieval is pending", async () => {
+    mocks.currentSearchParams = "q=authentication";
+    mocks.retrievalInspect.mockReturnValueOnce(new Promise(() => undefined));
+    render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
+    expect(await screen.findByRole("status", { name: "Searching acme/platform" })).toBeInTheDocument();
+    expect(screen.queryByText("Checking repository readiness…")).not.toBeInTheDocument();
+  });
+
+  it("hands the selected evidence to Ask Giro", async () => {
+    mocks.currentSearchParams = new URLSearchParams({
+      q: "authentication",
+      result: indexedEvidenceResultKey(successfulSearch.results[1]!),
+    }).toString();
+    render(<RepositorySearch owner="acme" repo="platform" />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByRole("button", { name: "Ask Giro about this evidence" }));
+    fireEvent.click(screen.getByRole("radio", { name: /New session/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(mocks.createSession).toHaveBeenCalledWith({ owner: "acme", repo: "platform", title: "createSession" }));
+    expect(mocks.routerPush.mock.calls.at(-1)?.[0]).toContain("draft=Explain+how+createSession+in+src%2Fsession.ts+works.");
   });
 
   it("shows a repository-scoped header launcher without duplicating query state", () => {
