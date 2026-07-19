@@ -205,7 +205,7 @@ export async function answerSessionQuestion(
   options: AnswerSessionQuestionOptions = {},
 ): Promise<QuestionResult> {
   options.signal?.throwIfAborted();
-  const session = getSessionById(sessionId);
+  const session = await getSessionById(sessionId);
   if (!session) return "session_not_found";
 
   const repositoryId = `${session.owner}/${session.repo}`;
@@ -270,10 +270,10 @@ export async function answerSessionQuestion(
     confidence: toPublicRetrievalConfidence(confidence),
   };
 
-  if (!addMessageToSession(sessionId, { role: "user", content: question })) {
+  if (!await addMessageToSession(sessionId, { role: "user", content: question })) {
     throw new Error("Session disappeared before the question could be persisted.");
   }
-  if (!addMessageToSession(sessionId, {
+  if (!await addMessageToSession(sessionId, {
     role: "assistant",
     content: answer,
     citations,
@@ -282,7 +282,7 @@ export async function answerSessionQuestion(
   })) {
     throw new Error("Session disappeared before the answer could be persisted.");
   }
-  if (!replaceSelectedContext(sessionId, evidence)) {
+  if (!await replaceSelectedContext(sessionId, evidence)) {
     throw new Error("Session disappeared before evidence could be persisted.");
   }
 

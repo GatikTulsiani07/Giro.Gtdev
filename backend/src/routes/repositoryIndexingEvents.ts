@@ -29,7 +29,7 @@ repositoryIndexingEventsRoute.get("/:repositoryId/summary", async (c) => {
   if (!user) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
-  const access = requireRepositoryAccess({ repoId: repositoryId, userId: user.userId });
+  const access = await requireRepositoryAccess({ repoId: repositoryId, userId: user.userId });
   if (!access.ok) {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
@@ -70,7 +70,7 @@ repositoryIndexingEventsRoute.get("/:repositoryId/indexing/events", async (c) =>
   if (!user) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
-  const access = requireRepositoryAccess({ repoId: repositoryId, userId: user.userId });
+  const access = await requireRepositoryAccess({ repoId: repositoryId, userId: user.userId });
   if (!access.ok) {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }

@@ -46,7 +46,7 @@ export async function connectRepository<TIndexResult>(
   return {
     repository: repositoryReference(input),
     indexResult,
-    summary: buildRepositoryDashboardSummary(input.owner, input.repo),
+    summary: await buildRepositoryDashboardSummary(input.owner, input.repo),
   };
 }
 
@@ -106,8 +106,12 @@ export function cleanupRepository(
 
 export function getRepositorySummary(
   input: RepositoryLifecycleInput,
-): RepositoryDashboardSummary {
-  const summary = buildRepositoryDashboardSummary(input.owner, input.repo);
+): RepositoryDashboardSummary;
+export function getRepositorySummary(
+  input: RepositoryLifecycleInput,
+): RepositoryDashboardSummary | Promise<RepositoryDashboardSummary> {
+  const built = buildRepositoryDashboardSummary(input.owner, input.repo);
+  const record = (summary: RepositoryDashboardSummary) => {
   recordRepositoryLifecycleEvent({
     repositoryId: `${input.owner}/${input.repo}`,
     type: "repository_dashboard_viewed",
@@ -120,5 +124,7 @@ export function getRepositorySummary(
     },
   });
 
-  return summary;
+    return summary;
+  };
+  return built instanceof Promise ? built.then(record) : record(built);
 }

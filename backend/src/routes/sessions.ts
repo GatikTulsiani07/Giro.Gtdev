@@ -84,7 +84,7 @@ const sessionsRouter = new Hono<{
 
 function getSessionAccessFailureResponse(
   c: Parameters<typeof fail>[0],
-  access: Extract<ReturnType<typeof requireSessionAccess>, { ok: false }>,
+  access: Extract<Awaited<ReturnType<typeof requireSessionAccess>>, { ok: false }>,
 ) {
   return fail(c, { code: access.code, message: access.message }, access.status);
 }
@@ -104,7 +104,7 @@ sessionsRouter.post("/", async (c) => {
     const user = requireAuthenticatedUser(c);
 
     // A session may only be created for a repository owned by this user.
-    const repoAccess = requireSessionRepositoryOwnership({
+    const repoAccess = await requireSessionRepositoryOwnership({
       owner: parsed.data.owner,
       repo: parsed.data.repo,
       userId: user.userId,
@@ -113,7 +113,7 @@ sessionsRouter.post("/", async (c) => {
       return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
     }
 
-    const session = createNewSession({
+    const session = await createNewSession({
       ...parsed.data,
       userId: user.userId,
     });
@@ -135,7 +135,7 @@ sessionsRouter.get("/", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
 
-    const sessions = listAllSessions().filter(
+    const sessions = (await listAllSessions()).filter(
       (session) => session.userId === user.userId,
     );
 
@@ -157,7 +157,7 @@ sessionsRouter.get("/:id", async (c) => {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
 
-    const access = requireSessionAccess({
+    const access = await requireSessionAccess({
       sessionId: id,
       userId: user.userId,
     });
@@ -194,7 +194,7 @@ sessionsRouter.post("/:id/messages", async (c) => {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
 
-    const access = requireSessionAccess({
+    const access = await requireSessionAccess({
       sessionId: id,
       userId: user.userId,
     });
@@ -203,7 +203,7 @@ sessionsRouter.post("/:id/messages", async (c) => {
       return getSessionAccessFailureResponse(c, access);
     }
 
-    const session = addMessageToSession(id, parsed.data);
+    const session = await addMessageToSession(id, parsed.data);
 
     if (!session) {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
@@ -227,7 +227,7 @@ sessionsRouter.delete("/:id", async (c) => {
     const user = requireAuthenticatedUser(c);
     const id = c.req.param("id");
 
-    const access = requireSessionAccess({
+    const access = await requireSessionAccess({
       sessionId: id,
       userId: user.userId,
     });
@@ -236,7 +236,7 @@ sessionsRouter.delete("/:id", async (c) => {
       return getSessionAccessFailureResponse(c, access);
     }
 
-    const removed = removeSession(id);
+    const removed = await removeSession(id);
 
     if (!removed) {
       return fail(c, { code: "session_not_found", message: "Session not found" }, 404);
@@ -270,7 +270,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
 
-    const access = requireSessionAccess({
+    const access = await requireSessionAccess({
       sessionId: id,
       userId: user.userId,
     });
@@ -280,7 +280,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
     }
 
     // The repository this session targets must still be owned by this user.
-    const repoAccess = requireSessionRepositoryOwnership({
+    const repoAccess = await requireSessionRepositoryOwnership({
       owner: access.session.owner,
       repo: access.session.repo,
       userId: user.userId,
@@ -289,7 +289,7 @@ sessionsRouter.post("/:id/ask", async (c) => {
       return fail(c, { code: repoAccess.code, message: repoAccess.message }, repoAccess.status);
     }
 
-    const repositoryStatus = getRepositoryIndexMetadata(
+    const repositoryStatus = await getRepositoryIndexMetadata(
       access.session.owner,
       access.session.repo,
     );

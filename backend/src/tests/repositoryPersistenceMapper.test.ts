@@ -38,6 +38,10 @@ function record(overrides: Partial<RepositoryRecord> = {}): RepositoryRecord {
     lastSuccessfulFile: null,
     retryCount: 0,
     lastRetryAt: null,
+    indexedRevision: null,
+    lastLifecycleSeverity: null,
+    lastReindexMode: null,
+    lastReindexReason: null,
     ...overrides,
   };
 }
@@ -72,6 +76,10 @@ function row(overrides: Partial<RepositoryPersistenceRow> = {}): RepositoryPersi
     last_accessed_at: null,
     created_at: BASE_TIME,
     updated_at: "2026-01-01T00:00:01.000Z",
+    indexed_revision: null,
+    last_lifecycle_severity: null,
+    last_reindex_mode: null,
+    last_reindex_reason: null,
     ...overrides,
   };
 }
@@ -127,6 +135,10 @@ test("maps a complete repository record to a persistence row", () => {
     last_retry_at: "2026-01-01T00:04:00.000Z",
     last_accessed_at: "2026-01-01T00:11:00.000Z",
     updated_at: "2026-01-01T00:00:01.000Z",
+    indexed_revision: null,
+    last_lifecycle_severity: null,
+    last_reindex_mode: null,
+    last_reindex_reason: null,
   });
 });
 

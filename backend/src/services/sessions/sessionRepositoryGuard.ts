@@ -4,12 +4,18 @@
 
 import { requireRepositoryAccess } from "../repository/ownershipGuard.js";
 import type { RepositoryAccessResult } from "../repository/ownershipGuard.js";
+import type { MaybePromise } from "../../lib/maybePromise.js";
 
 export function requireSessionRepositoryOwnership(input: {
   owner: string;
   repo: string;
   userId: string;
-}): RepositoryAccessResult {
+}): RepositoryAccessResult;
+export function requireSessionRepositoryOwnership(input: {
+  owner: string;
+  repo: string;
+  userId: string;
+}): MaybePromise<RepositoryAccessResult> {
   const repoId = `${input.owner}/${input.repo}`;
   return requireRepositoryAccess({ repoId, userId: input.userId });
 }

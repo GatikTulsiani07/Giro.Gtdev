@@ -23,6 +23,7 @@ import {
 } from "./repositoryAiReadinessEngine.js";
 import type { RepositoryLifecycleEvent } from "./repositoryLifecycleEvents.js";
 import type { RetrievalExplainabilitySummary } from "../retrieval/retrievalExplainabilitySummary.js";
+import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
 
 export interface RepositoryDashboardIntelligenceBundleInput {
   repositoryId?: string;
@@ -101,11 +102,16 @@ export function buildRepositoryDashboardIntelligenceBundle(
 export function buildRepositoryDashboardIntelligenceBundleForRepository(
   owner: string,
   repo: string,
-): RepositoryDashboardIntelligenceBundle {
+): RepositoryDashboardIntelligenceBundle;
+export function buildRepositoryDashboardIntelligenceBundleForRepository(
+  owner: string,
+  repo: string,
+): MaybePromise<RepositoryDashboardIntelligenceBundle> {
   const repositoryId = `${owner}/${repo}`;
-  return buildRepositoryDashboardIntelligenceBundle({
-    repositoryId,
-    dashboard: buildRepositoryDashboardSummary(owner, repo),
-    timeline: buildRepositoryActivityTimelineForRepository(repositoryId),
-  });
+  return mapMaybePromise(buildRepositoryDashboardSummary(owner, repo), (dashboard) =>
+    buildRepositoryDashboardIntelligenceBundle({
+      repositoryId,
+      dashboard,
+      timeline: buildRepositoryActivityTimelineForRepository(repositoryId),
+    }));
 }

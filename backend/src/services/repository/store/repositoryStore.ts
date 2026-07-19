@@ -37,6 +37,10 @@ export interface RepositoryRecord extends RepositoryStoreCounts {
   lastSuccessfulFile: string | null;
   retryCount: number;
   lastRetryAt: string | null;
+  indexedRevision: string | null;
+  lastLifecycleSeverity: "none" | "low" | "medium" | "high" | null;
+  lastReindexMode: RepositoryStoreIndexMode | "none" | null;
+  lastReindexReason: string | null;
 }
 
 export interface ConnectRepositoryInput {
@@ -61,6 +65,10 @@ export interface UpdateRepositoryInput {
   lastSuccessfulFile?: string | null;
   retryCount?: number;
   lastRetryAt?: string | null;
+  indexedRevision?: string | null;
+  lastLifecycleSeverity?: "none" | "low" | "medium" | "high" | null;
+  lastReindexMode?: RepositoryStoreIndexMode | "none" | null;
+  lastReindexReason?: string | null;
   counts?: Partial<RepositoryStoreCounts>;
 }
 
@@ -68,6 +76,7 @@ export interface MarkIndexedInput {
   counts: RepositoryStoreCounts;
   indexMode?: RepositoryStoreIndexMode;
   changedFileCount?: number;
+  indexedRevision?: string | null;
 }
 
 export interface MarkFailedInput {
@@ -77,15 +86,16 @@ export interface MarkFailedInput {
 }
 
 export interface RepositoryStore {
-  connectRepository(input: ConnectRepositoryInput): RepositoryRecord;
-  getRepository(repositoryId: string): RepositoryRecord | null;
-  listRepositories(): RepositoryRecord[];
-  updateRepository(repositoryId: string, input: UpdateRepositoryInput): RepositoryRecord | null;
-  deleteRepository(repositoryId: string): boolean;
-  markIndexing(repositoryId: string): RepositoryRecord | null;
-  markIndexed(repositoryId: string, input: MarkIndexedInput): RepositoryRecord | null;
-  markFailed(repositoryId: string, input?: MarkFailedInput): RepositoryRecord | null;
-  touchAccess(repositoryId: string): RepositoryRecord | null;
-  repositoryExists(repositoryId: string): boolean;
-  clear(): void;
+  connectRepository(input: ConnectRepositoryInput): MaybePromise<RepositoryRecord>;
+  getRepository(repositoryId: string): MaybePromise<RepositoryRecord | null>;
+  listRepositories(): MaybePromise<RepositoryRecord[]>;
+  updateRepository(repositoryId: string, input: UpdateRepositoryInput): MaybePromise<RepositoryRecord | null>;
+  deleteRepository(repositoryId: string): MaybePromise<boolean>;
+  markIndexing(repositoryId: string): MaybePromise<RepositoryRecord | null>;
+  markIndexed(repositoryId: string, input: MarkIndexedInput): MaybePromise<RepositoryRecord | null>;
+  markFailed(repositoryId: string, input?: MarkFailedInput): MaybePromise<RepositoryRecord | null>;
+  touchAccess(repositoryId: string): MaybePromise<RepositoryRecord | null>;
+  repositoryExists(repositoryId: string): MaybePromise<boolean>;
+  clear(): MaybePromise<void>;
 }
+import type { MaybePromise } from "../../../lib/maybePromise.js";

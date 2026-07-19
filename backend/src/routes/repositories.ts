@@ -113,8 +113,8 @@ repositoriesRoute.post("/connect", async (c) => {
   const repoId = `${owner}/${repo}`;
   setRequestLogContext(c, { repositoryId: repoId });
 
-  const existing = getRepositoryIndexMetadata(owner, repo);
-  const ownerUserId = getRepositoryOwner(repoId);
+  const existing = await getRepositoryIndexMetadata(owner, repo);
+  const ownerUserId = await getRepositoryOwner(repoId);
   if (ownerUserId !== undefined && ownerUserId !== user.userId) {
     return fail(
       c,
@@ -125,12 +125,12 @@ repositoriesRoute.post("/connect", async (c) => {
       403,
     );
   }
-  const reindexingStale = existing !== null && isRepositoryStale(owner, repo);
+  const reindexingStale = existing !== null && await isRepositoryStale(owner, repo);
   if (reindexingStale) {
     logger.info("repos_reindex_stale", { requestId: c.get("requestId"), owner, repo });
   }
 
-  setRepositoryOwner(repoId, user.userId);
+  await setRepositoryOwner(repoId, user.userId);
   const indexingJobStore = c.get("indexingJobStore");
   const job = await indexingJobStore.createJob({
     repositoryId: repoId,
@@ -143,7 +143,7 @@ repositoriesRoute.post("/connect", async (c) => {
   });
   await c.get("indexingProgressPublisher").publish(job);
   setRequestLogContext(c, { repositoryId: repoId, jobId: job.jobId });
-  setRepositoryIndexing(owner, repo);
+  await setRepositoryIndexing(owner, repo);
 
   return ok(c, {
     repositoryId: repoId,
@@ -152,17 +152,18 @@ repositoriesRoute.post("/connect", async (c) => {
   });
 });
 
-repositoriesRoute.get("/indexed", (c) => {
+repositoriesRoute.get("/indexed", async (c) => {
   const user = getAuthenticatedUser(c);
   if (!user) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
 
-  const repositories = listIndexedRepositories();
-  const ownedRepositories = repositories.filter((repository) => {
+  const repositories = await listIndexedRepositories();
+  const owned = await Promise.all(repositories.map(async (repository) => {
     const repoId = `${repository.owner}/${repository.repo}`;
-    return getRepositoryOwner(repoId) === user.userId;
-  });
+    return await getRepositoryOwner(repoId) === user.userId;
+  }));
+  const ownedRepositories = repositories.filter((_, index) => owned[index]);
 
   return ok(c, {
     repositories: ownedRepositories,
@@ -192,7 +193,7 @@ repositoriesRoute.post("/context", async (c) => {
   if (!ctxUser) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
-  const ctxAccess = requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: ctxUser.userId });
+  const ctxAccess = await requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: ctxUser.userId });
   if (!ctxAccess.ok) {
     return fail(c, { code: ctxAccess.code, message: ctxAccess.message }, ctxAccess.status);
   }
@@ -249,7 +250,7 @@ repositoriesRoute.get("/:id/summary", async (c) => {
   if (!sumUser) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
-  const sumAccess = requireRepositoryAccess({ repoId: repository, userId: sumUser.userId });
+  const sumAccess = await requireRepositoryAccess({ repoId: repository, userId: sumUser.userId });
   if (!sumAccess.ok) {
     return fail(c, { code: sumAccess.code, message: sumAccess.message }, sumAccess.status);
   }
@@ -292,7 +293,7 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
   }
 
   const repoId = `${owner}/${repo}`;
-  const access = requireRepositoryAccess({ repoId, userId: user.userId });
+  const access = await requireRepositoryAccess({ repoId, userId: user.userId });
   if (!access.ok) {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
@@ -337,6 +338,7 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
       repositoryId: repoId,
       repositoryName: repo,
       overview: overview as never,
+      indexMetadata: await getRepositoryIndexMetadata(owner, repo),
     });
 
     saveRepositoryIntelligence(intelligence);
@@ -369,7 +371,7 @@ repositoriesRoute.get("/dependencies/:owner/:repo", async (c) => {
   if (!depUser) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
-  const depAccess = requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: depUser.userId });
+  const depAccess = await requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: depUser.userId });
   if (!depAccess.ok) {
     return fail(c, { code: depAccess.code, message: depAccess.message }, depAccess.status);
   }
@@ -443,7 +445,7 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
   if (!srchUser) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
-  const srchAccess = requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: srchUser.userId });
+  const srchAccess = await requireRepositoryAccess({ repoId: `${owner}/${repo}`, userId: srchUser.userId });
   if (!srchAccess.ok) {
     return fail(c, { code: srchAccess.code, message: srchAccess.message }, srchAccess.status);
   }
@@ -471,7 +473,7 @@ repositoriesRoute.get("/search/:owner/:repo", async (c) => {
 });
 
 // DELETE /repos/:owner/:repo — cleanup repository lifecycle metadata.
-repositoriesRoute.delete("/:owner/:repo", (c) => {
+repositoriesRoute.delete("/:owner/:repo", async (c) => {
   const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
     return invalidOwnerRepo(c);
@@ -488,7 +490,7 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
   }
 
   const repoId = `${owner}/${repo}`;
-  const access = requireRepositoryAccess({
+  const access = await requireRepositoryAccess({
     repoId,
     userId: user.userId,
   });
@@ -497,7 +499,7 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
 
-  const report = cleanupRepository({ owner, repo });
+  const report = await cleanupRepository({ owner, repo });
   try {
     c.get("retrievalCache").invalidateRepository(repoId, "repository_deleted");
   } catch {
@@ -512,7 +514,7 @@ repositoriesRoute.delete("/:owner/:repo", (c) => {
 });
 
 // GET /repos/:owner/:repo/dashboard/intelligence — full dashboard intelligence bundle.
-repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
+repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", async (c) => {
   const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
     return invalidOwnerRepo(c);
@@ -530,7 +532,7 @@ repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
   }
 
   const repoId = `${owner}/${repo}`;
-  const access = requireRepositoryAccess({
+  const access = await requireRepositoryAccess({
     repoId,
     userId: user.userId,
   });
@@ -539,11 +541,11 @@ repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", (c) => {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
 
-  return ok(c, buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo));
+  return ok(c, await buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo));
 });
 
 // GET /repos/:owner/:repo/workspace — primary repository workspace payload.
-repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
+repositoriesRoute.get("/:owner/:repo/workspace", async (c) => {
   const parsedParams = parseRepositoryParams(c.req.param("owner"), c.req.param("repo"));
   if (!parsedParams.success) {
     return invalidOwnerRepo(c);
@@ -561,7 +563,7 @@ repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
   }
 
   const repoId = `${owner}/${repo}`;
-  const access = requireRepositoryAccess({
+  const access = await requireRepositoryAccess({
     repoId,
     userId: user.userId,
   });
@@ -570,7 +572,7 @@ repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
 
-  if (!getRepositoryIndexMetadata(owner, repo)) {
+  if (!await getRepositoryIndexMetadata(owner, repo)) {
     return fail(
       c,
       {
@@ -581,7 +583,7 @@ repositoriesRoute.get("/:owner/:repo/workspace", (c) => {
     );
   }
 
-  const bundle = buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo);
+  const bundle = await buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo);
   const recommendations = buildRepositoryRecommendations({
     dashboard: bundle.dashboard,
     health: bundle.health,
@@ -631,7 +633,7 @@ repositoriesRoute.get("/:owner/:repo/dashboard", async (c) => {
   }
 
   const repoId = `${owner}/${repo}`;
-  const access = requireRepositoryAccess({
+  const access = await requireRepositoryAccess({
     repoId,
     userId: user.userId,
   });
@@ -640,5 +642,5 @@ repositoriesRoute.get("/:owner/:repo/dashboard", async (c) => {
     return fail(c, { code: access.code, message: access.message }, access.status);
   }
 
-  return ok(c, getRepositorySummary({ owner, repo }));
+  return ok(c, await getRepositorySummary({ owner, repo }));
 });

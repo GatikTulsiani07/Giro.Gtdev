@@ -49,7 +49,7 @@ retrievalRouter.post("/hybrid", async (c) => {
   if (!user) {
     return fail(c, { code: "unauthorized", message: "Authentication required" }, 401);
   }
-  const access = requireRepositoryAccess({
+  const access = await requireRepositoryAccess({
     repoId: `${parsed.data.owner}/${parsed.data.repo}`,
     userId: user.userId,
   });

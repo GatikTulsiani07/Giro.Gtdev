@@ -73,7 +73,7 @@ indexingRoute.get("/jobs/:jobId", async (c) => {
     repositoryId: job.repositoryId,
   });
 
-  const access = requireRepositoryAccess({
+  const access = await requireRepositoryAccess({
     repoId: job.repositoryId,
     userId: user.userId,
   });

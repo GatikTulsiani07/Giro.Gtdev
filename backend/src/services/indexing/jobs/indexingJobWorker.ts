@@ -77,9 +77,9 @@ export type ExecuteIndexingPipeline = (
 ) => Promise<IndexingPipelineResult>;
 
 export interface IndexingJobRepositoryStore {
-  markIndexing(job: IndexingJob): void;
-  markIndexed(job: IndexingJob, result: IndexingPipelineResult): void;
-  markFailed(job: IndexingJob, failure: IndexingJobFailure): void;
+  markIndexing(job: IndexingJob): void | Promise<void>;
+  markIndexed(job: IndexingJob, result: IndexingPipelineResult): void | Promise<void>;
+  markFailed(job: IndexingJob, failure: IndexingJobFailure): void | Promise<void>;
 }
 
 export interface ProcessNextIndexingJobInput {
@@ -156,19 +156,19 @@ const STAGE_PROGRESS_BY_STAGE = new Map(
 );
 
 export const indexingJobRepositoryStore: IndexingJobRepositoryStore = {
-  markIndexing(job) {
-    setRepositoryIndexing(job.repositoryOwner, job.repositoryName);
+  async markIndexing(job) {
+    await setRepositoryIndexing(job.repositoryOwner, job.repositoryName);
   },
-  markIndexed(job, result) {
-    setRepositoryIndexed(
+  async markIndexed(job, result) {
+    await setRepositoryIndexed(
       job.repositoryOwner,
       job.repositoryName,
       result.counts,
       result.indexOptions,
     );
   },
-  markFailed(job) {
-    setRepositoryFailed(job.repositoryOwner, job.repositoryName);
+  async markFailed(job) {
+    await setRepositoryFailed(job.repositoryOwner, job.repositoryName);
   },
 };
 
@@ -349,6 +349,7 @@ export async function executeRepositoryIndexingPipeline(
     indexOptions: {
       indexMode: indexingPlan.mode,
       changedFileCount: indexingPlan.totalChangedFiles,
+      indexedRevision: repositoryVersion,
     },
   };
 }
@@ -385,7 +386,7 @@ export async function processNextIndexingJob(
   let currentStage: IndexingJobStage | null = "pending";
 
   try {
-    repositoryStore.markIndexing(claimed);
+    await repositoryStore.markIndexing(claimed);
     const firstStage = "clone";
     currentStage = firstStage;
     const running = await jobStore.markRunning(claimed.jobId, firstStage);
@@ -423,7 +424,7 @@ export async function processNextIndexingJob(
     });
 
     currentStage = "finalize";
-    repositoryStore.markIndexed(claimed, result);
+    await repositoryStore.markIndexed(claimed, result);
     const succeeded = await jobStore.markSucceeded(claimed.jobId);
     if (!succeeded) {
       throw new Error("Indexing job could not be marked succeeded");
@@ -468,7 +469,7 @@ export async function processNextIndexingJob(
       stage: currentStage,
     });
     try {
-      repositoryStore.markFailed(claimed, failure);
+      await repositoryStore.markFailed(claimed, failure);
     } catch {
       // Preserve the original indexing failure in the job/report.
     }

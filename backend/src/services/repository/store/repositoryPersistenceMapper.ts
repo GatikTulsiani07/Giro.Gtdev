@@ -4,8 +4,6 @@ import type {
   RepositoryStoreStatus,
 } from "./repositoryStore.js";
 
-// Pure mapping for a future async Postgres/Supabase adapter.
-// RepositoryStore stays synchronous; database access must not be hidden behind it.
 export interface RepositoryPersistenceRow {
   repository_id: string;
   owner_user_id: string | null;
@@ -35,6 +33,10 @@ export interface RepositoryPersistenceRow {
   last_accessed_at: string | null;
   created_at?: string;
   updated_at: string;
+  indexed_revision: string | null;
+  last_lifecycle_severity: "none" | "low" | "medium" | "high" | null;
+  last_reindex_mode: RepositoryStoreIndexMode | "none" | null;
+  last_reindex_reason: string | null;
 }
 
 export function repositoryRecordToRow(
@@ -67,6 +69,10 @@ export function repositoryRecordToRow(
     last_retry_at: record.lastRetryAt ?? null,
     last_accessed_at: record.lastAccessedAt ?? null,
     updated_at: record.updatedAt,
+    indexed_revision: record.indexedRevision,
+    last_lifecycle_severity: record.lastLifecycleSeverity,
+    last_reindex_mode: record.lastReindexMode,
+    last_reindex_reason: record.lastReindexReason,
   };
 }
 
@@ -100,5 +106,9 @@ export function repositoryRowToRecord(
     lastSuccessfulFile: row.last_successful_file ?? null,
     retryCount: row.retry_count,
     lastRetryAt: row.last_retry_at ?? null,
+    indexedRevision: row.indexed_revision ?? null,
+    lastLifecycleSeverity: row.last_lifecycle_severity ?? null,
+    lastReindexMode: row.last_reindex_mode ?? null,
+    lastReindexReason: row.last_reindex_reason ?? null,
   };
 }

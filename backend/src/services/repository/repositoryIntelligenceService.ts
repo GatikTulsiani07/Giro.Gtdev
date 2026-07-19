@@ -11,12 +11,14 @@ import {
 } from "../retrieval/retrievalQualityScore.js";
 import { getRepositoryIndexMetadata } from "./indexingService.js";
 import { buildRepositoryIndexingReport } from "./indexingReport.js";
+import type { RepositoryIndexMetadata } from "./indexingTypes.js";
 
 export interface RepositoryIntelligenceInput {
   repositoryId: string;
   repositoryName: string;
   overview: RepositoryOverview;
   retrievalQuality?: RetrievalQualityInput;
+  indexMetadata?: RepositoryIndexMetadata | null;
 }
 
 export interface RepositoryIntelligenceSummary {
@@ -70,9 +72,9 @@ export function buildRepositoryIntelligence(
   const architecture = getArchitectureDashboardData(input.repositoryId);
 
   const parsed = parseRepositoryId(input.repositoryId);
-  const indexing = parsed
-    ? getRepositoryIndexMetadata(parsed.owner, parsed.repo)
-    : null;
+  const indexing = input.indexMetadata !== undefined
+    ? input.indexMetadata
+    : parsed ? getRepositoryIndexMetadata(parsed.owner, parsed.repo) : null;
 
   const indexingSummary = buildRepositoryIndexSummary(indexing);
   const indexingReport = buildRepositoryIndexingReport(indexing);

@@ -24,7 +24,7 @@ export const requireSessionRepositoryOwnership = (): MiddlewareHandler => {
     }
 
     const id = c.req.param("id");
-    const session = id ? getSessionById(id) : null;
+    const session = id ? await getSessionById(id) : null;
     if (!session) {
       return fail(
         c,
@@ -34,7 +34,7 @@ export const requireSessionRepositoryOwnership = (): MiddlewareHandler => {
     }
 
     const repoId = `${session.owner}/${session.repo}`;
-    const result = requireRepositoryAccess({ repoId, userId: user.userId });
+    const result = await requireRepositoryAccess({ repoId, userId: user.userId });
     if (!result.ok) {
       return fail(c, { code: result.code, message: result.message }, result.status);
     }

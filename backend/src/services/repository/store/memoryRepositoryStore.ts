@@ -53,6 +53,10 @@ function cloneRecord(record: RepositoryRecord): RepositoryRecord {
     lastSuccessfulFile: record.lastSuccessfulFile,
     retryCount: record.retryCount,
     lastRetryAt: record.lastRetryAt,
+    indexedRevision: record.indexedRevision,
+    lastLifecycleSeverity: record.lastLifecycleSeverity,
+    lastReindexMode: record.lastReindexMode,
+    lastReindexReason: record.lastReindexReason,
   };
 }
 
@@ -83,6 +87,10 @@ function createRecord(input: ConnectRepositoryInput, timestamp: string): Reposit
     lastSuccessfulFile: null,
     retryCount: 0,
     lastRetryAt: null,
+    indexedRevision: null,
+    lastLifecycleSeverity: null,
+    lastReindexMode: null,
+    lastReindexReason: null,
   };
 }
 
@@ -175,6 +183,18 @@ export class MemoryRepositoryStore implements RepositoryStore {
       lastRetryAt: hasOwn(input, "lastRetryAt")
         ? (input.lastRetryAt ?? null)
         : existing.lastRetryAt,
+      indexedRevision: hasOwn(input, "indexedRevision")
+        ? (input.indexedRevision ?? null)
+        : existing.indexedRevision,
+      lastLifecycleSeverity: hasOwn(input, "lastLifecycleSeverity")
+        ? (input.lastLifecycleSeverity ?? null)
+        : existing.lastLifecycleSeverity,
+      lastReindexMode: hasOwn(input, "lastReindexMode")
+        ? (input.lastReindexMode ?? null)
+        : existing.lastReindexMode,
+      lastReindexReason: hasOwn(input, "lastReindexReason")
+        ? (input.lastReindexReason ?? null)
+        : existing.lastReindexReason,
     };
 
     this.repositories.set(repositoryId, updated);
@@ -214,6 +234,7 @@ export class MemoryRepositoryStore implements RepositoryStore {
       lastIndexMode: input.indexMode ?? existing.lastIndexMode,
       lastChangedFileCount:
         input.changedFileCount ?? existing.lastChangedFileCount,
+      indexedRevision: input.indexedRevision ?? existing.indexedRevision,
     };
 
     this.repositories.set(repositoryId, updated);

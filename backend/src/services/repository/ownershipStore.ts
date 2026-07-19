@@ -2,9 +2,8 @@
 // repository store abstraction while preserving the historical synchronous
 // set/get/clear surface used by routes and guards.
 
-import { MemoryRepositoryStore } from "./store/memoryRepositoryStore.js";
-
-const ownershipStore = new MemoryRepositoryStore();
+import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
+import { repositoryStore } from "./store/runtimeRepositoryStore.js";
 
 function parseRepositoryId(repoId: string): { owner: string; repo: string } {
   const separator = repoId.indexOf("/");
@@ -23,15 +22,19 @@ function normalizedRepositoryId(repoId: string): string {
   return `${owner}/${repo}`;
 }
 
-export function setRepositoryOwner(repoId: string, userId: string): void {
+export function setRepositoryOwner(repoId: string, userId: string): void;
+export function setRepositoryOwner(repoId: string, userId: string): MaybePromise<void> {
   const { owner, repo } = parseRepositoryId(repoId);
-  ownershipStore.connectRepository({ owner, repo, ownerUserId: userId });
+  return mapMaybePromise(repositoryStore.connectRepository({ owner, repo, ownerUserId: userId }), () => undefined);
 }
 
-export function getRepositoryOwner(repoId: string): string | undefined {
-  return ownershipStore.getRepository(normalizedRepositoryId(repoId))?.ownerUserId ?? undefined;
+export function getRepositoryOwner(repoId: string): string | undefined;
+export function getRepositoryOwner(repoId: string): MaybePromise<string | undefined> {
+  return mapMaybePromise(repositoryStore.getRepository(normalizedRepositoryId(repoId)),
+    (repository) => repository?.ownerUserId ?? undefined);
 }
 
-export function clearRepositoryOwners(): void {
-  ownershipStore.clear();
+export function clearRepositoryOwners(): void;
+export function clearRepositoryOwners(): MaybePromise<void> {
+  return repositoryStore.clear();
 }

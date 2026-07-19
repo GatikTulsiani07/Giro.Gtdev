@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/logger.js";
+import { flatMapMaybePromise, mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
 import { sessionStore } from "./store.js";
 import type { SessionStore } from "./store/sessionStore.js";
 import type {
@@ -19,7 +20,8 @@ function nowIso(): string {
 
 const store: SessionStore = sessionStore;
 
-export function createNewSession(input: CreateSessionInput): Session {
+export function createNewSession(input: CreateSessionInput): Session;
+export function createNewSession(input: CreateSessionInput): MaybePromise<Session> {
   const timestamp = nowIso();
   const session: Session = {
     id: randomUUID(),
@@ -33,20 +35,23 @@ export function createNewSession(input: CreateSessionInput): Session {
     selectedContext: [],
   };
 
-  const created = store.createSession(session);
-  logger.info("session_created", {
-    sessionId: created.id,
-    repository: `${input.owner}/${input.repo}`,
+  return mapMaybePromise(store.createSession(session), (created) => {
+    logger.info("session_created", {
+      sessionId: created.id,
+      repository: `${input.owner}/${input.repo}`,
+    });
+    return created;
   });
-  return created;
 }
 
-export function getSessionById(id: string): Session | null {
+export function getSessionById(id: string): Session | null;
+export function getSessionById(id: string): MaybePromise<Session | null> {
   return store.getSession(id);
 }
 
-export function listAllSessions(): SessionSummary[] {
-  return store.listSessions().map((s) => ({
+export function listAllSessions(): SessionSummary[];
+export function listAllSessions(): MaybePromise<SessionSummary[]> {
+  return mapMaybePromise(store.listSessions(), (sessions) => sessions.map((s) => ({
     id: s.id,
     userId: s.userId,
     owner: s.owner,
@@ -55,15 +60,19 @@ export function listAllSessions(): SessionSummary[] {
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
     messageCount: s.messages.length,
-  }));
+  })));
 }
 
 export function addMessageToSession(
   sessionId: string,
   input: AddMessageInput,
-): Session | null {
-  const session = store.getSession(sessionId);
-  if (!session) return null;
+): Session | null;
+export function addMessageToSession(
+  sessionId: string,
+  input: AddMessageInput,
+): MaybePromise<Session | null> {
+  return flatMapMaybePromise(store.getSession(sessionId), (session) => {
+    if (!session) return null;
 
   const message: Message = {
     id: randomUUID(),
@@ -86,23 +95,28 @@ export function addMessageToSession(
     createdAt: nowIso(),
   };
 
-  const saved = store.appendMessage(sessionId, message, nowIso());
-  if (!saved) return null;
-
-  logger.info("session_message_added", {
-    sessionId,
-    messageId: message.id,
-    role: message.role,
+    return mapMaybePromise(store.appendMessage(sessionId, message, nowIso()), (saved) => {
+      if (!saved) return null;
+      logger.info("session_message_added", {
+        sessionId,
+        messageId: message.id,
+        role: message.role,
+      });
+      return saved;
+    });
   });
-  return saved;
 }
 
 export function replaceSelectedContext(
   sessionId: string,
   chunks: SelectedContextChunk[],
-): Session | null {
-  const session = store.getSession(sessionId);
-  if (!session) return null;
+): Session | null;
+export function replaceSelectedContext(
+  sessionId: string,
+  chunks: SelectedContextChunk[],
+): MaybePromise<Session | null> {
+  return flatMapMaybePromise(store.getSession(sessionId), (session) => {
+    if (!session) return null;
 
   const updated: Session = {
     ...session,
@@ -110,14 +124,17 @@ export function replaceSelectedContext(
     updatedAt: nowIso(),
   };
 
-  const saved = store.updateSession(updated);
-  logger.info("selected_context_updated", {
-    sessionId,
-    chunkCount: chunks.length,
+    return mapMaybePromise(store.updateSession(updated), (saved) => {
+      logger.info("selected_context_updated", {
+        sessionId,
+        chunkCount: chunks.length,
+      });
+      return saved;
+    });
   });
-  return saved;
 }
 
-export function removeSession(id: string): boolean {
+export function removeSession(id: string): boolean;
+export function removeSession(id: string): MaybePromise<boolean> {
   return store.deleteSession(id);
 }

@@ -100,6 +100,13 @@ const EnvSchema = z
         message: "A Supabase service-role or anon key is required.",
       });
     }
+    if (value.NODE_ENV === "production" && !value.SUPABASE_SERVICE_ROLE_KEY) {
+      context.addIssue({
+        code: "custom",
+        path: ["SUPABASE_SERVICE_ROLE_KEY"],
+        message: "The service-role key is required for durable backend persistence in production.",
+      });
+    }
     for (const dependency of ["AI", "EMBEDDING", "DATABASE", "CLONE"] as const) {
       const threshold = value[`${dependency}_CIRCUIT_FAILURE_THRESHOLD`];
       const minimumSamples = value[`${dependency}_CIRCUIT_MIN_SAMPLES`];

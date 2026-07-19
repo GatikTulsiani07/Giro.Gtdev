@@ -1,4 +1,5 @@
 import { getSessionById } from "./sessionService.js";
+import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
 import type { Session } from "./types.js";
 
 export type SessionAccessResult =
@@ -16,26 +17,33 @@ export function requireSessionAccess({
 }: {
   sessionId: string;
   userId: string;
-}): SessionAccessResult {
-  const session = getSessionById(sessionId);
+}): SessionAccessResult;
+export function requireSessionAccess({
+  sessionId,
+  userId,
+}: {
+  sessionId: string;
+  userId: string;
+}): MaybePromise<SessionAccessResult> {
+  return mapMaybePromise(getSessionById(sessionId), (session) => {
+    if (!session) {
+      return {
+        ok: false,
+        status: 404,
+        code: "session_not_found",
+        message: "Session not found",
+      };
+    }
 
-  if (!session) {
-    return {
-      ok: false,
-      status: 404,
-      code: "session_not_found",
-      message: "Session not found",
-    };
-  }
+    if (session.userId !== userId) {
+      return {
+        ok: false,
+        status: 403,
+        code: "session_not_owned",
+        message: "Session does not belong to authenticated user",
+      };
+    }
 
-  if (session.userId !== userId) {
-    return {
-      ok: false,
-      status: 403,
-      code: "session_not_owned",
-      message: "Session does not belong to authenticated user",
-    };
-  }
-
-  return { ok: true, session };
+    return { ok: true, session };
+  });
 }
