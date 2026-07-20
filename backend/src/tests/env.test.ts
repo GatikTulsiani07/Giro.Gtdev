@@ -76,9 +76,28 @@ test("missing required variables produce one safe validation error", () => {
       assert.ok(error instanceof EnvironmentValidationError);
       assert.equal(
         error.message,
-        "Invalid environment configuration: OPENAI_API_KEY, SUPABASE_URL.",
+        "Invalid environment configuration: OPENAI_API_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL.",
       );
       assert.equal(error.message.includes("service-role-key"), false);
+      return true;
+    },
+  );
+});
+
+test("production JWT configuration must be explicit and sufficiently strong", () => {
+  assert.throws(
+    () => validateEnv({ ...REQUIRED, NODE_ENV: "production" }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(Object.keys(error.issues), ["JWT_SECRET"]);
+      return true;
+    },
+  );
+  assert.throws(
+    () => validateEnv({ ...REQUIRED, JWT_SECRET: "too-short" }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(Object.keys(error.issues), ["JWT_SECRET"]);
       return true;
     },
   );
@@ -113,6 +132,85 @@ test("invalid enum values are rejected", () => {
   );
 });
 
+test("invalid URLs are aggregated without exposing their values", () => {
+  const invalidSupabaseUrl = "postgres://secret-user:secret-password@database.internal";
+  const invalidCorsUrl = "not-a-url-with-secret";
+  assert.throws(
+    () => validateEnv({
+      ...REQUIRED,
+      SUPABASE_URL: invalidSupabaseUrl,
+      CORS_ORIGINS: invalidCorsUrl,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(Object.keys(error.issues), ["CORS_ORIGINS", "SUPABASE_URL"]);
+      assert.equal(JSON.stringify(error.report).includes(invalidSupabaseUrl), false);
+      assert.equal(JSON.stringify(error.report).includes(invalidCorsUrl), false);
+      return true;
+    },
+  );
+});
+
+test("invalid integer configuration is rejected", () => {
+  assert.throws(
+    () => validateEnv({ ...REQUIRED, PORT: "eight-thousand" }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(Object.keys(error.issues), ["PORT"]);
+      return true;
+    },
+  );
+});
+
+test("invalid duration configuration is rejected", () => {
+  assert.throws(
+    () => validateEnv({ ...REQUIRED, REQUEST_TIMEOUT_MS: "eventually" }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(Object.keys(error.issues), ["REQUEST_TIMEOUT_MS"]);
+      return true;
+    },
+  );
+});
+
+test("boolean configuration accepts only true or false", () => {
+  assert.equal(
+    validateEnv({ ...REQUIRED, INDEXING_WORKER_ENABLED: "true" })
+      .INDEXING_WORKER_ENABLED,
+    true,
+  );
+  assert.throws(
+    () => validateEnv({ ...REQUIRED, INDEXING_WORKER_ENABLED: "yes" }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(Object.keys(error.issues), ["INDEXING_WORKER_ENABLED"]);
+      return true;
+    },
+  );
+});
+
+test("multiple simultaneous failures produce one sorted validation report", () => {
+  assert.throws(
+    () => validateEnv({
+      ...REQUIRED,
+      PORT: "invalid",
+      SUPABASE_URL: "invalid-url",
+      INDEXING_WORKER_ENABLED: "enabled",
+      REQUEST_TIMEOUT_MS: "10",
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(
+        error.report.issues.map((issue) => issue.field),
+        ["INDEXING_WORKER_ENABLED", "PORT", "REQUEST_TIMEOUT_MS", "SUPABASE_URL"],
+      );
+      assert.equal(error.report.valid, false);
+      assert.equal(error.report.issues.every((issue) => issue.problems.length > 0), true);
+      return true;
+    },
+  );
+});
+
 test("defaults preserve existing runtime behavior", () => {
   const result = validateEnv({ ...REQUIRED, REPOSITORY_STORAGE_ROOT: undefined });
 
@@ -124,6 +222,7 @@ test("defaults preserve existing runtime behavior", () => {
   assert.equal(result.EMBEDDINGS_PROVIDER, "mock");
   assert.equal(result.MODEL_NAME, "gpt-4.1-mini");
   assert.equal(result.REPOSITORY_STORAGE_ROOT, ".storage/repos");
+  assert.equal(result.INDEXING_WORKER_ENABLED, false);
   assert.equal(result.INDEXING_WORKER_ID, undefined);
   assert.equal(result.INDEXING_WORKER_POLL_INTERVAL_MS, 1_000);
   assert.equal(result.INDEXING_WORKER_MAX_POLL_INTERVAL_MS, 10_000);
@@ -370,11 +469,17 @@ test("startup validation runs when the configuration module loads", () => {
 
   const result = spawnSync(
     process.execPath,
-    ["--import", "tsx", "--eval", 'await import("./src/config/env.ts")'],
+    ["--import", "tsx", "--eval", 'await import("./src/index.ts")'],
     {
       cwd: process.cwd(),
       encoding: "utf8",
-      env: { ...process.env, NODE_ENV: "invalid-startup-environment" },
+      env: {
+        ...process.env,
+        NODE_ENV: "invalid-startup-environment",
+        OPENAI_API_KEY: "sk-live-secret-value-that-must-not-appear",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-secret-that-must-not-appear",
+        JWT_SECRET: "jwt-secret-that-must-not-appear",
+      },
     },
   );
 
@@ -383,7 +488,18 @@ test("startup validation runs when the configuration module loads", () => {
   assert.equal(startupLog.level, "error");
   assert.equal(startupLog.operation, "environment_validation_failed");
   assert.equal(startupLog.errorMessage, "Invalid environment configuration: NODE_ENV.");
+  assert.deepEqual(startupLog.validationReport, {
+    valid: false,
+    issues: [{
+      field: "NODE_ENV",
+      problems: ["Invalid enum value. Expected 'development' | 'test' | 'production', received 'invalid-startup-environment'"],
+    }],
+  });
   assert.equal(typeof startupLog.timestamp, "string");
+  assert.equal(result.stderr.includes("server_started"), false);
+  assert.equal(result.stderr.includes("sk-live-secret-value-that-must-not-appear"), false);
+  assert.equal(result.stderr.includes("service-role-secret-that-must-not-appear"), false);
+  assert.equal(result.stderr.includes("jwt-secret-that-must-not-appear"), false);
   assert.equal(result.stderr.includes("SUPABASE_SERVICE_ROLE_KEY="), false);
   assert.equal(result.stderr.includes("OPENAI_API_KEY="), false);
 });

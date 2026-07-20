@@ -1,8 +1,48 @@
 // Loads and validates all runtime environment variables once at process startup.
 
 import "dotenv/config";
+import path from "node:path";
 import { z } from "zod";
 import { stderrLogger } from "../lib/logger.js";
+
+const DEVELOPMENT_JWT_SECRET = "dev-insecure-secret-change-me";
+
+function integerEnvironmentValue(
+  defaultValue: number,
+  minimum: number,
+  maximum: number,
+) {
+  return z.coerce.number().int().min(minimum).max(maximum).default(defaultValue);
+}
+
+function durationEnvironmentValue(
+  defaultValue: number,
+  minimum: number,
+  maximum: number,
+) {
+  return integerEnvironmentValue(defaultValue, minimum, maximum);
+}
+
+function booleanEnvironmentValue(defaultValue: boolean) {
+  return z
+    .enum(["true", "false"])
+    .default(defaultValue ? "true" : "false")
+    .transform((value) => value === "true");
+}
+
+const httpUrlEnvironmentValue = z.string().trim().url().refine((value) => {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}, "URL must use HTTP or HTTPS.");
+
+const repositoryStorageEnvironmentValue = z.string().trim().min(1).refine(
+  (value) => !value.includes("\0"),
+  "Repository storage root is invalid.",
+);
 
 const optionalNonEmptyString = z.preprocess(
   (value) =>
@@ -15,7 +55,7 @@ const EnvSchema = z
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    PORT: z.coerce.number().int().positive().max(65_535).default(8000),
+    PORT: integerEnvironmentValue(8000, 1, 65_535),
     CORS_ORIGINS: z
       .string()
       .default("http://localhost:3000")
@@ -25,20 +65,17 @@ const EnvSchema = z
           .map((origin) => origin.trim())
           .filter(Boolean),
       )
-      .pipe(z.array(z.string().url()).min(1)),
+      .pipe(z.array(httpUrlEnvironmentValue).min(1)),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-    JWT_SECRET: z.string().min(16).default("dev-insecure-secret-change-me"),
-    SUPABASE_URL: z.string().url(),
+    JWT_SECRET: z.string().min(16).default(DEVELOPMENT_JWT_SECRET),
+    SUPABASE_URL: httpUrlEnvironmentValue,
     SUPABASE_ANON_KEY: optionalNonEmptyString,
     SUPABASE_SERVICE_ROLE_KEY: optionalNonEmptyString,
     OPENAI_API_KEY: z.string().trim().min(20),
     EMBEDDINGS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
     MODEL_NAME: z.string().trim().min(1).default("gpt-4.1-mini"),
-    REPOSITORY_STORAGE_ROOT: z.string().trim().min(1).default(".storage/repos"),
-    INDEXING_WORKER_ENABLED: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
+    REPOSITORY_STORAGE_ROOT: repositoryStorageEnvironmentValue.default(".storage/repos"),
+    INDEXING_WORKER_ENABLED: booleanEnvironmentValue(false),
     INDEXING_WORKER_ID: optionalNonEmptyString,
     INDEXING_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
     INDEXING_WORKER_IDLE_BACKOFF_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
@@ -68,24 +105,19 @@ const EnvSchema = z
     RETRIEVAL_CONFIDENCE_LOW_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
     RETRIEVAL_MIN_CITATION_COVERAGE: z.coerce.number().min(0).max(1).default(0.50),
     RETRIEVAL_MIN_ANSWERABLE_SCORE: z.coerce.number().min(0).max(1).default(0.35),
-    SHUTDOWN_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1_000)
-      .max(60_000)
-      .default(10_000),
-    RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
-    RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
-    RATE_LIMIT_AUTH_MAX_REQUESTS: z.coerce.number().int().positive().default(20),
-    RATE_LIMIT_REPOSITORY_CONNECT_MAX_REQUESTS: z.coerce.number().int().positive().default(10),
-    RATE_LIMIT_ASK_GIRO_MAX_REQUESTS: z.coerce.number().int().positive().default(20),
-    RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS: z.coerce.number().int().positive().default(60),
-    RATE_LIMIT_INDEXING_MAX_REQUESTS: z.coerce.number().int().positive().default(30),
-    REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
-    AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
-    EMBEDDING_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
-    DATABASE_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(10_000),
-    REPOSITORY_CLONE_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
+    SHUTDOWN_TIMEOUT_MS: durationEnvironmentValue(10_000, 1_000, 60_000),
+    RATE_LIMIT_WINDOW_MS: durationEnvironmentValue(60_000, 1_000, 3_600_000),
+    RATE_LIMIT_MAX_REQUESTS: integerEnvironmentValue(100, 1, 1_000_000),
+    RATE_LIMIT_AUTH_MAX_REQUESTS: integerEnvironmentValue(20, 1, 1_000_000),
+    RATE_LIMIT_REPOSITORY_CONNECT_MAX_REQUESTS: integerEnvironmentValue(10, 1, 1_000_000),
+    RATE_LIMIT_ASK_GIRO_MAX_REQUESTS: integerEnvironmentValue(20, 1, 1_000_000),
+    RATE_LIMIT_RETRIEVAL_SEARCH_MAX_REQUESTS: integerEnvironmentValue(60, 1, 1_000_000),
+    RATE_LIMIT_INDEXING_MAX_REQUESTS: integerEnvironmentValue(30, 1, 1_000_000),
+    REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
+    AI_REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
+    EMBEDDING_REQUEST_TIMEOUT_MS: durationEnvironmentValue(30_000, 1_000, 120_000),
+    DATABASE_REQUEST_TIMEOUT_MS: durationEnvironmentValue(10_000, 500, 60_000),
+    REPOSITORY_CLONE_TIMEOUT_MS: durationEnvironmentValue(120_000, 5_000, 600_000),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     EMBEDDING_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     DATABASE_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
@@ -138,13 +170,28 @@ const EnvSchema = z
     }
     if (value.NODE_ENV === "production") {
       const repositoryRoot = value.REPOSITORY_STORAGE_ROOT;
-      if (!repositoryRoot.startsWith("/") || repositoryRoot === "/" || repositoryRoot === ".storage/repos") {
+      if (!path.isAbsolute(repositoryRoot) || repositoryRoot === ".storage/repos") {
         context.addIssue({
           code: "custom",
           path: ["REPOSITORY_STORAGE_ROOT"],
           message: "Production repository storage root must be an explicit absolute non-root path.",
         });
       }
+      if (value.JWT_SECRET === DEVELOPMENT_JWT_SECRET) {
+        context.addIssue({
+          code: "custom",
+          path: ["JWT_SECRET"],
+          message: "Production JWT secret must be explicitly configured.",
+        });
+      }
+    }
+    const resolvedRepositoryRoot = path.resolve(value.REPOSITORY_STORAGE_ROOT);
+    if (resolvedRepositoryRoot === path.parse(resolvedRepositoryRoot).root) {
+      context.addIssue({
+        code: "custom",
+        path: ["REPOSITORY_STORAGE_ROOT"],
+        message: "Repository storage root cannot be a filesystem root.",
+      });
     }
     for (const dependency of ["AI", "EMBEDDING", "DATABASE", "CLONE"] as const) {
       const threshold = value[`${dependency}_CIRCUIT_FAILURE_THRESHOLD`];
@@ -173,30 +220,110 @@ const EnvSchema = z
 
 export type Env = z.infer<typeof EnvSchema>;
 
+export interface EnvironmentValidationIssue {
+  readonly field: keyof Env;
+  readonly problems: readonly string[];
+}
+
+export interface EnvironmentValidationReport {
+  readonly valid: false;
+  readonly issues: readonly EnvironmentValidationIssue[];
+}
+
+function createEnvironmentValidationReport(
+  error: z.ZodError,
+): EnvironmentValidationReport {
+  const messagesByField = new Map<keyof Env, string[]>();
+  for (const issue of error.issues) {
+    const field = String(issue.path[0] ?? "environment") as keyof Env;
+    const messages = messagesByField.get(field) ?? [];
+    if (!messages.includes(issue.message)) messages.push(issue.message);
+    messagesByField.set(field, messages);
+  }
+  const issues = [...messagesByField.entries()]
+    .sort(([left], [right]) => String(left).localeCompare(String(right)))
+    .map(([field, messages]) => Object.freeze({
+      field,
+      problems: Object.freeze([...messages]),
+    }));
+  return Object.freeze({ valid: false, issues: Object.freeze(issues) });
+}
+
 export class EnvironmentValidationError extends Error {
   readonly issues: Readonly<Record<string, readonly string[]>>;
+  readonly report: EnvironmentValidationReport;
 
   constructor(error: z.ZodError) {
-    const fieldErrors = error.flatten().fieldErrors;
-    const fields = Object.keys(fieldErrors).sort();
+    const report = createEnvironmentValidationReport(error);
+    const fields = report.issues.map((issue) => String(issue.field));
     super(`Invalid environment configuration: ${fields.join(", ")}.`);
     this.name = "EnvironmentValidationError";
+    this.report = report;
     this.issues = Object.freeze(
       Object.fromEntries(
-        fields.map((field) => [
-          field,
-          Object.freeze([...(fieldErrors[field] ?? [])]),
+        report.issues.map((issue) => [
+          issue.field,
+          issue.problems,
         ]),
       ),
     );
   }
 }
 
+function hasConfiguredValue(
+  input: NodeJS.ProcessEnv | Record<string, unknown>,
+  field: string,
+): boolean {
+  const value = input[field];
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function configurationPresenceIssues(
+  input: NodeJS.ProcessEnv | Record<string, unknown>,
+): z.ZodIssue[] {
+  const issues: z.ZodIssue[] = [];
+  if (
+    !hasConfiguredValue(input, "SUPABASE_SERVICE_ROLE_KEY") &&
+    !hasConfiguredValue(input, "SUPABASE_ANON_KEY")
+  ) {
+    issues.push({
+      code: z.ZodIssueCode.custom,
+      path: ["SUPABASE_SERVICE_ROLE_KEY"],
+      message: "A Supabase service-role or anon key is required.",
+    });
+  }
+  if (input.NODE_ENV === "production") {
+    if (!hasConfiguredValue(input, "SUPABASE_SERVICE_ROLE_KEY")) {
+      issues.push({
+        code: z.ZodIssueCode.custom,
+        path: ["SUPABASE_SERVICE_ROLE_KEY"],
+        message: "The service-role key is required for durable backend persistence in production.",
+      });
+    }
+    if (
+      !hasConfiguredValue(input, "JWT_SECRET") ||
+      input.JWT_SECRET === DEVELOPMENT_JWT_SECRET
+    ) {
+      issues.push({
+        code: z.ZodIssueCode.custom,
+        path: ["JWT_SECRET"],
+        message: "Production JWT secret must be explicitly configured.",
+      });
+    }
+  }
+  return issues;
+}
+
 export function validateEnv(
   input: NodeJS.ProcessEnv | Record<string, unknown>,
 ): Env {
   const parsed = EnvSchema.safeParse(input);
-  if (!parsed.success) throw new EnvironmentValidationError(parsed.error);
+  if (!parsed.success) {
+    throw new EnvironmentValidationError(new z.ZodError([
+      ...parsed.error.issues,
+      ...configurationPresenceIssues(input),
+    ]));
+  }
   return Object.freeze(parsed.data);
 }
 
@@ -208,6 +335,7 @@ function loadStartupEnv(): Env {
     // Do not print environment values or Zod input details.
     stderrLogger.error("environment_validation_failed", {
       errorMessage: error.message,
+      validationReport: error.report,
     });
     process.exit(1);
   }
