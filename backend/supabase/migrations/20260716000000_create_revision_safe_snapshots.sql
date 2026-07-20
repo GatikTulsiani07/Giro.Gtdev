@@ -251,58 +251,134 @@ begin
 end;
 $$;
 
-create or replace function public.match_repository_chunks(
-  input_repository text,
-  query_embedding extensions.vector(1536),
-  match_count integer,
-  input_repository_revision text
-)
-returns table (
-  id text, repository text, repository_revision text, file_path text,
-  language text, content text, summary text, start_line integer,
-  end_line integer, chunk_index integer, similarity double precision
-)
-language plpgsql stable security invoker
-set search_path = public, extensions
-as $$
+do $migration$
+declare
+  existing_function record;
+  vector_schema name;
+  vector_type_oid oid;
 begin
-  if input_repository is null or btrim(input_repository) = '' then
-    raise exception 'input_repository is required' using errcode = '22023';
+  select namespace.nspname, vector_type.oid
+  into vector_schema, vector_type_oid
+  from pg_catalog.pg_extension extension
+  join pg_catalog.pg_depend dependency
+    on dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+   and dependency.refobjid = extension.oid
+   and dependency.classid = 'pg_catalog.pg_type'::pg_catalog.regclass
+   and dependency.deptype = 'e'
+  join pg_catalog.pg_type vector_type
+    on vector_type.oid = dependency.objid
+   and vector_type.typname = 'vector'
+  join pg_catalog.pg_namespace namespace
+    on namespace.oid = vector_type.typnamespace
+  where extension.extname = 'vector';
+
+  if vector_type_oid is null then
+    raise exception 'vector extension is not installed' using errcode = '42704';
   end if;
-  if input_repository_revision is null or btrim(input_repository_revision) = '' then
-    raise exception 'published repository revision is required' using errcode = '22023';
-  end if;
-  if match_count < 1 or match_count > 50 then
-    raise exception 'match_count must be between 1 and 50' using errcode = '22023';
-  end if;
-  return query
-  select chunks.id, chunks.repository, chunks.repository_revision,
-    chunks.file_path, chunks.language, chunks.content, chunks.summary,
-    chunks.start_line, chunks.end_line, chunks.chunk_index,
-    (1 - (chunks.embedding <=> query_embedding))::double precision
-  from public.repository_chunks chunks
-  join public.repositories repositories
-    on repositories.repository_id = chunks.repository
-    and repositories.indexed_revision = input_repository_revision
-  where chunks.repository = input_repository
-    and chunks.repository_revision = input_repository_revision
-  order by chunks.embedding <=> query_embedding, chunks.file_path,
-    chunks.start_line, chunks.chunk_index, chunks.id
-  limit match_count;
+
+  for existing_function in
+    select
+      proc.oid,
+      pg_catalog.pg_get_function_identity_arguments(proc.oid) as identity_arguments
+    from pg_catalog.pg_proc proc
+    join pg_catalog.pg_namespace namespace
+      on namespace.oid = proc.pronamespace
+    where namespace.nspname = 'public'
+      and proc.proname = 'match_repository_chunks'
+      and proc.prokind = 'f'
+      and proc.pronargs in (3, 4)
+      and proc.proargtypes[0] = 'pg_catalog.text'::pg_catalog.regtype
+      and proc.proargtypes[1] = vector_type_oid
+      and proc.proargtypes[2] = 'pg_catalog.int4'::pg_catalog.regtype
+      and (
+        proc.pronargs = 3
+        or proc.proargtypes[3] = 'pg_catalog.text'::pg_catalog.regtype
+      )
+  loop
+    execute pg_catalog.format(
+      'drop function %I.%I(%s)',
+      'public',
+      'match_repository_chunks',
+      existing_function.identity_arguments
+    );
+  end loop;
+
+  execute pg_catalog.format($function$
+    create function public.match_repository_chunks(
+      input_repository text,
+      query_embedding %I.vector(1536),
+      match_count integer,
+      input_repository_revision text
+    )
+    returns table (
+      id text, repository text, repository_revision text, file_path text,
+      language text, content text, summary text, start_line integer,
+      end_line integer, chunk_index integer, similarity double precision
+    )
+    language plpgsql stable security invoker
+    set search_path = pg_catalog, public
+    as $body$
+    begin
+      if input_repository is null or btrim(input_repository) = '' then
+        raise exception 'input_repository is required' using errcode = '22023';
+      end if;
+      if input_repository_revision is null or btrim(input_repository_revision) = '' then
+        raise exception 'published repository revision is required' using errcode = '22023';
+      end if;
+      if match_count < 1 or match_count > 50 then
+        raise exception 'match_count must be between 1 and 50' using errcode = '22023';
+      end if;
+      return query
+      select chunks.id, chunks.repository, chunks.repository_revision,
+        chunks.file_path, chunks.language, chunks.content, chunks.summary,
+        chunks.start_line, chunks.end_line, chunks.chunk_index,
+        (1 - (chunks.embedding OPERATOR(%I.<=>) query_embedding))::double precision
+      from public.repository_chunks chunks
+      join public.repositories repositories
+        on repositories.repository_id = chunks.repository
+        and repositories.indexed_revision = input_repository_revision
+      where chunks.repository = input_repository
+        and chunks.repository_revision = input_repository_revision
+      order by chunks.embedding OPERATOR(%I.<=>) query_embedding,
+        chunks.file_path, chunks.start_line, chunks.chunk_index, chunks.id
+      limit match_count;
+    end;
+    $body$
+  $function$, vector_schema, vector_schema, vector_schema);
 end;
-$$;
+$migration$;
 
 alter table public.repository_snapshots enable row level security;
 revoke all on table public.repository_snapshots from public, anon, authenticated;
 revoke all on function public.begin_repository_snapshot(text, text, text, text, text) from public, anon, authenticated;
 revoke all on function public.publish_repository_snapshot(text, text, text, text, text, integer, integer, integer, integer, integer, boolean, text, integer) from public, anon, authenticated;
 revoke all on function public.discard_repository_snapshot(text, text, text, text) from public, anon, authenticated;
-revoke all on function public.match_repository_chunks(text, extensions.vector, integer, text) from public, anon, authenticated;
 grant all on table public.repository_snapshots to service_role;
 grant execute on function public.begin_repository_snapshot(text, text, text, text, text) to service_role;
 grant execute on function public.publish_repository_snapshot(text, text, text, text, text, integer, integer, integer, integer, integer, boolean, text, integer) to service_role;
 grant execute on function public.discard_repository_snapshot(text, text, text, text) to service_role;
-grant execute on function public.match_repository_chunks(text, extensions.vector, integer, text) to service_role;
+
+do $migration$
+declare
+  vector_schema name;
+begin
+  select namespace.nspname
+  into vector_schema
+  from pg_catalog.pg_extension extension
+  join pg_catalog.pg_namespace namespace
+    on namespace.oid = extension.extnamespace
+  where extension.extname = 'vector';
+
+  execute pg_catalog.format(
+    'revoke all on function public.match_repository_chunks(text, %I.vector(1536), integer, text) from public, anon, authenticated',
+    vector_schema
+  );
+  execute pg_catalog.format(
+    'grant execute on function public.match_repository_chunks(text, %I.vector(1536), integer, text) to service_role',
+    vector_schema
+  );
+end;
+$migration$;
 
 comment on function public.publish_repository_snapshot(text, text, text, text, text, integer, integer, integer, integer, integer, boolean, text, integer) is
   'Atomically publishes one immutable commit, completes its job, and removes older retrieval snapshots.';

@@ -2,25 +2,44 @@ create schema if not exists extensions;
 create extension if not exists vector with schema extensions;
 create extension if not exists pg_trgm with schema extensions;
 
-create table if not exists public.repository_chunks (
-  id text primary key,
-  repository text not null references public.repositories(repository_id) on delete cascade,
-  repository_revision text not null default 'unversioned',
-  file_path text not null,
-  language text not null,
-  chunk_index integer not null,
-  content text not null,
-  summary text,
-  start_line integer not null,
-  end_line integer not null,
-  content_hash text not null,
-  token_count integer not null,
-  character_count integer not null,
-  embedding extensions.vector(1536) not null,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+do $migration$
+declare
+  vector_schema name;
+begin
+  select namespace.nspname
+  into vector_schema
+  from pg_catalog.pg_extension extension
+  join pg_catalog.pg_namespace namespace
+    on namespace.oid = extension.extnamespace
+  where extension.extname = 'vector';
+
+  if vector_schema is null then
+    raise exception 'vector extension is not installed' using errcode = '42704';
+  end if;
+
+  execute pg_catalog.format($table$
+    create table if not exists public.repository_chunks (
+      id text primary key,
+      repository text not null references public.repositories(repository_id) on delete cascade,
+      repository_revision text not null default 'unversioned',
+      file_path text not null,
+      language text not null,
+      chunk_index integer not null,
+      content text not null,
+      summary text,
+      start_line integer not null,
+      end_line integer not null,
+      content_hash text not null,
+      token_count integer not null,
+      character_count integer not null,
+      embedding %I.vector(1536) not null,
+      metadata jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  $table$, vector_schema);
+end;
+$migration$;
 
 alter table public.repository_chunks
   alter column id type text using id::text,
@@ -42,6 +61,13 @@ alter table public.repository_chunks
   alter column content_hash set not null,
   alter column token_count set not null,
   alter column character_count set not null;
+
+delete from public.repository_chunks as chunks
+where not exists (
+  select 1
+  from public.repositories as repositories
+  where repositories.repository_id = chunks.repository
+);
 
 alter table public.repository_chunks
   drop constraint if exists repository_chunks_repository_fkey,
@@ -76,12 +102,65 @@ create index if not exists repository_chunks_repository_revision_idx
   on public.repository_chunks (repository, repository_revision);
 create index if not exists repository_chunks_repository_file_idx
   on public.repository_chunks (repository, file_path, chunk_index);
-create index if not exists repository_chunks_content_trgm_idx
-  on public.repository_chunks using gin (content extensions.gin_trgm_ops);
-create index if not exists repository_chunks_file_path_trgm_idx
-  on public.repository_chunks using gin (file_path extensions.gin_trgm_ops);
-create index if not exists repository_chunks_embedding_hnsw_idx
-  on public.repository_chunks using hnsw (embedding extensions.vector_cosine_ops);
+
+do $migration$
+declare
+  vector_opclass_schema name;
+  trigram_opclass_schema name;
+begin
+  select namespace.nspname
+  into vector_opclass_schema
+  from pg_catalog.pg_opclass operator_class
+  join pg_catalog.pg_namespace namespace
+    on namespace.oid = operator_class.opcnamespace
+  join pg_catalog.pg_depend dependency
+    on dependency.classid = 'pg_catalog.pg_opclass'::pg_catalog.regclass
+   and dependency.objid = operator_class.oid
+   and dependency.deptype = 'e'
+  join pg_catalog.pg_extension extension
+    on extension.oid = dependency.refobjid
+   and dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+  where extension.extname = 'vector'
+    and operator_class.opcname = 'vector_cosine_ops';
+
+  select namespace.nspname
+  into trigram_opclass_schema
+  from pg_catalog.pg_opclass operator_class
+  join pg_catalog.pg_namespace namespace
+    on namespace.oid = operator_class.opcnamespace
+  join pg_catalog.pg_depend dependency
+    on dependency.classid = 'pg_catalog.pg_opclass'::pg_catalog.regclass
+   and dependency.objid = operator_class.oid
+   and dependency.deptype = 'e'
+  join pg_catalog.pg_extension extension
+    on extension.oid = dependency.refobjid
+   and dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+  where extension.extname = 'pg_trgm'
+    and operator_class.opcname = 'gin_trgm_ops';
+
+  if vector_opclass_schema is null then
+    raise exception 'vector_cosine_ops operator class was not found in the vector extension'
+      using errcode = '42704';
+  end if;
+  if trigram_opclass_schema is null then
+    raise exception 'gin_trgm_ops operator class was not found in the pg_trgm extension'
+      using errcode = '42704';
+  end if;
+
+  execute pg_catalog.format(
+    'create index if not exists repository_chunks_embedding_hnsw_idx on public.repository_chunks using hnsw (embedding %I.vector_cosine_ops)',
+    vector_opclass_schema
+  );
+  execute pg_catalog.format(
+    'create index if not exists repository_chunks_content_trgm_idx on public.repository_chunks using gin (content %I.gin_trgm_ops)',
+    trigram_opclass_schema
+  );
+  execute pg_catalog.format(
+    'create index if not exists repository_chunks_file_path_trgm_idx on public.repository_chunks using gin (file_path %I.gin_trgm_ops)',
+    trigram_opclass_schema
+  );
+end;
+$migration$;
 
 create table if not exists public.repository_summaries (
   repository text not null references public.repositories(repository_id) on delete cascade,
@@ -98,6 +177,13 @@ alter table public.repository_summaries
   add column if not exists summary_kind text not null default 'intelligence',
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists updated_at timestamptz not null default now();
+
+delete from public.repository_summaries as summaries
+where not exists (
+  select 1
+  from public.repositories as repositories
+  where repositories.repository_id = summaries.repository
+);
 
 alter table public.repository_summaries
   drop constraint if exists repository_summaries_pkey,
@@ -123,70 +209,126 @@ create unique index if not exists repository_summaries_scope_uidx
 create index if not exists repository_summaries_repository_updated_idx
   on public.repository_summaries (repository, updated_at desc);
 
-create or replace function public.match_repository_chunks(
-  input_repository text,
-  query_embedding extensions.vector(1536),
-  match_count integer,
-  input_repository_revision text default null
-)
-returns table (
-  id text,
-  repository text,
-  repository_revision text,
-  file_path text,
-  language text,
-  content text,
-  summary text,
-  start_line integer,
-  end_line integer,
-  chunk_index integer,
-  similarity double precision
-)
-language plpgsql
-stable
-security invoker
-set search_path = public, extensions
-as $$
+do $migration$
+declare
+  existing_function record;
+  vector_schema name;
+  vector_type_oid oid;
 begin
-  if input_repository is null or btrim(input_repository) = '' then
-    raise exception 'input_repository is required' using errcode = '22023';
-  end if;
-  if match_count < 1 or match_count > 50 then
-    raise exception 'match_count must be between 1 and 50' using errcode = '22023';
+  select namespace.nspname, vector_type.oid
+  into vector_schema, vector_type_oid
+  from pg_catalog.pg_extension extension
+  join pg_catalog.pg_depend dependency
+    on dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+   and dependency.refobjid = extension.oid
+   and dependency.classid = 'pg_catalog.pg_type'::pg_catalog.regclass
+   and dependency.deptype = 'e'
+  join pg_catalog.pg_type vector_type
+    on vector_type.oid = dependency.objid
+   and vector_type.typname = 'vector'
+  join pg_catalog.pg_namespace namespace
+    on namespace.oid = vector_type.typnamespace
+  where extension.extname = 'vector';
+
+  if vector_type_oid is null then
+    raise exception 'vector extension is not installed' using errcode = '42704';
   end if;
 
-  return query
-  select
-    chunks.id,
-    chunks.repository,
-    chunks.repository_revision,
-    chunks.file_path,
-    chunks.language,
-    chunks.content,
-    chunks.summary,
-    chunks.start_line,
-    chunks.end_line,
-    chunks.chunk_index,
-    (1 - (chunks.embedding <=> query_embedding))::double precision as similarity
-  from public.repository_chunks as chunks
-  join public.repositories as repositories
-    on repositories.repository_id = chunks.repository
-  where chunks.repository = input_repository
-    and (
-      input_repository_revision is not null
-        and chunks.repository_revision = input_repository_revision
-      or input_repository_revision is null
-        and (repositories.indexed_revision is null or chunks.repository_revision = repositories.indexed_revision)
+  for existing_function in
+    select
+      proc.oid,
+      pg_catalog.pg_get_function_identity_arguments(proc.oid) as identity_arguments
+    from pg_catalog.pg_proc proc
+    join pg_catalog.pg_namespace namespace
+      on namespace.oid = proc.pronamespace
+    where namespace.nspname = 'public'
+      and proc.proname = 'match_repository_chunks'
+      and proc.prokind = 'f'
+      and proc.pronargs in (3, 4)
+      and proc.proargtypes[0] = 'pg_catalog.text'::pg_catalog.regtype
+      and proc.proargtypes[1] = vector_type_oid
+      and proc.proargtypes[2] = 'pg_catalog.int4'::pg_catalog.regtype
+      and (
+        proc.pronargs = 3
+        or proc.proargtypes[3] = 'pg_catalog.text'::pg_catalog.regtype
+      )
+  loop
+    execute pg_catalog.format(
+      'drop function %I.%I(%s)',
+      'public',
+      'match_repository_chunks',
+      existing_function.identity_arguments
+    );
+  end loop;
+
+  execute pg_catalog.format($function$
+    create function public.match_repository_chunks(
+      input_repository text,
+      query_embedding %I.vector(1536),
+      match_count integer,
+      input_repository_revision text
     )
-  order by
-    chunks.embedding <=> query_embedding asc,
-    chunks.file_path asc,
-    chunks.start_line asc,
-    chunks.chunk_index asc,
-    chunks.id asc
-  limit match_count;
+    returns table (
+      id text,
+      repository text,
+      repository_revision text,
+      file_path text,
+      language text,
+      content text,
+      summary text,
+      start_line integer,
+      end_line integer,
+      chunk_index integer,
+      similarity double precision
+    )
+    language plpgsql
+    stable
+    security invoker
+    set search_path = pg_catalog, public
+    as $body$
+    begin
+      if input_repository is null or btrim(input_repository) = '' then
+        raise exception 'input_repository is required' using errcode = '22023';
+      end if;
+      if match_count < 1 or match_count > 50 then
+        raise exception 'match_count must be between 1 and 50' using errcode = '22023';
+      end if;
+
+      return query
+      select
+        chunks.id,
+        chunks.repository,
+        chunks.repository_revision,
+        chunks.file_path,
+        chunks.language,
+        chunks.content,
+        chunks.summary,
+        chunks.start_line,
+        chunks.end_line,
+        chunks.chunk_index,
+        (1 - (chunks.embedding OPERATOR(%I.<=>) query_embedding))::double precision as similarity
+      from public.repository_chunks as chunks
+      join public.repositories as repositories
+        on repositories.repository_id = chunks.repository
+      where chunks.repository = input_repository
+        and (
+          input_repository_revision is not null
+            and chunks.repository_revision = input_repository_revision
+          or input_repository_revision is null
+            and (repositories.indexed_revision is null or chunks.repository_revision = repositories.indexed_revision)
+        )
+      order by
+        chunks.embedding OPERATOR(%I.<=>) query_embedding asc,
+        chunks.file_path asc,
+        chunks.start_line asc,
+        chunks.chunk_index asc,
+        chunks.id asc
+      limit match_count;
+    end;
+    $body$
+  $function$, vector_schema, vector_schema, vector_schema);
 end;
-$$;
+$migration$;
 
 create or replace function public.delete_repository_retrieval_data(
   input_repository text,
@@ -219,9 +361,29 @@ alter table public.repository_chunks enable row level security;
 alter table public.repository_summaries enable row level security;
 revoke all on table public.repository_chunks from anon, authenticated;
 revoke all on table public.repository_summaries from anon, authenticated;
-revoke all on function public.match_repository_chunks(text, extensions.vector, integer, text) from public, anon, authenticated;
 revoke all on function public.delete_repository_retrieval_data(text, text) from public, anon, authenticated;
 grant all on table public.repository_chunks to service_role;
 grant all on table public.repository_summaries to service_role;
-grant execute on function public.match_repository_chunks(text, extensions.vector, integer, text) to service_role;
 grant execute on function public.delete_repository_retrieval_data(text, text) to service_role;
+
+do $migration$
+declare
+  vector_schema name;
+begin
+  select namespace.nspname
+  into vector_schema
+  from pg_catalog.pg_extension extension
+  join pg_catalog.pg_namespace namespace
+    on namespace.oid = extension.extnamespace
+  where extension.extname = 'vector';
+
+  execute pg_catalog.format(
+    'revoke all on function public.match_repository_chunks(text, %I.vector(1536), integer, text) from public, anon, authenticated',
+    vector_schema
+  );
+  execute pg_catalog.format(
+    'grant execute on function public.match_repository_chunks(text, %I.vector(1536), integer, text) to service_role',
+    vector_schema
+  );
+end;
+$migration$;
