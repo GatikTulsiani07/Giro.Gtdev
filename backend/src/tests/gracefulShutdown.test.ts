@@ -107,16 +107,22 @@ test("one-shot worker completes active operation after first signal and writes o
   assert.deepEqual(exitCodes, [0]);
 });
 
-test("second worker signal forces exit without a false success or duplicate output", async () => {
+test("multiple worker signals share one graceful shutdown execution", async () => {
   const signals = signalHarness();
   const outputs: string[] = [];
   const exitCodes: number[] = [];
   const forceCodes: number[] = [];
 
+  let finish!: (value: { status: "succeeded" }) => void;
+  const command = new Promise<{ status: "succeeded" }>((resolve) => { finish = resolve; });
   const runtime = runOneShotWorkerRuntime({
     timeoutMs: 10_000,
     logger: silentLogger,
-    runCommand: () => new Promise<{ status: "succeeded" }>(() => undefined),
+    runCommand: async (writeOutput) => {
+      const result = await command;
+      writeOutput('{"status":"succeeded"}');
+      return result;
+    },
     writeOutput: (output) => outputs.push(output),
     interruptedOutput: '{"status":"failed","failure":{"message":"Shutdown forced."}}',
     subscribeToSignal: signals.subscribe,
@@ -126,15 +132,13 @@ test("second worker signal forces exit without a false success or duplicate outp
 
   signals.send("SIGINT");
   signals.send("SIGTERM");
+  finish({ status: "succeeded" });
   const result = await runtime;
 
-  assert.equal(result, null);
-  assert.deepEqual(outputs, [
-    '{"status":"failed","failure":{"message":"Shutdown forced."}}',
-  ]);
-  assert.deepEqual(exitCodes, [1]);
-  assert.deepEqual(forceCodes, [1]);
-  assert.equal(outputs.join("").includes("succeeded"), false);
+  assert.deepEqual(result, { status: "succeeded" });
+  assert.deepEqual(outputs, ['{"status":"succeeded"}']);
+  assert.deepEqual(exitCodes, [0]);
+  assert.deepEqual(forceCodes, []);
 });
 
 test("normal worker failure maps to exit code one with one output", async () => {

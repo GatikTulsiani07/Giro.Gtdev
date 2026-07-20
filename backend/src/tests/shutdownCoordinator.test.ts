@@ -66,7 +66,7 @@ test("cleanup failure does not prevent later tasks and returns exit code one", a
   assert.equal(serialized.includes("stack"), false);
 });
 
-test("duplicate signal forces shutdown without running cleanup twice", async () => {
+test("duplicate signal reuses the active shutdown without running cleanup twice", async () => {
   const active = deferred();
   let stopCalls = 0;
   let cleanupCalls = 0;
@@ -89,14 +89,14 @@ test("duplicate signal forces shutdown without running cleanup twice", async () 
   const first = coordinator.requestShutdown("SIGTERM");
   await Promise.resolve();
   const second = coordinator.requestShutdown("SIGINT");
+  active.resolve();
   const result = await second;
 
   assert.equal(first, second);
-  assert.deepEqual(result, { signal: "SIGTERM", outcome: "forced", exitCode: 1 });
+  assert.deepEqual(result, { signal: "SIGTERM", outcome: "completed", exitCode: 0 });
   assert.equal(stopCalls, 1);
   assert.equal(cleanupCalls, 1);
-  assert.equal(forceCalls, 1);
-  active.resolve();
+  assert.equal(forceCalls, 0);
 });
 
 test("timeout forces shutdown with deterministic result", async () => {
@@ -122,7 +122,7 @@ test("timeout forces shutdown with deterministic result", async () => {
 
   assert.deepEqual(result, { signal: "SIGTERM", outcome: "timeout", exitCode: 1 });
   assert.equal(forceCalls, 1);
-  assert.equal(events.some((item) => item.event === "shutdown_timeout"), true);
+  assert.equal(events.some((item) => item.event === "shutdown_forced_after_timeout"), true);
   active.resolve();
 });
 

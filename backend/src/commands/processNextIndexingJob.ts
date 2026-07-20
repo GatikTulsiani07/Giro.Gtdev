@@ -160,7 +160,7 @@ async function runExecutable(): Promise<void> {
         progressPublisher: runtimeIndexingProgressPublisher,
         retrievalCacheInvalidator: runtimeRetrievalCache,
       }),
-    writeOutput: (output) => console.log(output),
+    writeOutput: (output) => process.stdout.write(`${output}\n`),
     interruptedOutput: JSON.stringify(
       internalFailure("Indexing worker shutdown was forced."),
     ),

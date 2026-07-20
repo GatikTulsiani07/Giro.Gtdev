@@ -3,23 +3,27 @@
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { env } from "./config/env.js";
-import { logger } from "./lib/logger.js";
+import { flushLogs, logger } from "./lib/logger.js";
+import { closeSupabaseConnections } from "./lib/supabase.js";
 import { createApp } from "./app.js";
 import {
-  createShutdownCoordinator,
-  type ShutdownResult,
-  type ShutdownSignal,
-} from "./runtime/shutdownCoordinator.js";
+  createBackendShutdown,
+  installShutdownSignalHandlers,
+} from "./runtime/backendShutdown.js";
 import {
   forceCloseHttpServer,
   stopHttpServer,
 } from "./runtime/httpServerShutdown.js";
+import { stopRegisteredIndexingWorkers } from "./runtime/indexingWorkerShutdown.js";
 
 let server: ServerType;
-const coordinator = createShutdownCoordinator({
+const coordinator = createBackendShutdown({
   logger,
   timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
   stopAcceptingRequests: () => stopHttpServer(server),
+  stopIndexingWorkers: stopRegisteredIndexingWorkers,
+  closeDatabase: closeSupabaseConnections,
+  flushLogs,
   forceStop: () => forceCloseHttpServer(server),
 });
 const app = createApp({ isShuttingDown: coordinator.isShuttingDown });
@@ -37,18 +41,15 @@ server = serve(
   },
 );
 
-function applyShutdownResult(result: ShutdownResult): void {
-  const existingFailure =
-    process.exitCode !== undefined && process.exitCode !== 0;
-  process.exitCode = existingFailure ? 1 : result.exitCode;
-  if (result.outcome === "timeout" || result.outcome === "forced") {
-    process.exit(1);
-  }
-}
-
-function shutdown(signal: ShutdownSignal): void {
-  void coordinator.requestShutdown(signal).then(applyShutdownResult);
-}
-
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+installShutdownSignalHandlers({
+  coordinator,
+  subscribe: (signal, handler) => {
+    process.on(signal, handler);
+    return () => process.off(signal, handler);
+  },
+  setExitCode: (code) => {
+    const existingFailure = process.exitCode !== undefined && process.exitCode !== 0;
+    process.exitCode = existingFailure ? 1 : code;
+  },
+  forceExit: (code) => process.exit(code),
+});

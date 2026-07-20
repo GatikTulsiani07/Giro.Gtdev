@@ -2,8 +2,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { env } from "../config/env.js";
-import { supabase } from "../lib/supabase.js";
-import { stderrLogger } from "../lib/logger.js";
+import { closeSupabaseConnections, supabase } from "../lib/supabase.js";
+import { flushLogs, stderrLogger } from "../lib/logger.js";
 import { runtimeMetrics } from "../observability/metrics.js";
 import { runtimeIndexingProgressPublisher } from "../services/indexing/events/runtimeIndexingProgressPublisher.js";
 import {
@@ -15,6 +15,10 @@ import { runtimeRetrievalCache } from "../services/retrieval/cache/runtimeRetrie
 import { ContinuousIndexingWorker } from "../services/indexing/worker/continuousIndexingWorker.js";
 import { SupabaseIndexingWorkerStateStore } from "../services/indexing/worker/indexingWorkerStateStore.js";
 import { isValidIndexingWorkerId } from "./processNextIndexingJob.js";
+import {
+  createBackendShutdown,
+  installShutdownSignalHandlers,
+} from "../runtime/backendShutdown.js";
 
 export function buildContinuousWorkerConfig() {
   const workerId = env.INDEXING_WORKER_ID ?? "development-worker";
@@ -44,7 +48,7 @@ export async function runIndexingWorker(): Promise<0 | 1> {
     jobStore: runtimeIndexingJobStore,
     stateStore: new SupabaseIndexingWorkerStateStore(supabase),
     logger: stderrLogger,
-    onShutdownTimeout: () => process.exit(1),
+    onShutdownTimeout: () => undefined,
     executeNext: ({ signal, observer }) => processNextIndexingJob({
       workerId: config.workerId,
       jobStore: runtimeIndexingJobStore,
@@ -58,15 +62,46 @@ export async function runIndexingWorker(): Promise<0 | 1> {
     }),
   });
 
-  const onSigint = () => worker.requestShutdown("SIGINT");
-  const onSigterm = () => worker.requestShutdown("SIGTERM");
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  const workerRun = worker.run();
+  const coordinator = createBackendShutdown({
+    logger: stderrLogger,
+    timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
+    stopAcceptingRequests: () => undefined,
+    stopIndexingWorkers: async (signal) => {
+      worker.requestShutdown(signal);
+      await workerRun;
+    },
+    closeDatabase: closeSupabaseConnections,
+    flushLogs,
+  });
+  let resolveShutdownResult!: (result: Awaited<ReturnType<typeof coordinator.requestShutdown>>) => void;
+  const shutdownResult = new Promise<Awaited<ReturnType<typeof coordinator.requestShutdown>>>((resolve) => {
+    resolveShutdownResult = resolve;
+  });
+  const removeSignalHandlers = installShutdownSignalHandlers({
+    coordinator,
+    subscribe: (signal, handler) => {
+      process.on(signal, handler);
+      return () => process.off(signal, handler);
+    },
+    setExitCode: (code) => {
+      const existingFailure = process.exitCode !== undefined && process.exitCode !== 0;
+      process.exitCode = existingFailure ? 1 : code;
+    },
+    forceExit: (code) => process.exit(code),
+    onResult: resolveShutdownResult,
+  });
   try {
-    return await worker.run();
+    const workerCode = await workerRun;
+    if (!coordinator.isShuttingDown()) return workerCode;
+    const result = await shutdownResult;
+    return result.exitCode === 1 ? 1 : workerCode;
   } finally {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    removeSignalHandlers();
+    if (!coordinator.isShuttingDown()) {
+      await closeSupabaseConnections();
+      await flushLogs();
+    }
   }
 }
 
@@ -77,7 +112,8 @@ const executablePath = process.argv[1]
 if (executablePath === import.meta.url) {
   runIndexingWorker()
     .then((code) => {
-      process.exitCode = code;
+      const existingFailure = process.exitCode !== undefined && process.exitCode !== 0;
+      process.exitCode = existingFailure ? 1 : code;
     })
     .catch((error: unknown) => {
       stderrLogger.error("indexing_worker_startup_failed", {

@@ -16,6 +16,7 @@ export interface StructuredLogger {
   info(operation: string, fields?: Record<string, unknown>): void;
   warn(operation: string, fields?: Record<string, unknown>): void;
   error(operation: string, fields?: Record<string, unknown>): void;
+  flush(): Promise<void>;
 }
 
 export type LogWriter = (entry: string, level: LogLevel) => void;
@@ -111,7 +112,7 @@ export function currentLogContext(): Readonly<LogContext> | undefined {
 
 export function createLogger(
   writer: LogWriter,
-  options: { level?: LogLevel; now?: () => Date } = {},
+  options: { level?: LogLevel; now?: () => Date; flush?: () => void | Promise<void> } = {},
 ): StructuredLogger {
   const threshold = LEVEL_ORDER[options.level ?? configuredLevel()];
   const now = options.now ?? (() => new Date());
@@ -136,7 +137,13 @@ export function createLogger(
     info: (operation, fields) => emit("info", operation, fields),
     warn: (operation, fields) => emit("warn", operation, fields),
     error: (operation, fields) => emit("error", operation, fields),
+    flush: async () => options.flush?.(),
   };
+}
+
+function flushStream(stream: NodeJS.WriteStream): Promise<void> {
+  if (!stream.writableNeedDrain) return Promise.resolve();
+  return new Promise((resolve) => stream.once("drain", resolve));
 }
 
 const stdoutWriter: LogWriter = (entry, level) => {
@@ -144,5 +151,14 @@ const stdoutWriter: LogWriter = (entry, level) => {
   stream.write(`${entry}\n`);
 };
 
-export const logger = createLogger(stdoutWriter);
-export const stderrLogger = createLogger((entry) => process.stderr.write(`${entry}\n`));
+export const logger = createLogger(stdoutWriter, {
+  flush: () => Promise.all([flushStream(process.stdout), flushStream(process.stderr)]).then(() => undefined),
+});
+export const stderrLogger = createLogger(
+  (entry) => process.stderr.write(`${entry}\n`),
+  { flush: () => flushStream(process.stderr) },
+);
+
+export async function flushLogs(): Promise<void> {
+  await logger.flush();
+}

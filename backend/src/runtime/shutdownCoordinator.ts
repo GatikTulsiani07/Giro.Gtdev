@@ -24,6 +24,7 @@ export interface ShutdownCoordinatorOptions {
   stopAcceptingRequests?: () => void | Promise<void>;
   cleanupTasks?: readonly CleanupTask[];
   forceStop?: () => void | Promise<void>;
+  flushLogs?: () => void | Promise<void>;
   setTimer?: (callback: () => void, timeoutMs: number) => unknown;
   clearTimer?: (handle: unknown) => void;
 }
@@ -62,18 +63,35 @@ export function createShutdownCoordinator(
     if (phase !== "shutting_down" || !firstSignal) return;
     phase = "forced";
     clearTimer(timer);
-    if (!forceStopRequested) {
-      forceStopRequested = true;
-      void Promise.resolve(options.forceStop?.()).catch(() => undefined);
-    }
-    options.logger.error(
-      outcome === "timeout" ? "shutdown_timeout" : "shutdown_forced",
-      { signal: firstSignal },
-    );
-    resolveCompletion?.(
-      Object.freeze({ signal: firstSignal, outcome, exitCode: 1 }),
-    );
-    resolveCompletion = null;
+    void (async () => {
+      if (!forceStopRequested) {
+        forceStopRequested = true;
+        try {
+          await options.forceStop?.();
+        } catch {
+          options.logger.error("shutdown_error", {
+            signal: firstSignal,
+            task: "force_stop",
+          });
+        }
+      }
+      options.logger.error(
+        outcome === "timeout" ? "shutdown_forced_after_timeout" : "shutdown_forced",
+        { signal: firstSignal },
+      );
+      try {
+        await options.flushLogs?.();
+      } catch {
+        options.logger.error("shutdown_error", {
+          signal: firstSignal,
+          task: "flush_logs",
+        });
+      }
+      resolveCompletion?.(
+        Object.freeze({ signal: firstSignal!, outcome, exitCode: 1 }),
+      );
+      resolveCompletion = null;
+    })();
   }
 
   async function run(signal: ShutdownSignal): Promise<void> {
@@ -95,22 +113,38 @@ export function createShutdownCoordinator(
         options.logger.info("shutdown_task_completed", { task: task.name });
       } catch {
         failed = true;
-        options.logger.error("shutdown_task_failed", { task: task.name });
+        options.logger.error("shutdown_error", {
+          signal,
+          task: task.name,
+        });
       }
     }
 
     if (phase !== "shutting_down") return;
     clearTimer(timer);
     phase = "completed";
-    const result: ShutdownResult = {
+    let result: ShutdownResult = {
       signal,
       outcome: failed ? "failed" : "completed",
       exitCode: failed ? 1 : 0,
     };
+    try {
+      await options.flushLogs?.();
+    } catch {
+      failed = true;
+      options.logger.error("shutdown_error", { signal, task: "flush_logs" });
+      result = { signal, outcome: "failed", exitCode: 1 };
+    }
     options.logger.info("shutdown_completed", {
       signal,
-      exit_code: result.exitCode,
+      exitCode: result.exitCode,
     });
+    try {
+      await options.flushLogs?.();
+    } catch {
+      options.logger.error("shutdown_error", { signal, task: "flush_logs" });
+      result = { signal, outcome: "failed", exitCode: 1 };
+    }
     resolveCompletion?.(Object.freeze(result));
     resolveCompletion = null;
   }
@@ -119,7 +153,10 @@ export function createShutdownCoordinator(
     requestShutdown(signal) {
       options.logger.info("shutdown_requested", { signal });
       if (phase === "shutting_down") {
-        force("forced");
+        options.logger.warn("shutdown_already_in_progress", {
+          signal,
+          originalSignal: firstSignal,
+        });
         return completion!;
       }
       if (completion) return completion;
