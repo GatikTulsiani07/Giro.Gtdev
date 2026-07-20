@@ -25,6 +25,9 @@ export type RetryMetricResult = "scheduled" | "succeeded" | "exhausted";
 
 export interface MetricsRegistryOptions {
   durationBucketsSeconds?: readonly number[];
+  processStartTimeSeconds?: number;
+  uptimeSeconds?: () => number;
+  memoryUsage?: () => Pick<NodeJS.MemoryUsage, "rss" | "heapTotal" | "heapUsed" | "external">;
 }
 
 type HttpCounterLabels = {
@@ -74,7 +77,21 @@ export class MetricsRegistry {
     ["failed", 0],
   ]);
   private inFlight = 0;
+  private totalRequests = 0;
+  private completedRequests = 0;
+  private failedRequests = 0;
+  private requestDurationCount = 0;
+  private requestDurationTotalMs = 0;
+  private readonly requestDurationSamplesMs: number[] = [];
+  private readonly requestDurationWindowMs: number[] = [];
+  private requestDurationSampleCursor = 0;
+  private requestDurationP50Ms = 0;
+  private requestDurationP95Ms = 0;
+  private requestDurationP99Ms = 0;
   private rateLimitRejections = 0;
+  private repositoryConnects = 0;
+  private askGiroRequests = 0;
+  private retrievalRequests = 0;
   private readiness = 0;
   private readonly timeouts = new Map<TimeoutMetricCategory, number>();
   private readonly retries = new Map<string, { category: RetryMetricCategory; result: RetryMetricResult; attempt: number; value: number }>();
@@ -113,11 +130,63 @@ export class MetricsRegistry {
   private repositorySummaries = 0;
   private repositorySummaryGenerationMs = 0;
   private repositorySummaryCacheHits = 0;
+  private readonly processStartTimeSeconds: number;
+  private readonly uptimeSeconds: () => number;
+  private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
 
   constructor(options: MetricsRegistryOptions = {}) {
     this.durationBucketsSeconds = Object.freeze(validateBuckets(
       options.durationBucketsSeconds ?? DEFAULT_DURATION_BUCKETS_SECONDS,
     ));
+    this.processStartTimeSeconds = options.processStartTimeSeconds ??
+      Math.floor(Date.now() / 1_000 - process.uptime());
+    this.uptimeSeconds = options.uptimeSeconds ?? process.uptime;
+    this.memoryUsage = options.memoryUsage ?? process.memoryUsage;
+  }
+
+  beginRequest(): void {
+    this.totalRequests += 1;
+    this.inFlight += 1;
+  }
+
+  completeRequest(input: HttpCounterLabels & { status: number; durationMs: number }): void {
+    this.inFlight = Math.max(0, this.inFlight - 1);
+    this.completedRequests += 1;
+    if (input.status >= 400) this.failedRequests += 1;
+    this.incrementHttpRequests(input);
+    this.observeHttpDuration(input.route, input.method, input.durationMs / 1_000);
+    this.observeAggregateRequestDuration(input.durationMs);
+  }
+
+  private observeAggregateRequestDuration(milliseconds: number): void {
+    const safeMilliseconds = Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0;
+    this.requestDurationCount += 1;
+    this.requestDurationTotalMs += safeMilliseconds;
+    const sampleLimit = 512;
+    if (this.requestDurationWindowMs.length < sampleLimit) {
+      this.requestDurationWindowMs.push(safeMilliseconds);
+    } else {
+      const replaced = this.requestDurationWindowMs[this.requestDurationSampleCursor] ?? 0;
+      this.requestDurationWindowMs[this.requestDurationSampleCursor] = safeMilliseconds;
+      this.requestDurationSampleCursor = (this.requestDurationSampleCursor + 1) % sampleLimit;
+      const removalIndex = this.requestDurationSamplesMs.indexOf(replaced);
+      if (removalIndex >= 0) this.requestDurationSamplesMs.splice(removalIndex, 1);
+    }
+    let insertionIndex = 0;
+    while (
+      insertionIndex < this.requestDurationSamplesMs.length &&
+      (this.requestDurationSamplesMs[insertionIndex] ?? 0) <= safeMilliseconds
+    ) {
+      insertionIndex += 1;
+    }
+    this.requestDurationSamplesMs.splice(insertionIndex, 0, safeMilliseconds);
+    const percentile = (quantile: number) =>
+      this.requestDurationSamplesMs[
+        Math.max(0, Math.ceil(this.requestDurationSamplesMs.length * quantile) - 1)
+      ] ?? 0;
+    this.requestDurationP50Ms = percentile(0.5);
+    this.requestDurationP95Ms = percentile(0.95);
+    this.requestDurationP99Ms = percentile(0.99);
   }
 
   incrementHttpRequests(input: HttpCounterLabels): void {
@@ -162,6 +231,18 @@ export class MetricsRegistry {
 
   incrementRateLimitRejections(): void {
     this.rateLimitRejections += 1;
+  }
+
+  incrementRepositoryConnects(): void {
+    this.repositoryConnects += 1;
+  }
+
+  incrementAskGiroRequests(): void {
+    this.askGiroRequests += 1;
+  }
+
+  incrementRetrievalRequests(): void {
+    this.retrievalRequests += 1;
   }
 
   incrementIndexing(status: IndexingMetricStatus): void {
@@ -321,7 +402,77 @@ export class MetricsRegistry {
   }
 
   render(): string {
+    const memory = this.memoryUsage?.() ?? process.memoryUsage();
+    const averageDurationMs = this.requestDurationCount === 0
+      ? 0
+      : this.requestDurationTotalMs / this.requestDurationCount;
     const lines = [
+      "# HELP giro_requests_total Total requests accepted by the backend.",
+      "# TYPE giro_requests_total counter",
+      `giro_requests_total ${this.totalRequests}`,
+      "# HELP giro_requests_active Requests currently being processed.",
+      "# TYPE giro_requests_active gauge",
+      `giro_requests_active ${this.inFlight}`,
+      "# HELP giro_requests_completed_total Requests that finished processing.",
+      "# TYPE giro_requests_completed_total counter",
+      `giro_requests_completed_total ${this.completedRequests}`,
+      "# HELP giro_requests_failed_total Completed requests with HTTP status 4xx or 5xx.",
+      "# TYPE giro_requests_failed_total counter",
+      `giro_requests_failed_total ${this.failedRequests}`,
+      "# HELP giro_requests_timed_out_total Requests completed by the application timeout.",
+      "# TYPE giro_requests_timed_out_total counter",
+      `giro_requests_timed_out_total ${this.timeouts.get("request") ?? 0}`,
+      "# HELP giro_requests_rate_limited_total Requests rejected by rate limiting.",
+      "# TYPE giro_requests_rate_limited_total counter",
+      `giro_requests_rate_limited_total ${this.rateLimitRejections}`,
+      "# HELP giro_repository_connects_total Repository connect requests.",
+      "# TYPE giro_repository_connects_total counter",
+      `giro_repository_connects_total ${this.repositoryConnects}`,
+      "# HELP giro_indexing_jobs_started_total Indexing jobs started.",
+      "# TYPE giro_indexing_jobs_started_total counter",
+      `giro_indexing_jobs_started_total ${this.indexing.get("started") ?? 0}`,
+      "# HELP giro_indexing_jobs_completed_total Indexing jobs completed successfully.",
+      "# TYPE giro_indexing_jobs_completed_total counter",
+      `giro_indexing_jobs_completed_total ${this.indexing.get("completed") ?? 0}`,
+      "# HELP giro_indexing_jobs_failed_total Indexing jobs that failed.",
+      "# TYPE giro_indexing_jobs_failed_total counter",
+      `giro_indexing_jobs_failed_total ${this.indexing.get("failed") ?? 0}`,
+      "# HELP giro_ask_giro_requests_total Ask Giro requests.",
+      "# TYPE giro_ask_giro_requests_total counter",
+      `giro_ask_giro_requests_total ${this.askGiroRequests}`,
+      "# HELP giro_retrieval_requests_total Retrieval endpoint requests.",
+      "# TYPE giro_retrieval_requests_total counter",
+      `giro_retrieval_requests_total ${this.retrievalRequests}`,
+      "# HELP giro_request_duration_average_ms Average completed request duration in milliseconds.",
+      "# TYPE giro_request_duration_average_ms gauge",
+      `giro_request_duration_average_ms ${finiteMetricValue(averageDurationMs)}`,
+      "# HELP giro_request_duration_p50_ms Rolling p50 request duration in milliseconds.",
+      "# TYPE giro_request_duration_p50_ms gauge",
+      `giro_request_duration_p50_ms ${finiteMetricValue(this.requestDurationP50Ms)}`,
+      "# HELP giro_request_duration_p95_ms Rolling p95 request duration in milliseconds.",
+      "# TYPE giro_request_duration_p95_ms gauge",
+      `giro_request_duration_p95_ms ${finiteMetricValue(this.requestDurationP95Ms)}`,
+      "# HELP giro_request_duration_p99_ms Rolling p99 request duration in milliseconds.",
+      "# TYPE giro_request_duration_p99_ms gauge",
+      `giro_request_duration_p99_ms ${finiteMetricValue(this.requestDurationP99Ms)}`,
+      "# HELP giro_process_uptime_seconds Backend process uptime in seconds.",
+      "# TYPE giro_process_uptime_seconds gauge",
+      `giro_process_uptime_seconds ${finiteMetricValue(Math.max(0, this.uptimeSeconds()))}`,
+      "# HELP giro_process_start_time_seconds Backend process start time as Unix seconds.",
+      "# TYPE giro_process_start_time_seconds gauge",
+      `giro_process_start_time_seconds ${finiteMetricValue(this.processStartTimeSeconds)}`,
+      "# HELP giro_process_memory_rss_bytes Resident memory used by the backend process.",
+      "# TYPE giro_process_memory_rss_bytes gauge",
+      `giro_process_memory_rss_bytes ${memory.rss}`,
+      "# HELP giro_process_memory_heap_total_bytes Allocated JavaScript heap memory.",
+      "# TYPE giro_process_memory_heap_total_bytes gauge",
+      `giro_process_memory_heap_total_bytes ${memory.heapTotal}`,
+      "# HELP giro_process_memory_heap_used_bytes Used JavaScript heap memory.",
+      "# TYPE giro_process_memory_heap_used_bytes gauge",
+      `giro_process_memory_heap_used_bytes ${memory.heapUsed}`,
+      "# HELP giro_process_memory_external_bytes Memory used by external resources.",
+      "# TYPE giro_process_memory_external_bytes gauge",
+      `giro_process_memory_external_bytes ${memory.external}`,
       "# HELP giro_http_requests_total Total HTTP requests.",
       "# TYPE giro_http_requests_total counter",
     ];

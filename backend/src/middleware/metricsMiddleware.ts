@@ -17,6 +17,18 @@ function statusClass(status: number): string {
   return status >= 100 && status <= 599 ? `${Math.floor(status / 100)}xx` : "unknown";
 }
 
+function recordOperationalRoute(
+  registry: MetricsRegistry,
+  method: string,
+  path: string,
+): void {
+  if (method !== "POST") return;
+  if (/^\/sessions\/[^/]+\/ask$/.test(path)) registry.incrementAskGiroRequests();
+  if (path === "/retrieval" || path.startsWith("/retrieval/")) {
+    registry.incrementRetrievalRequests();
+  }
+}
+
 export interface MetricsMiddlewareOptions {
   monotonicNow?: () => number;
 }
@@ -29,7 +41,8 @@ export function createMetricsMiddleware(
 
   return async (c, next) => {
     const startedAt = monotonicNow();
-    registry.incrementInFlight();
+    registry.beginRequest();
+    recordOperationalRoute(registry, c.req.method.toUpperCase(), c.req.path);
     let status = 500;
     try {
       await next();
@@ -37,9 +50,20 @@ export function createMetricsMiddleware(
     } finally {
       const route = safeRoute(routePath(c, -1));
       const method = safeMethod(c.req.method);
-      registry.decrementInFlight();
-      registry.incrementHttpRequests({ route, method, statusClass: statusClass(status) });
-      registry.observeHttpDuration(route, method, (Math.max(0, monotonicNow() - startedAt)) / 1_000);
+      if (
+        method === "POST" &&
+        c.req.path === "/repos/connect" &&
+        status >= 200 && status < 300
+      ) {
+        registry.incrementRepositoryConnects();
+      }
+      registry.completeRequest({
+        route,
+        method,
+        status,
+        statusClass: statusClass(status),
+        durationMs: Math.max(0, monotonicNow() - startedAt),
+      });
     }
   };
 }

@@ -36,6 +36,26 @@ test("repeated requests increment counters and histogram counts", async () => {
   assert.match(output, /status_class="2xx"\} 2/);
   assert.match(output, /_count\{route="\/health\/live",method="GET"\} 2/);
   assert.match(output, /le="0.1"\} [0-2]/);
+  assert.match(output, /giro_requests_total 2/);
+  assert.match(output, /giro_requests_active 0/);
+  assert.match(output, /giro_requests_completed_total 2/);
+  assert.match(output, /giro_requests_failed_total 0/);
+});
+
+test("aggregate request counters distinguish completed and failed requests", async () => {
+  const metrics = new MetricsRegistry();
+  const app = new Hono();
+  app.use("*", createMetricsMiddleware(metrics));
+  app.get("/ok", (c) => c.text("ok"));
+  app.get("/failed", (c) => c.text("failed", 500));
+
+  await app.request("/ok");
+  await app.request("/failed");
+  const output = metrics.render();
+
+  assert.match(output, /giro_requests_total 2/);
+  assert.match(output, /giro_requests_completed_total 2/);
+  assert.match(output, /giro_requests_failed_total 1/);
 });
 
 test("in-flight gauge is concurrency safe and returns to zero", async () => {
@@ -56,6 +76,29 @@ test("in-flight gauge is concurrency safe and returns to zero", async () => {
   await Promise.all(requests);
   assert.match(metrics.render(), /giro_http_requests_in_flight 0/);
   assert.match(metrics.render(), /status_class="2xx"\} 3/);
+  assert.match(metrics.render(), /giro_requests_total 3/);
+  assert.match(metrics.render(), /giro_requests_completed_total 3/);
+});
+
+test("aggregate latency reports average, p50, p95, and p99", async () => {
+  const metrics = new MetricsRegistry();
+  const clock = [0, 10, 10, 30, 30, 60, 60, 100];
+  const app = new Hono();
+  app.use("*", createMetricsMiddleware(metrics, {
+    monotonicNow: () => clock.shift() ?? 100,
+  }));
+  app.get("/work", (c) => c.text("ok"));
+
+  await app.request("/work");
+  await app.request("/work");
+  await app.request("/work");
+  await app.request("/work");
+  const output = metrics.render();
+
+  assert.match(output, /giro_request_duration_average_ms 25/);
+  assert.match(output, /giro_request_duration_p50_ms 20/);
+  assert.match(output, /giro_request_duration_p95_ms 40/);
+  assert.match(output, /giro_request_duration_p99_ms 40/);
 });
 
 test("readiness gauge reflects ready, degraded, failure, and not-ready states", async () => {
@@ -98,6 +141,31 @@ test("rate limiter rejection counter increments only on rejected requests", asyn
   await app.request("/limited");
   await app.request("/limited");
   assert.match(metrics.render(), /giro_rate_limit_rejections_total 2/);
+  assert.match(metrics.render(), /giro_requests_rate_limited_total 2/);
+});
+
+test("request timeout counter has a dedicated operational metric", () => {
+  const metrics = new MetricsRegistry();
+  metrics.incrementTimeout("request");
+  assert.match(metrics.render(), /giro_requests_timed_out_total 1/);
+});
+
+test("repository connect, Ask Giro, and retrieval route counters increment centrally", async () => {
+  const metrics = new MetricsRegistry();
+  const app = new Hono();
+  app.use("*", createMetricsMiddleware(metrics));
+  app.post("/repos/connect", (c) => c.text("ok"));
+  app.post("/sessions/:id/ask", (c) => c.text("ok"));
+  app.post("/retrieval/hybrid", (c) => c.text("ok"));
+
+  await app.request("/repos/connect", { method: "POST" });
+  await app.request("/sessions/session-1/ask", { method: "POST" });
+  await app.request("/retrieval/hybrid", { method: "POST" });
+  const output = metrics.render();
+
+  assert.match(output, /giro_repository_connects_total 1/);
+  assert.match(output, /giro_ask_giro_requests_total 1/);
+  assert.match(output, /giro_retrieval_requests_total 1/);
 });
 
 test("indexing lifecycle counter records started, completed, and failed", async () => {
@@ -153,6 +221,47 @@ test("indexing lifecycle counter records started, completed, and failed", async 
   assert.match(output, /giro_repository_indexing_total\{status="started"\} 2/);
   assert.match(output, /giro_repository_indexing_total\{status="completed"\} 1/);
   assert.match(output, /giro_repository_indexing_total\{status="failed"\} 1/);
+  assert.match(output, /giro_indexing_jobs_started_total 2/);
+  assert.match(output, /giro_indexing_jobs_completed_total 1/);
+  assert.match(output, /giro_indexing_jobs_failed_total 1/);
+});
+
+test("metrics response contract includes deterministic process metrics", async () => {
+  const metrics = new MetricsRegistry({
+    processStartTimeSeconds: 1_700_000_000,
+    uptimeSeconds: () => 123.5,
+    memoryUsage: () => ({
+      rss: 1_000,
+      heapTotal: 800,
+      heapUsed: 600,
+      external: 200,
+    }),
+  });
+  const app = createApp({ metrics });
+  const response = await app.request("/metrics");
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "text/plain; version=0.0.4");
+  assert.match(body, /giro_process_uptime_seconds 123.5/);
+  assert.match(body, /giro_process_start_time_seconds 1700000000/);
+  assert.match(body, /giro_process_memory_rss_bytes 1000/);
+  assert.match(body, /giro_process_memory_heap_total_bytes 800/);
+  assert.match(body, /giro_process_memory_heap_used_bytes 600/);
+  assert.match(body, /giro_process_memory_external_bytes 200/);
+});
+
+test("metrics output never includes request secrets or diagnostics", async () => {
+  const secret = "sk-secret-Bearer-token-repository-source";
+  const metrics = new MetricsRegistry();
+  const app = new Hono();
+  app.use("*", createMetricsMiddleware(metrics));
+  await app.request(`/${secret}`);
+
+  const output = metrics.render();
+  assert.equal(output.includes(secret), false);
+  assert.equal(output.includes("Bearer"), false);
+  assert.equal(output.includes("repository-source"), false);
 });
 
 test("indexing deadline failure is retryable, never succeeds, and increments one timeout category", async () => {
