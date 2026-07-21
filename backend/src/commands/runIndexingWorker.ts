@@ -14,6 +14,7 @@ import { runtimeIndexingJobStore } from "../services/indexing/jobs/runtimeIndexi
 import { runtimeRetrievalCache } from "../services/retrieval/cache/runtimeRetrievalCache.js";
 import { ContinuousIndexingWorker } from "../services/indexing/worker/continuousIndexingWorker.js";
 import { SupabaseIndexingWorkerStateStore } from "../services/indexing/worker/indexingWorkerStateStore.js";
+import { validateIndexingWorkerStartup } from "../services/indexing/worker/indexingWorkerStartup.js";
 import { isValidIndexingWorkerId } from "./processNextIndexingJob.js";
 import {
   createBackendShutdown,
@@ -43,10 +44,16 @@ export function buildContinuousWorkerConfig() {
 
 export async function runIndexingWorker(): Promise<0 | 1> {
   const config = buildContinuousWorkerConfig();
+  const stateStore = new SupabaseIndexingWorkerStateStore(supabase);
+  await validateIndexingWorkerStartup({
+    config,
+    stateStore,
+    logger: stderrLogger,
+  });
   const worker = new ContinuousIndexingWorker({
     config,
     jobStore: runtimeIndexingJobStore,
-    stateStore: new SupabaseIndexingWorkerStateStore(supabase),
+    stateStore,
     logger: stderrLogger,
     onShutdownTimeout: () => undefined,
     executeNext: ({ signal, observer }) => processNextIndexingJob({
@@ -106,12 +113,28 @@ export async function runIndexingWorker(): Promise<0 | 1> {
   }
 }
 
+export async function validateIndexingWorkerExecutableConfig(): Promise<0> {
+  const config = buildContinuousWorkerConfig();
+  stderrLogger.info("indexing_worker_config_validated", {
+    workerId: config.workerId,
+    entrypoint: "compiled",
+  });
+  // Config-only preflight never opens database or realtime connections.
+  // Stop the client's background auth timer without initiating network I/O.
+  supabase.auth.stopAutoRefresh();
+  await flushLogs();
+  return 0;
+}
+
 const executablePath = process.argv[1]
   ? pathToFileURL(resolve(process.argv[1])).href
   : null;
 
 if (executablePath === import.meta.url) {
-  runIndexingWorker()
+  const executable = process.argv.slice(2).includes("--validate-config")
+    ? validateIndexingWorkerExecutableConfig()
+    : runIndexingWorker();
+  executable
     .then((code) => {
       const existingFailure = process.exitCode !== undefined && process.exitCode !== 0;
       process.exitCode = existingFailure ? 1 : code;
@@ -122,5 +145,7 @@ if (executablePath === import.meta.url) {
         message: error instanceof Error ? error.message : "Worker startup failed.",
       });
       process.exitCode = 1;
+      supabase.auth.stopAutoRefresh();
+      return flushLogs();
     });
 }

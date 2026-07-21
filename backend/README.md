@@ -53,8 +53,10 @@ top-level have been validated against that exact checkout.
 pnpm dev        # tsx watch on src/index.ts
 pnpm build      # tsc -> dist
 pnpm start      # node dist/index.js
-pnpm indexing:worker    # continuous production indexing worker
-pnpm indexing:work-once # process at most one job for debugging/recovery
+pnpm indexing:worker:dev    # tsx watch worker for local development
+pnpm indexing:worker        # node dist/commands/runIndexingWorker.js
+pnpm indexing:work-once:dev # one job directly from TypeScript
+pnpm indexing:work-once     # one job from compiled JavaScript
 pnpm typecheck  # tsc --noEmit
 ```
 
@@ -83,9 +85,19 @@ can restart it; stale recovery makes the claim eligible again. Production
 should use a container or process supervisor with restart-on-failure enabled.
 
 Local development requires the same Supabase configuration as the API. Apply
-all migrations, then run `pnpm indexing:worker` in a second terminal. Worker
+all migrations, then run `pnpm indexing:worker:dev` in a second terminal. For
+production, run `pnpm build`, install production dependencies, and supervise
+`pnpm indexing:worker` (or `pnpm start:worker`). Both production commands execute
+only `dist/commands/runIndexingWorker.js`; `tsx` is not a runtime dependency. Worker
 health is written to the service-role-only `indexing_workers` table; it includes
 last poll, active job, last completion, sanitized last error, and shutdown state.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm prune --prod
+pnpm start:worker
+```
 
 ## Endpoints
 
