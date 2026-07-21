@@ -40,7 +40,13 @@ import { createDeadline } from "../../../runtime/deadline.js";
 import { isDeadlineExceeded } from "../../../runtime/deadline.js";
 import type { DependencyCircuitBreakers } from "../../../runtime/dependencyCircuitBreakers.js";
 import { runtimeMetrics } from "../../../observability/metrics.js";
-import { logger } from "../../../lib/logger.js";
+import { currentLogContext, logger, runWithLogContext } from "../../../lib/logger.js";
+import {
+  createTraceContext,
+  currentTraceContext,
+  parseTraceparent,
+  runWithTraceContext,
+} from "../../../observability/tracing.js";
 import {
   runtimeRepositorySnapshotStore,
   type RepositorySnapshotStore,
@@ -170,12 +176,14 @@ const silentWorkerLogger: IndexingJobWorkerLogger = {
 };
 
 function jobLogFields(job: IndexingJob, workerId: string) {
+  const trace = currentTraceContext();
   return {
     jobId: job.jobId,
     repositoryId: job.repositoryId,
     workerId,
     attempt: job.attempt,
     ...(job.createdByRequestId ? { requestId: job.createdByRequestId } : {}),
+    ...(trace ? { traceId: trace.traceId, spanId: trace.spanId } : {}),
   };
 }
 
@@ -526,6 +534,16 @@ export async function processNextIndexingJob(
       failure: null,
     };
   }
+  const workerTrace = createTraceContext(parseTraceparent(claimed.createdByTraceparent));
+  return runWithTraceContext(workerTrace, () => runWithLogContext({
+    ...currentLogContext(),
+    requestId: claimed.createdByRequestId,
+    traceId: workerTrace.traceId,
+    spanId: workerTrace.spanId,
+    jobId: claimed.jobId,
+    repositoryId: claimed.repositoryId,
+    workerId,
+  }, async () => {
   logger.info("indexing_job_claimed", jobLogFields(claimed, workerId));
   const jobStartedAtMs = performance.now();
   await observer?.onClaimed?.(claimed);
@@ -662,4 +680,5 @@ export async function processNextIndexingJob(
       failure,
     };
   }
+  }));
 }

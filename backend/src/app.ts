@@ -33,6 +33,7 @@ import {
   type RequestDeadlineVariables,
   type RequestTimeoutOptions,
 } from "./middleware/requestTimeout.js";
+import { TRACEPARENT_HEADER } from "./observability/tracing.js";
 
 type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
@@ -125,9 +126,10 @@ export function createApp(options: CreateAppOptions = {}) {
     cors({
       origin: env.CORS_ORIGINS,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
+      allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", TRACEPARENT_HEADER],
       exposeHeaders: [
         "X-Request-ID",
+        TRACEPARENT_HEADER,
         "X-RateLimit-Limit",
         "X-RateLimit-Remaining",
         "Retry-After",

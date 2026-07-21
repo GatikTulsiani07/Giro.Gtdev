@@ -64,6 +64,9 @@ export class MemoryIndexingJobStore implements IndexingJobStore {
       ...(input.createdByRequestId
         ? { createdByRequestId: input.createdByRequestId }
         : {}),
+      ...(input.createdByTraceparent
+        ? { createdByTraceparent: input.createdByTraceparent }
+        : {}),
     };
 
     this.jobs.set(job.jobId, cloneIndexingJob(job));

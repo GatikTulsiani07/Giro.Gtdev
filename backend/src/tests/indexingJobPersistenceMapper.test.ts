@@ -99,6 +99,18 @@ test("request correlation maps at creation and is excluded from updates", () => 
   assert.equal(restored.createdByRequestId, "request-123");
 });
 
+test("trace context maps at creation and is excluded from updates", () => {
+  const traceparent = "00-11111111111111111111111111111111-2222222222222222-01";
+  const traced = job({ createdByTraceparent: traceparent });
+  const inserted = indexingJobToInsertRow(traced);
+  const updated = indexingJobToUpdateRow(traced);
+  const restored = indexingJobRowToDomain(row({ traceparent }));
+
+  assert.equal(inserted.traceparent, traceparent);
+  assert.equal("traceparent" in updated, false);
+  assert.equal(restored.createdByTraceparent, traceparent);
+});
+
 test("maps claimed and running jobs without inventing order values", () => {
   const claimed = job({
     status: "claimed",

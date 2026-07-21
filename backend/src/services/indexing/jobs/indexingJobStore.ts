@@ -52,6 +52,7 @@ export interface IndexingJob {
   nextRetryAt?: string | null;
   recoveryCount?: number;
   createdByRequestId?: string;
+  createdByTraceparent?: string;
 }
 
 export interface StaleIndexingJobRecoveryInput {
@@ -79,6 +80,7 @@ export interface CreateIndexingJobInput {
   branch?: string | null;
   maxAttempts?: number;
   createdByRequestId?: string;
+  createdByTraceparent?: string;
 }
 
 export interface IndexingJobListFilters {

@@ -27,6 +27,7 @@ export interface IndexingJobPersistenceRow {
   started_order: number | null;
   completed_order: number | null;
   request_id?: string | null;
+  traceparent?: string | null;
   created_at?: string;
   updated_at?: string;
   claimed_at?: string | null;
@@ -100,6 +101,9 @@ export function indexingJobToInsertRow(job: IndexingJob): IndexingJobInsertRow {
     ...(job.createdByRequestId
       ? { request_id: job.createdByRequestId }
       : {}),
+    ...(job.createdByTraceparent
+      ? { traceparent: job.createdByTraceparent }
+      : {}),
   };
 }
 
@@ -157,6 +161,7 @@ export function indexingJobRowToDomain(row: IndexingJobPersistenceRow): Indexing
     startedOrder: row.started_order ?? null,
     completedOrder: row.completed_order ?? null,
     ...(row.request_id ? { createdByRequestId: row.request_id } : {}),
+    ...(row.traceparent ? { createdByTraceparent: row.traceparent } : {}),
     ...(row.claimed_at !== undefined ? { claimedAt: row.claimed_at } : {}),
     ...(row.started_at !== undefined ? { startedAt: row.started_at } : {}),
     ...(row.heartbeat_at !== undefined ? { heartbeatAt: row.heartbeat_at } : {}),

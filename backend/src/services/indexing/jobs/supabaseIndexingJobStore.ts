@@ -180,6 +180,7 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
         input_branch: input.branch ?? null,
         input_max_attempts: input.maxAttempts ?? this.defaultMaxAttempts,
         input_request_id: input.createdByRequestId ?? null,
+        input_traceparent: input.createdByTraceparent ?? null,
       });
       throwIfError(error);
       const row = rowFromData(data);

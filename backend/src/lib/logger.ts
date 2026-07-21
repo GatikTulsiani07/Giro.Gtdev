@@ -4,8 +4,11 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface LogContext {
   requestId?: string;
+  traceId?: string;
+  spanId?: string;
   userId?: string;
   repositoryId?: string;
+  jobId?: string;
   sessionId?: string;
   workerId?: string;
   operation?: string;
@@ -29,8 +32,11 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 };
 const LOG_CONTEXT_KEYS = new Set<keyof LogContext>([
   "requestId",
+  "traceId",
+  "spanId",
   "userId",
   "repositoryId",
+  "jobId",
   "sessionId",
   "workerId",
   "operation",

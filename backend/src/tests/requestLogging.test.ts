@@ -13,6 +13,8 @@ function loggingApp() {
     indexingJobStore: new MemoryIndexingJobStore(),
     requestContext: {
       generateRequestId: () => "generated-id",
+      generateTraceId: () => "44444444444444444444444444444444",
+      generateSpanId: () => "3333333333333333",
       monotonicNow: () => times.shift() ?? 112,
       logger: {
         info: (event, fields) => entries.push({ event, fields }),
@@ -37,6 +39,8 @@ test("request logging emits start and finish with safe method, status, and durat
     {
       event: "request_started",
       fields: {
+        traceId: "44444444444444444444444444444444",
+        spanId: "3333333333333333",
         method: "GET",
         route: "/health/live",
       },
@@ -45,6 +49,8 @@ test("request logging emits start and finish with safe method, status, and durat
       event: "request_finished",
       fields: {
         requestId: "trusted-id",
+        traceId: "44444444444444444444444444444444",
+        spanId: "3333333333333333",
         method: "GET",
         route: "/health/live",
         status: 200,
@@ -76,7 +82,7 @@ test("CORS exposes request correlation, rate limit, and additive confidence head
 
   assert.equal(
     response.headers.get("access-control-expose-headers"),
-    "X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining,Retry-After,X-Retrieval-Confidence",
+    "X-Request-ID,traceparent,X-RateLimit-Limit,X-RateLimit-Remaining,Retry-After,X-Retrieval-Confidence",
   );
 });
 

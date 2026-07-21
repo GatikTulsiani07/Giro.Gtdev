@@ -278,6 +278,7 @@ class FakeSupabaseClient implements SupabaseIndexingJobClient {
         started_order: null,
         completed_order: null,
         request_id: parameters.input_request_id as string | null,
+        traceparent: parameters.input_traceparent as string | null,
         created_at: timestamp,
         updated_at: timestamp,
       };
@@ -396,6 +397,7 @@ test("creates a queued job through the database-owned create RPC", async () => {
       input_branch: "main",
       input_max_attempts: 3,
       input_request_id: null,
+      input_traceparent: null,
     },
   });
 });
@@ -410,6 +412,20 @@ test("persists optional request correlation through the creation RPC", async () 
   assert.equal(
     (client.calls[0]?.parameters as Record<string, unknown>).input_request_id,
     "request-123",
+  );
+});
+
+test("persists trace context through the creation RPC", async () => {
+  const traceparent = "00-11111111111111111111111111111111-2222222222222222-01";
+  const created = await store.createJob({
+    ...BASE_INPUT,
+    createdByTraceparent: traceparent,
+  });
+
+  assert.equal(created.createdByTraceparent, traceparent);
+  assert.equal(
+    (client.calls[0]?.parameters as Record<string, unknown>).input_traceparent,
+    traceparent,
   );
 });
 

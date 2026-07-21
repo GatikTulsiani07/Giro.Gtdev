@@ -8,6 +8,14 @@ import {
   type StructuredLogger,
 } from "../lib/logger.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
+import {
+  createTraceContext,
+  formatTraceparent,
+  parseTraceparent,
+  runWithTraceContext,
+  TRACEPARENT_HEADER,
+  type TraceIdGenerators,
+} from "../observability/tracing.js";
 
 export const REQUEST_ID_HEADER = "X-Request-ID";
 export const MAX_REQUEST_ID_LENGTH = 128;
@@ -23,6 +31,8 @@ export interface RequestLogContext {
 
 export interface RequestContextVariables {
   requestId: string;
+  traceId: string;
+  spanId: string;
   requestStartedAtMs: number;
   requestLogContext?: RequestLogContext;
   requestLogger: RequestContextLogger;
@@ -30,7 +40,7 @@ export interface RequestContextVariables {
 
 export type RequestContextLogger = Pick<StructuredLogger, "info" | "error">;
 
-export interface RequestContextOptions {
+export interface RequestContextOptions extends TraceIdGenerators {
   generateRequestId?: () => string;
   monotonicNow?: () => number;
   logger?: RequestContextLogger;
@@ -66,14 +76,25 @@ export function createRequestContextMiddleware(
   return async (c, next) => {
     const incoming = c.req.header(REQUEST_ID_HEADER);
     const requestId = isValidRequestId(incoming) ? incoming : generateRequestId();
+    const parentTrace = parseTraceparent(c.req.header(TRACEPARENT_HEADER));
+    const trace = createTraceContext(parentTrace, options);
     const startedAt = monotonicNow();
     c.set("requestId", requestId);
+    c.set("traceId", trace.traceId);
+    c.set("spanId", trace.spanId);
     c.set("requestStartedAtMs", startedAt);
     c.set("requestLogger", logger);
     c.header(REQUEST_ID_HEADER, requestId);
+    c.header(TRACEPARENT_HEADER, formatTraceparent(trace));
 
-    return runWithLogContext({ requestId }, async () => {
+    return runWithTraceContext(trace, () => runWithLogContext({
+      requestId,
+      traceId: trace.traceId,
+      spanId: trace.spanId,
+    }, async () => {
       logger.info("request_started", {
+        traceId: trace.traceId,
+        spanId: trace.spanId,
         method: c.req.method,
         route: c.req.path,
       });
@@ -85,6 +106,8 @@ export function createRequestContextMiddleware(
         const matchedRoute = routePath(c, -1);
         logger.info("request_finished", {
           requestId,
+          traceId: trace.traceId,
+          spanId: trace.spanId,
           method: c.req.method,
           route: matchedRoute && matchedRoute !== "*" ? matchedRoute : c.req.path,
           status: c.res.status,
@@ -93,6 +116,6 @@ export function createRequestContextMiddleware(
           ...correlation,
         });
       }
-    });
+    }));
   };
 }

@@ -54,6 +54,7 @@ import { env } from "../config/env.js";
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 import { isRepositoryPathSecurityError, removeRepositoryCheckout, validateRepositoryCheckout } from "../services/security/repositoryPaths.js";
 import { repositoryStore } from "../services/repository/store/runtimeRepositoryStore.js";
+import { currentTraceContext, formatTraceparent } from "../observability/tracing.js";
 
 type Variables = {
   requestId: string;
@@ -130,6 +131,7 @@ repositoriesRoute.post("/connect", async (c) => {
 
   await setRepositoryOwner(repoId, user.userId);
   const indexingJobStore = c.get("indexingJobStore");
+  const trace = currentTraceContext();
   const job = await indexingJobStore.createJob({
     repositoryId: repoId,
     ownerUserId: user.userId,
@@ -138,6 +140,7 @@ repositoriesRoute.post("/connect", async (c) => {
     repositoryUrl: parsed.data.repoUrl,
     branch: parsed.data.cloneOptions?.branch ?? null,
     createdByRequestId: c.get("requestId"),
+    ...(trace ? { createdByTraceparent: formatTraceparent(trace) } : {}),
   });
   await c.get("indexingProgressPublisher").publish(job);
   setRequestLogContext(c, { repositoryId: repoId, jobId: job.jobId });
