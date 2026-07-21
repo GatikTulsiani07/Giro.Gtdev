@@ -17,6 +17,8 @@ export interface RepositoryStoreCounts {
 }
 
 export interface RepositoryRecord extends RepositoryStoreCounts {
+  /** Internal persistence CAS version. Never exposed by API response mappers. */
+  persistenceVersion?: number;
   repositoryId: string;
   owner: string;
   repo: string;
@@ -89,7 +91,11 @@ export interface RepositoryStore {
   connectRepository(input: ConnectRepositoryInput): MaybePromise<RepositoryRecord>;
   getRepository(repositoryId: string): MaybePromise<RepositoryRecord | null>;
   listRepositories(): MaybePromise<RepositoryRecord[]>;
-  updateRepository(repositoryId: string, input: UpdateRepositoryInput): MaybePromise<RepositoryRecord | null>;
+  updateRepository(
+    repositoryId: string,
+    input: UpdateRepositoryInput,
+    expectedVersion?: number,
+  ): MaybePromise<RepositoryRecord | null>;
   deleteRepository(repositoryId: string): MaybePromise<boolean>;
   markIndexing(repositoryId: string): MaybePromise<RepositoryRecord | null>;
   markIndexed(repositoryId: string, input: MarkIndexedInput): MaybePromise<RepositoryRecord | null>;
@@ -97,5 +103,20 @@ export interface RepositoryStore {
   touchAccess(repositoryId: string): MaybePromise<RepositoryRecord | null>;
   repositoryExists(repositoryId: string): MaybePromise<boolean>;
   clear(): MaybePromise<void>;
+}
+
+export const REPOSITORY_CONCURRENCY_ERROR_CODE = "repository_concurrency_conflict";
+
+export class RepositoryConcurrencyError extends Error {
+  readonly code = REPOSITORY_CONCURRENCY_ERROR_CODE;
+  readonly repositoryId: string;
+  readonly expectedVersion: number;
+
+  constructor(repositoryId: string, expectedVersion: number) {
+    super("Repository was modified by another operation.");
+    this.name = "RepositoryConcurrencyError";
+    this.repositoryId = repositoryId;
+    this.expectedVersion = expectedVersion;
+  }
 }
 import type { MaybePromise } from "../../../lib/maybePromise.js";

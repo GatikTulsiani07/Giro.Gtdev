@@ -6,6 +6,7 @@ import { repositoryStore } from "./store/runtimeRepositoryStore.js";
 import type { RepositoryRecord } from "./store/repositoryStore.js";
 
 function key(owner: string, repo: string): string { return `${owner}/${repo}`; }
+function version(record: RepositoryRecord): number { return record.persistenceVersion ?? 1; }
 function metadata(record: RepositoryRecord): RepositoryIndexMetadata {
   return {
     owner: record.owner, repo: record.repo,
@@ -74,7 +75,7 @@ export function recordIndexingRetry(owner: string, repo: string): MaybePromise<v
   return flatMapMaybePromise(repositoryStore.getRepository(key(owner, repo)), (record) =>
     record ? mapMaybePromise(repositoryStore.updateRepository(record.repositoryId, {
       retryCount: record.retryCount + 1, lastRetryAt: new Date().toISOString(),
-    }), () => undefined) : undefined);
+    }, version(record)), () => undefined) : undefined);
 }
 export function clearIndexingFailure(owner: string, repo: string): void;
 export function clearIndexingFailure(owner: string, repo: string): MaybePromise<void> {
@@ -85,12 +86,20 @@ export function clearIndexingFailure(owner: string, repo: string): MaybePromise<
 export function markRepositoryStale(owner: string, repo: string): void;
 export function markRepositoryStale(owner: string, repo: string): MaybePromise<void> {
   return flatMapMaybePromise(repositoryStore.getRepository(key(owner, repo)), (record) =>
-    record?.status === "indexed" ? mapMaybePromise(repositoryStore.updateRepository(record.repositoryId, { status: "stale" }), () => undefined) : undefined);
+    record?.status === "indexed" ? mapMaybePromise(repositoryStore.updateRepository(
+      record.repositoryId,
+      { status: "stale" },
+      version(record),
+    ), () => undefined) : undefined);
 }
 export function clearRepositoryStale(owner: string, repo: string): void;
 export function clearRepositoryStale(owner: string, repo: string): MaybePromise<void> {
   return flatMapMaybePromise(repositoryStore.getRepository(key(owner, repo)), (record) =>
-    record?.status === "stale" ? mapMaybePromise(repositoryStore.updateRepository(record.repositoryId, { status: "indexed" }), () => undefined) : undefined);
+    record?.status === "stale" ? mapMaybePromise(repositoryStore.updateRepository(
+      record.repositoryId,
+      { status: "indexed" },
+      version(record),
+    ), () => undefined) : undefined);
 }
 export function touchRepositoryAccess(owner: string, repo: string): void;
 export function touchRepositoryAccess(owner: string, repo: string): MaybePromise<void> {
@@ -150,5 +159,5 @@ export function recordRepositoryLifecycleReport(owner: string, repo: string, rep
       lastLifecycleSeverity: report.changes.severity,
       lastReindexMode: report.plan.mode,
       lastReindexReason: report.plan.reason,
-    }), () => undefined));
+    }, version(record)), () => undefined));
 }

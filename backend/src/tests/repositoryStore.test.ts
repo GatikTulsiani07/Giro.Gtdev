@@ -80,7 +80,7 @@ test("list ordering is deterministic by owner then repo", () => {
   );
 });
 
-test("duplicate repository handling updates existing entry", () => {
+test("duplicate repository handling updates ownership through a versioned write", () => {
   const first = connect();
   const second = store.connectRepository({
     owner: "acme",
@@ -88,7 +88,7 @@ test("duplicate repository handling updates existing entry", () => {
     ownerUserId: "user-2",
   });
 
-  assert.equal(first.repositoryId, second.repositoryId);
+  assert.equal(second.persistenceVersion, (first.persistenceVersion ?? 1) + 1);
   assert.equal(store.listRepositories().length, 1);
   assert.equal(store.getRepository("acme/demo")?.ownerUserId, "user-2");
   assert.equal(store.getRepository("acme/demo")?.connectedAt, first.connectedAt);

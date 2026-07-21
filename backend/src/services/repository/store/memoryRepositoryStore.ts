@@ -1,11 +1,12 @@
-import type {
-  ConnectRepositoryInput,
-  MarkFailedInput,
-  MarkIndexedInput,
-  RepositoryRecord,
-  RepositoryStore,
-  RepositoryStoreCounts,
-  UpdateRepositoryInput,
+import {
+  RepositoryConcurrencyError,
+  type ConnectRepositoryInput,
+  type MarkFailedInput,
+  type MarkIndexedInput,
+  type RepositoryRecord,
+  type RepositoryStore,
+  type RepositoryStoreCounts,
+  type UpdateRepositoryInput,
 } from "./repositoryStore.js";
 
 const EMPTY_COUNTS: RepositoryStoreCounts = {
@@ -27,6 +28,9 @@ function now(): string {
 
 function cloneRecord(record: RepositoryRecord): RepositoryRecord {
   return {
+    ...(record.persistenceVersion !== undefined
+      ? { persistenceVersion: record.persistenceVersion }
+      : {}),
     repositoryId: record.repositoryId,
     owner: record.owner,
     repo: record.repo,
@@ -66,6 +70,7 @@ function freezeRecord(record: RepositoryRecord): RepositoryRecord {
 
 function createRecord(input: ConnectRepositoryInput, timestamp: string): RepositoryRecord {
   return {
+    persistenceVersion: 1,
     repositoryId: repositoryId(input.owner, input.repo),
     owner: input.owner,
     repo: input.repo,
@@ -109,13 +114,18 @@ export class MemoryRepositoryStore implements RepositoryStore {
     const timestamp = now();
     const existing = this.repositories.get(id);
 
-    const record: RepositoryRecord = existing
-      ? {
-          ...existing,
-          ownerUserId: input.ownerUserId ?? existing.ownerUserId,
-          updatedAt: timestamp,
-        }
-      : createRecord(input, timestamp);
+    if (existing) {
+      if (input.ownerUserId && input.ownerUserId !== existing.ownerUserId) {
+        return this.updateRepository(
+          id,
+          { ownerUserId: input.ownerUserId },
+          existing.persistenceVersion ?? 1,
+        )!;
+      }
+      return freezeRecord(existing);
+    }
+
+    const record = createRecord(input, timestamp);
 
     this.repositories.set(id, record);
     return freezeRecord(record);
@@ -135,13 +145,21 @@ export class MemoryRepositoryStore implements RepositoryStore {
   updateRepository(
     repositoryId: string,
     input: UpdateRepositoryInput,
+    expectedVersion?: number,
   ): RepositoryRecord | null {
     const existing = this.repositories.get(repositoryId);
     if (!existing) return null;
 
+    const currentVersion = existing.persistenceVersion ?? 1;
+    const requiredVersion = expectedVersion ?? currentVersion;
+    if (currentVersion !== requiredVersion) {
+      throw new RepositoryConcurrencyError(repositoryId, requiredVersion);
+    }
+
     const counts = input.counts ?? {};
     const updated: RepositoryRecord = {
       ...existing,
+      persistenceVersion: currentVersion + 1,
       ownerUserId: hasOwn(input, "ownerUserId")
         ? (input.ownerUserId ?? null)
         : existing.ownerUserId,
@@ -207,9 +225,10 @@ export class MemoryRepositoryStore implements RepositoryStore {
 
   markIndexing(repositoryId: string): RepositoryRecord | null {
     const existing = this.repositories.get(repositoryId);
+    if (!existing) return null;
     return this.updateRepository(repositoryId, {
-      status: existing?.indexedRevision ? "indexed" : "indexing",
-    });
+      status: existing.indexedRevision ? "indexed" : "indexing",
+    }, existing.persistenceVersion ?? 1);
   }
 
   markIndexed(
@@ -220,28 +239,21 @@ export class MemoryRepositoryStore implements RepositoryStore {
     if (!existing) return null;
 
     const timestamp = now();
-    const updated: RepositoryRecord = {
-      ...existing,
+    return this.updateRepository(repositoryId, {
       status: "indexed",
-      updatedAt: timestamp,
       indexedAt: timestamp,
       firstIndexedAt: existing.firstIndexedAt ?? timestamp,
       lastIndexedAt: timestamp,
-      chunkCount: input.counts.chunkCount,
-      fileCount: input.counts.fileCount,
-      symbolCount: input.counts.symbolCount,
-      graphNodeCount: input.counts.graphNodeCount,
-      graphEdgeCount: input.counts.graphEdgeCount,
-      summaryAvailable: input.counts.summaryAvailable,
       totalIndexedFiles: input.counts.fileCount,
-      lastIndexMode: input.indexMode ?? existing.lastIndexMode,
-      lastChangedFileCount:
-        input.changedFileCount ?? existing.lastChangedFileCount,
-      indexedRevision: input.indexedRevision ?? existing.indexedRevision,
-    };
-
-    this.repositories.set(repositoryId, updated);
-    return freezeRecord(updated);
+      ...(input.indexMode !== undefined ? { lastIndexMode: input.indexMode } : {}),
+      ...(input.changedFileCount !== undefined
+        ? { lastChangedFileCount: input.changedFileCount }
+        : {}),
+      ...(input.indexedRevision !== undefined
+        ? { indexedRevision: input.indexedRevision }
+        : {}),
+      counts: input.counts,
+    }, existing.persistenceVersion ?? 1);
   }
 
   markFailed(
@@ -252,34 +264,28 @@ export class MemoryRepositoryStore implements RepositoryStore {
     if (!existing) return null;
 
     const timestamp = now();
-    const updated: RepositoryRecord = {
-      ...existing,
+    return this.updateRepository(repositoryId, {
       status: existing.indexedRevision ? "indexed" : "failed",
-      updatedAt: timestamp,
       lastFailureAt: timestamp,
-      failureReason: input.reason ?? existing.failureReason,
-      failedFileCount: input.failedFileCount ?? existing.failedFileCount,
-      lastSuccessfulFile:
-        input.lastSuccessfulFile ?? existing.lastSuccessfulFile,
-    };
-
-    this.repositories.set(repositoryId, updated);
-    return freezeRecord(updated);
+      ...(input.reason !== undefined ? { failureReason: input.reason } : {}),
+      ...(input.failedFileCount !== undefined
+        ? { failedFileCount: input.failedFileCount }
+        : {}),
+      ...(input.lastSuccessfulFile !== undefined
+        ? { lastSuccessfulFile: input.lastSuccessfulFile }
+        : {}),
+    }, existing.persistenceVersion ?? 1);
   }
 
   touchAccess(repositoryId: string): RepositoryRecord | null {
     const existing = this.repositories.get(repositoryId);
     if (!existing) return null;
 
-    const timestamp = now();
-    const updated: RepositoryRecord = {
-      ...existing,
-      updatedAt: timestamp,
-      lastAccessedAt: timestamp,
-    };
-
-    this.repositories.set(repositoryId, updated);
-    return freezeRecord(updated);
+    return this.updateRepository(
+      repositoryId,
+      { lastAccessedAt: now() },
+      existing.persistenceVersion ?? 1,
+    );
   }
 
   repositoryExists(repositoryId: string): boolean {
