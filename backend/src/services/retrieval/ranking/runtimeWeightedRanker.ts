@@ -12,6 +12,7 @@ import type {
   WeightedRankingCandidate,
   WeightedRankingResult,
 } from "./rankingTypes.js";
+import type { PublishedRepositoryArtifacts } from "../../repository/artifacts/repositoryArtifactStore.js";
 
 export const runtimeRankingWeights: Readonly<RankingWeights> = Object.freeze({
   semantic: env.RANK_SEMANTIC_WEIGHT,
@@ -37,6 +38,7 @@ export interface RuntimeWeightedRankingInput {
   graphNodes: ReadonlyMap<string, number> | null;
   expandedScoreMultiplier: number;
   limit: number;
+  artifacts?: PublishedRepositoryArtifacts | null;
 }
 
 export interface RuntimeWeightedRankingOptions {
@@ -62,12 +64,13 @@ function versionMatches(metadataVersion: string, retrievalVersion: string): bool
 function metadataImportance(
   repositoryId: string,
   repositoryVersion: string,
+  artifacts?: PublishedRepositoryArtifacts | null,
 ) {
-  const storedSummary = getRepositorySummary(repositoryId);
+  const storedSummary = artifacts?.summary ?? getRepositorySummary(repositoryId);
   const summary = storedSummary && versionMatches(storedSummary.repositoryVersion, repositoryVersion)
     ? storedSummary
     : null;
-  const expansionMetadata = getRuntimeQueryExpansionMetadata(repositoryId, repositoryVersion);
+  const expansionMetadata = getRuntimeQueryExpansionMetadata(repositoryId, repositoryVersion, artifacts);
   const summaryPaths = new Set<string>();
   const summaryNames = new Set<string>();
   const entrypoints = new Set<string>();
@@ -147,7 +150,7 @@ function toWeightedCandidates(
   input: RuntimeWeightedRankingInput,
   configuredLineGap: number,
 ): WeightedRankingCandidate[] {
-  const metadata = metadataImportance(input.repositoryId, input.repositoryVersion);
+  const metadata = metadataImportance(input.repositoryId, input.repositoryVersion, input.artifacts);
   const adjacent = adjacentLocationKeys(input.candidates, configuredLineGap);
   return input.candidates.map((candidate) => {
     const result = candidate.result;

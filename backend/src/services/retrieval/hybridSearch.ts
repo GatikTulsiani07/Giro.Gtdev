@@ -2,7 +2,8 @@
 
 import { logger } from "../../lib/logger.js";
 import { semanticSearch } from "../embeddings/search.js";
-import { getRepositorySymbolGraph } from "../repositoryGraph/runtimeRepositoryGraph.js";
+import { runtimeRepositoryArtifactStore } from "../repository/artifacts/repositoryArtifactStore.js";
+import type { PublishedRepositoryArtifacts } from "../repository/artifacts/repositoryArtifactStore.js";
 import { keywordSearch } from "./keywordSearch.js";
 import { symbolSearch } from "./symbolSearch.js";
 import type {
@@ -47,6 +48,7 @@ export interface ExecuteHybridSearchOptions {
   signal?: AbortSignal;
   repositoryVersion?: string;
   queryExpansion?: QueryExpansionResult;
+  artifacts?: PublishedRepositoryArtifacts | null;
 }
 
 export function applyQueryExpansionPenalty(
@@ -73,10 +75,14 @@ export async function executeHybridSearch(
   const repository = `${owner}/${repo}`;
   const effectiveLimit = resolveHybridSearchLimit(request.limit);
   const fetchLimit = resolveHybridFetchLimit(request.limit);
+  const artifacts = options.artifacts ?? (options.repositoryVersion
+    ? await runtimeRepositoryArtifactStore.load(repository, options.repositoryVersion)
+    : null);
   const expansion = options.queryExpansion ?? expandRuntimeQuery({
     repositoryId: repository,
     repositoryVersion: options.repositoryVersion ?? "unversioned",
     query,
+    artifacts,
   });
   const expandedQuery = expansion.expandedQuery;
 
@@ -170,7 +176,7 @@ export async function executeHybridSearch(
   let graphNodes: Map<string, number> | null = null;
 
   try {
-    const graph = getRepositorySymbolGraph(repository);
+    const graph = artifacts?.graph ?? null;
     if (graph && graph.repositoryVersion === options.repositoryVersion) {
       graphNodes = new Map(graph.nodes.map((node) => [node.file, 1]));
     }
@@ -205,6 +211,7 @@ export async function executeHybridSearch(
     graphNodes,
     expandedScoreMultiplier: expansion.expandedScoreMultiplier,
     limit: combined.length,
+    artifacts,
   });
   const rankedPool = ranking.ranked;
   const primaryChunkCount = Math.min(effectiveLimit, rankedPool.length);
@@ -291,10 +298,16 @@ export async function hybridSearch(
   const cache = options.cache ?? runtimeRetrievalCache;
   const repositoryId = `${request.owner}/${request.repo}`;
   const repositoryVersion = await cache.repositoryVersion(repositoryId, options.signal);
+  // Injected executors are deterministic test seams and do not consume runtime
+  // repository artifacts. Production retrieval always resolves the revision.
+  const artifacts = options.execute
+    ? null
+    : await runtimeRepositoryArtifactStore.load(repositoryId, repositoryVersion);
   const expansion = expandRuntimeQuery({
     repositoryId,
     repositoryVersion,
     query: request.query,
+    artifacts,
   });
   let retrievalLoaded = false;
   const cached = await cache.getOrLoad(
@@ -330,6 +343,7 @@ export async function hybridSearch(
         signal,
         repositoryVersion: context.repositoryVersion,
         queryExpansion: currentExpansion,
+        artifacts: context.repositoryVersion === repositoryVersion ? artifacts : null,
       });
     },
     { signal: options.signal },

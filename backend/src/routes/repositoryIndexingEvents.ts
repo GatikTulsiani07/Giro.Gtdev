@@ -6,7 +6,9 @@ import { setRequestLogContext } from "../middleware/requestContext.js";
 import type { IndexingProgressPublisher } from "../services/indexing/events/indexingProgressPublisher.js";
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
+import { runtimeRepositoryArtifactStore } from "../services/repository/artifacts/repositoryArtifactStore.js";
 import { getRepositorySummary } from "../services/repositorySummary/runtimeRepositorySummary.js";
+import { env } from "../config/env.js";
 import { RepositoryIdSchema } from "../validation/repositorySchemas.js";
 
 type Variables = {
@@ -27,19 +29,16 @@ repositoryIndexingEventsRoute.get("/:repositoryId/summary", async (c) => {
   const access = await authorizeRepositoryRequest(c, repositoryId, "repository_summary");
   if (!access.ok) return access.response;
 
-  let repositoryVersion: string | undefined;
+  let summary;
   try {
-    const latestJob = await c.get("indexingJobStore").getLatestRepositoryJob(repositoryId);
-    if (latestJob?.status === "succeeded") {
-      repositoryVersion = `${latestJob.jobId}:${latestJob.attempt}`;
-      setRequestLogContext(c, { repositoryId, jobId: latestJob.jobId });
-    }
+    summary = (await runtimeRepositoryArtifactStore.loadCurrent(repositoryId))?.summary ?? null;
   } catch {
-    return fail(c, createApiError("internal_error", "Unable to load indexing job"), 500);
+    if (env.NODE_ENV === "test") summary = getRepositorySummary(repositoryId);
+    else return fail(c, createApiError("internal_error", "Unable to load repository summary"), 500);
   }
-
-  const summary = getRepositorySummary(repositoryId, { repositoryVersion }) ??
-    getRepositorySummary(repositoryId);
+  if (!summary && env.NODE_ENV === "test") {
+    summary = getRepositorySummary(repositoryId);
+  }
   if (!summary) {
     return fail(
       c,

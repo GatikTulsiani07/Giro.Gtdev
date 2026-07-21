@@ -1,7 +1,7 @@
 // Symbol-aware retrieval using extracted repository symbols. Read-only.
 
 import { logger } from "../../lib/logger.js";
-import { getRepositorySymbolGraph } from "../repositoryGraph/runtimeRepositoryGraph.js";
+import { runtimeRepositoryArtifactStore } from "../repository/artifacts/repositoryArtifactStore.js";
 import type { RepositoryGraphNode } from "../repositoryGraph/graphTypes.js";
 import type { RetrievalResult } from "./types.js";
 
@@ -39,8 +39,9 @@ export async function symbolSearch(
   options: { repositoryVersion?: string } = {},
 ): Promise<RetrievalResult[]> {
   const repository = `${owner}/${repo}`;
-  const graph = getRepositorySymbolGraph(repository);
-  if (!graph || !options.repositoryVersion || graph.repositoryVersion !== options.repositoryVersion) return [];
+  if (!options.repositoryVersion) return [];
+  const graph = (await runtimeRepositoryArtifactStore.load(repository, options.repositoryVersion))?.graph;
+  if (!graph || graph.repositoryVersion !== options.repositoryVersion) return [];
 
   const tokens = tokenizeQuery(query);
   if (tokens.length === 0) return [];

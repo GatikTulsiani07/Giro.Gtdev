@@ -10,6 +10,7 @@ import type {
   QueryExpansionMetadata,
   QueryExpansionResult,
 } from "./queryExpansionTypes.js";
+import type { PublishedRepositoryArtifacts } from "../../repository/artifacts/repositoryArtifactStore.js";
 
 const runtimeQueryExpansionService = new QueryExpansionService({
   metrics: runtimeMetrics,
@@ -39,20 +40,21 @@ function matchesRetrievalVersion(
 export function getRuntimeQueryExpansionMetadata(
   repositoryId: string,
   repositoryVersion: string,
+  artifacts?: PublishedRepositoryArtifacts | null,
 ): QueryExpansionMetadata {
-  const storedSummary = getRepositorySummary(repositoryId);
+  const storedSummary = artifacts?.summary ?? getRepositorySummary(repositoryId);
   const summary = storedSummary &&
       matchesRetrievalVersion(storedSummary.repositoryVersion, repositoryVersion)
     ? storedSummary
     : null;
-  const symbolGraph = getRepositorySymbolGraph(repositoryId);
+  const symbolGraph = artifacts?.graph ?? getRepositorySymbolGraph(repositoryId);
   const currentGraph = symbolGraph &&
       matchesRetrievalVersion(symbolGraph.repositoryVersion, repositoryVersion)
     ? symbolGraph
     : null;
   const hasCurrentMetadata = Boolean(summary || currentGraph) || repositoryVersion === "unversioned";
-  const fileMaps = hasCurrentMetadata ? getFileSymbolMaps(repositoryId) : [];
-  const symbolRecords = hasCurrentMetadata ? getRepositorySymbols(repositoryId) : [];
+  const fileMaps = hasCurrentMetadata ? (artifacts?.graphSource ?? getFileSymbolMaps(repositoryId)) : [];
+  const symbolRecords = hasCurrentMetadata ? (artifacts?.symbolIndex ?? getRepositorySymbols(repositoryId)) : [];
   const exportedByLocation = new Set(
     fileMaps.flatMap((map) => map.symbols
       .filter((symbol) => symbol.exported)
@@ -115,10 +117,11 @@ export function expandRuntimeQuery(input: {
   repositoryId: string;
   repositoryVersion: string;
   query: string;
+  artifacts?: PublishedRepositoryArtifacts | null;
 }): QueryExpansionResult {
   return runtimeQueryExpansionService.expand({
     ...input,
-    metadata: getRuntimeQueryExpansionMetadata(input.repositoryId, input.repositoryVersion),
+    metadata: getRuntimeQueryExpansionMetadata(input.repositoryId, input.repositoryVersion, input.artifacts),
     maxTerms: env.QUERY_EXPANSION_MAX_TERMS,
     expandedScoreMultiplier: env.QUERY_EXPANSION_SCORE_PENALTY,
   });

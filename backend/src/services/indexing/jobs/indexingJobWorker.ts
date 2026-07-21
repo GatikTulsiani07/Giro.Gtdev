@@ -5,20 +5,14 @@ import { analyzeRepository } from "../../repository/analyzer.js";
 import { extractRepoSymbols } from "../../graph/symbolExtractor.js";
 import { buildDependencyGraph, computeStats, detectInsights } from "../../graph/graphBuilder.js";
 import { buildRepositorySymbolGraph } from "../../repositoryGraph/graphBuilder.js";
-import { saveRepositorySymbolGraph } from "../../repositoryGraph/runtimeRepositoryGraph.js";
 import { buildRepositoryArchitectureSummary } from "../../repositorySummary/summaryBuilder.js";
-import { saveRepositorySummary } from "../../repositorySummary/runtimeRepositorySummary.js";
-import {
-  getRepositoryFileSnapshot,
-  saveRepositoryFileSnapshot,
-} from "../../repository/fileSnapshotStore.js";
 import { buildRepositoryIndexingPlan } from "../../repository/indexingPlan.js";
 import { executeIndexingPlan } from "../../repository/indexingExecutor.js";
+import { symbolRecordsFromFileMaps } from "../../repository/symbolIndexStore.js";
 import {
-  saveRepositorySymbols,
-  symbolRecordsFromFileMaps,
-} from "../../repository/symbolIndexStore.js";
-import { replaceRepositoryGraphSource } from "../../repository/graphSourceStore.js";
+  runtimeRepositoryArtifactStore,
+  type RepositoryArtifactStore,
+} from "../../repository/artifacts/repositoryArtifactStore.js";
 import {
   setRepositoryIndexing,
   setRepositoryIndexed,
@@ -79,6 +73,7 @@ export interface IndexingPipelineInput {
   retryMetrics?: { incrementRetry(category: RetryMetricCategory, result: RetryMetricResult, attempt: number): void };
   circuitBreakers?: DependencyCircuitBreakers;
   snapshotStore?: RepositorySnapshotStore;
+  artifactStore?: RepositoryArtifactStore;
 }
 
 export interface IndexingPipelineResult {
@@ -337,6 +332,7 @@ export async function executeRepositoryIndexingPipeline(
   const repo = job.repositoryName;
   const repoId = job.repositoryId;
   const snapshotStore = input.snapshotStore ?? runtimeRepositorySnapshotStore;
+  const artifactStore = input.artifactStore ?? runtimeRepositoryArtifactStore;
 
   await reportStage({ stage: "clone", progress: 10 });
   const cloneDeadline = createDeadline(env.REPOSITORY_CLONE_TIMEOUT_MS, { parentSignal: input.signal });
@@ -384,6 +380,7 @@ export async function executeRepositoryIndexingPipeline(
       revision,
       identity,
       snapshotStore,
+      artifactStore,
     });
   } catch (error) {
     try {
@@ -404,15 +401,16 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   revision: string;
   identity: Parameters<RepositorySnapshotStore["begin"]>[0];
   snapshotStore: RepositorySnapshotStore;
+  artifactStore: RepositoryArtifactStore;
 }): Promise<IndexingPipelineResult> {
-  const { job, reportStage, clonePath, revision, identity, snapshotStore } = input;
+  const { job, reportStage, clonePath, revision, identity, snapshotStore, artifactStore } = input;
   const owner = job.repositoryOwner;
   const repo = job.repositoryName;
   const repoId = job.repositoryId;
 
   await reportStage({ stage: "scan", progress: 25 });
   const stats = await scanRepo(clonePath);
-  const previousSnapshot = getRepositoryFileSnapshot(repoId);
+  const previousSnapshot = (await artifactStore.loadCurrent(repoId))?.fileSnapshot ?? null;
   const indexingPlan = buildRepositoryIndexingPlan({
     previousSnapshot,
     currentFiles: stats.files,
@@ -492,13 +490,32 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
       indexedRevision: repositoryVersion,
     };
 
+  const snapshotTimestamp = new Date().toISOString();
+  await artifactStore.stage(identity, {
+    graph: symbolGraph,
+    summary,
+    graphSource: symbolMaps,
+    symbolIndex: symbolRecordsFromFileMaps(symbolMaps),
+    fileSnapshot: {
+      updatedAt: snapshotTimestamp,
+      files: stats.files.map((file) => ({
+        filePath: file.filePath,
+        size: file.size,
+        language: file.language,
+        lastSeenAt: snapshotTimestamp,
+      })),
+    },
+  });
   await snapshotStore.publish({ ...identity, counts, indexOptions });
-
-  saveRepositorySymbolGraph(symbolGraph);
-  saveRepositorySummary(summary);
-  replaceRepositoryGraphSource(repoId, symbolMaps);
-  saveRepositorySymbols(repoId, symbolRecordsFromFileMaps(symbolMaps));
-  saveRepositoryFileSnapshot(repoId, stats.files);
+  try {
+    await artifactStore.collect(repoId);
+  } catch (error: unknown) {
+    logger.warn("repository_artifact_gc_failed", {
+      repositoryId: repoId,
+      revision,
+      message: error instanceof Error ? error.message : "unknown",
+    });
+  }
   runtimeMetrics.setSymbolGraphSize(symbolGraph.nodes.length, symbolGraph.edges.length);
 
   return {

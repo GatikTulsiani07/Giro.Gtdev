@@ -37,6 +37,8 @@ import {
 } from "../retrieval/confidence/retrievalConfidence.js";
 import { evaluateRuntimeRetrievalConfidence } from "../retrieval/confidence/runtimeRetrievalConfidence.js";
 import type { AuthorizedRepositoryContext } from "../repository/ownershipGuard.js";
+import { runtimeRepositoryArtifactStore } from "../repository/artifacts/repositoryArtifactStore.js";
+import type { RepositorySummary } from "../repositorySummary/summaryTypes.js";
 
 const TRIM_PREFIX_CHARS = 500;
 const TRIM_MARKER = "\n/* … trimmed … */";
@@ -155,8 +157,9 @@ function dedupe(chunks: EnrichedContextChunk[]): {
 export function buildRepositorySummaryContextChunk(
   repository: string,
   repositoryVersion: string,
+  durableSummary?: RepositorySummary | null,
 ): EnrichedContextChunk | null {
-  const summary = getRepositorySummary(repository, { repositoryVersion }) ??
+  const summary = durableSummary ?? getRepositorySummary(repository, { repositoryVersion }) ??
     getRepositorySummary(repository);
   if (!summary) return null;
 
@@ -218,7 +221,12 @@ export async function assembleEnrichedContext(
   let hybridResults: Awaited<ReturnType<typeof hybridSearch>>["results"] = [];
   let hybridCitations: readonly Citation[] = [];
   let repositoryVersion = await cache.repositoryVersion(repository, options.signal);
-  const summaryChunk = buildRepositorySummaryContextChunk(repository, repositoryVersion);
+  const durableArtifacts = await runtimeRepositoryArtifactStore.load(repository, repositoryVersion);
+  const summaryChunk = buildRepositorySummaryContextChunk(
+    repository,
+    repositoryVersion,
+    durableArtifacts?.summary,
+  );
   try {
     const res = await hybridSearch({
       query: request.query,
