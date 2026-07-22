@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { env } from "../../config/env.js";
+import { runtimeMetrics } from "../../observability/metrics.js";
 import {
   checkRepositoryStorageAccess,
   repositoryStorageRoot,
@@ -35,6 +36,10 @@ export function createRuntimeProductionReadinessCheck(options: {
     ),
     isShuttingDown: options.isShuttingDown ?? (() => false),
     workerEnabled: options.workerEnabled ?? env.INDEXING_WORKER_ENABLED,
-    checkIndexingWorker: () => checkIndexingWorkerReadiness(client),
+    checkIndexingWorker: () => checkIndexingWorkerReadiness(client, {
+      stallTimeoutMs: env.INDEXING_WORKER_STALL_TIMEOUT_MS,
+      maxConsecutiveFailures: env.INDEXING_WORKER_MAX_CONSECUTIVE_DATABASE_FAILURES,
+      setStalled: (stalled) => runtimeMetrics.setWorkerStalled(stalled),
+    }),
   }, options.timeoutMs);
 }

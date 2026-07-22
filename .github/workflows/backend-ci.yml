@@ -1,0 +1,93 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres-ci-only
+          POSTGRES_DB: giro_test_admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d giro_test_admin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      NODE_ENV: test
+      PORT: "8000"
+      CORS_ORIGINS: https://ci.example.invalid
+      LOG_LEVEL: error
+      JWT_SECRET: ci-only-jwt-secret-not-for-production
+      SUPABASE_URL: https://ci-project.example.invalid
+      SUPABASE_SERVICE_ROLE_KEY: ci-only-fake-service-role-key
+      OPENAI_API_KEY: sk-ci-only-fake-openai-key
+      EMBEDDINGS_PROVIDER: mock
+      MODEL_NAME: ci-fake-model
+      INDEXING_WORKER_ID: ci-worker
+      SHUTDOWN_TIMEOUT_MS: "10000"
+      GIRO_POSTGRES_TEST_URL: postgresql://postgres:postgres-ci-only@127.0.0.1:5432/giro_test_admin
+      GIRO_POSTGRES_INTEGRATION_REQUIRED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for PostgreSQL and create isolated test prerequisites
+        run: |
+          until pg_isready -h 127.0.0.1 -U postgres -d giro_test_admin; do sleep 1; done
+          PGPASSWORD=postgres-ci-only psql -h 127.0.0.1 -U postgres -d giro_test_admin -v ON_ERROR_STOP=1 <<'SQL'
+          do $$ begin create role anon; exception when duplicate_object then null; end $$;
+          do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
+          do $$ begin create role service_role; exception when duplicate_object then null; end $$;
+          SQL
+
+      - name: Run PostgreSQL migrations and concurrency tests
+        run: pnpm test:postgres
+
+      - name: Verify complete migration chain
+        run: pnpm verify:migrations
+
+      - name: Run required production validation
+        run: pnpm validate:production

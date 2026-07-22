@@ -60,7 +60,8 @@ pnpm indexing:work-once     # one job from compiled JavaScript
 pnpm typecheck  # tsc --noEmit
 pnpm test:postgres          # disposable real-Postgres integration suite
 pnpm verify:migrations      # apply and re-verify the complete migration chain
-pnpm validate:production    # build, typecheck, unit, Postgres, and migration checks
+pnpm validate:local         # full local checks; PostgreSQL may explicitly skip
+pnpm validate:production    # required PostgreSQL, migrations, build, types, and tests
 ```
 
 ## Continuous indexing worker
@@ -93,7 +94,23 @@ production, run `pnpm build`, install production dependencies, and supervise
 `pnpm indexing:worker` (or `pnpm start:worker`). Both production commands execute
 only `dist/commands/runIndexingWorker.js`; `tsx` is not a runtime dependency. Worker
 health is written to the service-role-only `indexing_workers` table; it includes
-last poll, active job, last completion, sanitized last error, and shutdown state.
+successful poll/claim/recovery/lease-heartbeat timestamps, consecutive database
+failures, loop state, active job, last completion, sanitized last error, and
+shutdown state. Startup calls the service-role-only database contract validator;
+the worker exits before polling if the expected migration, RPC signatures and
+returns, grants, tables, indexes, publication functions, or repository CAS
+trigger differ from the deployed contract.
+
+Functional readiness is controlled by
+`INDEXING_WORKER_MAX_CONSECUTIVE_DATABASE_FAILURES` (default `3`) and
+`INDEXING_WORKER_STALL_TIMEOUT_MS` (default `60000`). A worker becomes unready
+after repeated poll/database failures, immediately after a lease heartbeat or
+fence failure, while publication dependencies fail, or when its loop timestamps
+become stale. A successful poll/claim clears the consecutive failure state and
+restores readiness. `INDEXING_WORKER_ENABLED=true` makes this durable functional
+state a required API `/ready` dependency. `/health` remains a liveness-oriented
+probe: worker failure is optional there and produces degradation rather than
+changing the existing critical API/Supabase health semantics.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -123,12 +140,24 @@ pnpm test:postgres
 pnpm verify:migrations
 ```
 
-When the URL is absent locally, both commands exit successfully with an explicit
-skip reason. CI that requires the database boundary must also set
-`GIRO_POSTGRES_INTEGRATION_REQUIRED=1`; a missing URL, unreachable server,
-missing role, missing extension, migration failure, or cleanup failure then
-fails the job. `pnpm validate:production` runs the complete production
-validation sequence.
+When the URL is absent locally, `test:postgres`, `verify:migrations`, and
+`validate:local` exit successfully with an explicit skip reason. In contrast,
+`validate:production` requires `GIRO_POSTGRES_TEST_URL`, forces
+`GIRO_POSTGRES_INTEGRATION_REQUIRED=1` for both database commands, and fails on
+any skip, unreachable server, missing role/extension, migration failure, or
+cleanup failure. The checked-in backend CI uses a disposable `pgvector/pgvector`
+PostgreSQL 16 service with CI-only credentials, creates the `anon`,
+`authenticated`, and `service_role` test roles, waits for readiness, and lets
+the harness create uniquely named isolated databases. It runs the full migration
+chain, concurrency suite, migration verification, and required production
+validation; no production database credentials are used.
+
+Required worker production environment variables are `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `JWT_SECRET`, and a stable unique
+`INDEXING_WORKER_ID`. Set `INDEXING_WORKER_ENABLED=true` on API replicas where
+worker availability is required. Production validation additionally requires a
+non-production `GIRO_POSTGRES_TEST_URL`; remote test hosts require the explicit
+`GIRO_POSTGRES_ALLOW_REMOTE_TEST_HOST=1` safety override.
 
 ## Endpoints
 

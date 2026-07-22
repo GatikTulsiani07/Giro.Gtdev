@@ -69,6 +69,7 @@ export function createHealthRoute(
       timestamp: now().toISOString(),
       checks: readiness.checks,
     };
+    metrics?.setReadiness(readiness.status === "ready");
     return ok(c, contract, readiness.status === "ready" ? 200 : 503);
   });
 

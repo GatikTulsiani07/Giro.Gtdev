@@ -24,7 +24,8 @@
     "test:ci": "pnpm test:node && pnpm test:vitest",
     "test:postgres": "node --test tests/postgres/*.test.mjs",
     "verify:migrations": "node scripts/verify-postgres-migrations.mjs",
-    "validate:production": "pnpm build && pnpm typecheck && pnpm test && pnpm test:postgres && pnpm verify:migrations"
+    "validate:local": "pnpm build && pnpm typecheck && pnpm test && pnpm test:postgres && pnpm verify:migrations",
+    "validate:production": "node scripts/require-postgres-validation.mjs && GIRO_POSTGRES_INTEGRATION_REQUIRED=1 pnpm test:postgres && GIRO_POSTGRES_INTEGRATION_REQUIRED=1 pnpm verify:migrations && pnpm build && pnpm typecheck && pnpm test"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
