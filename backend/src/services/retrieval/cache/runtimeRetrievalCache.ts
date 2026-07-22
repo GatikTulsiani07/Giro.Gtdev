@@ -11,9 +11,9 @@ export const runtimeRetrievalCache = new RetrievalCache({
   logger,
   versionProvider: async (repositoryId) => {
     const repository = await repositoryStore.getRepository(repositoryId);
-    if (!repository?.indexedRevision) {
+    if (!repository?.currentRevision) {
       throw new Error("Repository has no published revision.");
     }
-    return repository.indexedRevision;
+    return repository.currentRevision;
   },
 });

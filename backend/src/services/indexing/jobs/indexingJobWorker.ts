@@ -47,6 +47,11 @@ import {
   type RepositorySnapshotStore,
 } from "../snapshots/repositorySnapshotStore.js";
 import type { RepositoryRecord, RepositoryStore } from "../../repository/store/repositoryStore.js";
+import {
+  collectRepositoryCheckouts,
+  refreshPreviousCheckoutReadLease,
+  sealRepositoryCheckout,
+} from "../../repository/revisionCheckouts.js";
 import { repositoryStore as runtimeRepositoryStore } from "../../repository/store/runtimeRepositoryStore.js";
 import { normalizeGitHubRepositoryReference, normalizeRepositoryId } from "../../security/repositoryIdentity.js";
 import type { TrustedRepositoryCheckoutPath } from "../../security/repositoryPaths.js";
@@ -506,11 +511,30 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
       })),
     },
   });
+  await sealRepositoryCheckout(clonePath);
   await snapshotStore.publish({ ...identity, counts, indexOptions });
+  try {
+    await refreshPreviousCheckoutReadLease(repoId);
+  } catch (error: unknown) {
+    logger.warn("repository_checkout_read_lease_refresh_failed", {
+      repositoryId: repoId,
+      revision,
+      message: error instanceof Error ? error.message : "unknown",
+    });
+  }
   try {
     await artifactStore.collect(repoId);
   } catch (error: unknown) {
     logger.warn("repository_artifact_gc_failed", {
+      repositoryId: repoId,
+      revision,
+      message: error instanceof Error ? error.message : "unknown",
+    });
+  }
+  try {
+    await collectRepositoryCheckouts(repoId);
+  } catch (error: unknown) {
+    logger.warn("repository_checkout_gc_failed", {
       repositoryId: repoId,
       revision,
       message: error instanceof Error ? error.message : "unknown",

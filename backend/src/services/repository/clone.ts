@@ -15,6 +15,7 @@ import type { CircuitBreaker } from "../../runtime/circuitBreaker.js";
 import { runtimeDependencyCircuitBreakers } from "../../runtime/dependencyCircuitBreakers.js";
 import {
   ensureRepositoryStorageRoot,
+  ensureRepositoryRevisionRoot,
   removeRepositoryCheckout,
   repositoryCheckoutPath,
   resolveRepositoryPath,
@@ -25,6 +26,7 @@ import { normalizeRepositoryParts } from "../security/repositoryIdentity.js";
 import { repositoryStorageRoot } from "../../config/repositoryStorage.js";
 
 export type CloneExecutor = (repoUrl: string, clonePath: string, timeoutMs: number) => Promise<void>;
+export type RevisionResolver = (repoUrl: string, branch: string | null, timeoutMs: number) => Promise<string>;
 export interface SnapshotCheckoutResult {
   commitSha: string;
   branch: string | null;
@@ -38,6 +40,16 @@ export type SnapshotCheckoutExecutor = (input: {
 
 const defaultCloneExecutor: CloneExecutor = async (repoUrl, clonePath, timeoutMs) => {
   await simpleGit({ timeout: { block: timeoutMs } }).clone(repoUrl, clonePath, ["--depth", "1"]);
+};
+
+const defaultRevisionResolver: RevisionResolver = async (repoUrl, branch, timeoutMs) => {
+  const output = await simpleGit({ timeout: { block: timeoutMs } }).listRemote([
+    repoUrl,
+    branch ? `refs/heads/${branch}` : "HEAD",
+  ]);
+  const revision = output.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("Repository revision could not be resolved.");
+  return revision;
 };
 
 const defaultSnapshotCheckoutExecutor: SnapshotCheckoutExecutor = async (input) => {
@@ -81,8 +93,8 @@ const defaultSnapshotCheckoutExecutor: SnapshotCheckoutExecutor = async (input) 
   return { commitSha: revision, branch: resolvedBranch };
 };
 
-export function repoClonePath(owner: string, repo: string): TrustedRepositoryCheckoutPath {
-  return repositoryCheckoutPath(normalizeRepositoryParts(owner, repo).repositoryId);
+export function repoClonePath(owner: string, repo: string, revision?: string): TrustedRepositoryCheckoutPath {
+  return repositoryCheckoutPath(normalizeRepositoryParts(owner, repo).repositoryId, revision);
 }
 
 export async function validateGitWorkingDirectory(
@@ -90,7 +102,13 @@ export async function validateGitWorkingDirectory(
   timeoutMs = env.REPOSITORY_CLONE_TIMEOUT_MS,
   storageRoot = repositoryStorageRoot,
 ): Promise<TrustedRepositoryCheckoutPath> {
-  if (path.dirname(checkoutPath) !== storageRoot || !/^repo-[0-9a-f]{64}$/.test(path.basename(checkoutPath))) {
+  const checkoutParent = path.dirname(checkoutPath);
+  const repositoryDirectory = path.dirname(checkoutParent);
+  const isLegacy = checkoutParent === storageRoot && /^repo-[0-9a-f]{64}$/.test(path.basename(checkoutPath));
+  const isRevision = repositoryDirectory === storageRoot &&
+    /^repo-[0-9a-f]{64}$/.test(path.basename(checkoutParent)) &&
+    /^[0-9a-f]{40}$/.test(path.basename(checkoutPath));
+  if (!isLegacy && !isRevision) {
     throw new Error("Git working directory is not an authorized checkout.");
   }
   // Recover the trusted type only after runtime checkout and symlink validation.
@@ -156,6 +174,7 @@ export async function cloneRepo(
     circuitBreaker?: CircuitBreaker;
     branch?: string | null;
     checkoutSnapshot?: SnapshotCheckoutExecutor;
+    resolveRevision?: RevisionResolver;
   } = {},
 ): Promise<{
   clonePath: TrustedRepositoryCheckoutPath;
@@ -163,21 +182,51 @@ export async function cloneRepo(
   commitSha: string;
   branch: string | null;
 }> {
-  const clonePath = repoClonePath(owner, repo);
   const deadline = options.deadline ?? createDeadline(env.REPOSITORY_CLONE_TIMEOUT_MS);
   const ownsDeadline = options.deadline === undefined;
   try {
     return await (options.circuitBreaker ?? runtimeDependencyCircuitBreakers.clone).execute(
       async () => {
         await ensureRepositoryStorageRoot();
+        const repoUrl = `https://github.com/${owner}/${repo}.git`;
+        // Test adapters predating revision directories can still exercise retry behavior;
+        // production always resolves the immutable destination before cloning.
+        const legacyAdapter = Boolean(options.executeClone && !options.resolveRevision);
+        if (legacyAdapter && existsSync(repoClonePath(owner, repo))) {
+          await removeRepositoryCheckout(`${owner}/${repo}`);
+        }
+        const resolvedRevision = legacyAdapter ? null : await (options.resolveRevision ?? defaultRevisionResolver)(
+          repoUrl,
+          options.branch ?? null,
+          Math.max(1, Math.floor(deadline.remainingMs())),
+        );
+        await ensureRepositoryRevisionRoot(`${owner}/${repo}`);
+        const clonePath = repoClonePath(owner, repo, resolvedRevision ?? undefined);
         let alreadyExisted = false;
         if (existsSync(clonePath)) {
-          await validateRepositoryCheckout(`${owner}/${repo}`, { mustExist: true });
-          const entries = await readdir(clonePath);
-          alreadyExisted = entries.length > 0;
-          if (alreadyExisted) await validateGitWorkingDirectory(clonePath);
+          try {
+            await validateRepositoryCheckout(`${owner}/${repo}`, { revision: resolvedRevision, mustExist: true });
+            const entries = await readdir(clonePath);
+            alreadyExisted = entries.length > 0;
+            if (alreadyExisted) {
+              const checkout = await validateGitWorkingDirectory(clonePath);
+              if (resolvedRevision) {
+                const head = (await simpleGit(checkout).revparse(["HEAD"])).trim().toLowerCase();
+                if (head !== resolvedRevision) throw new Error("Repository checkout does not match its revision directory.");
+                return {
+                  clonePath,
+                  alreadyExisted: true,
+                  commitSha: resolvedRevision,
+                  branch: options.branch ?? null,
+                };
+              }
+            }
+          } catch (error) {
+            if (!resolvedRevision) throw error;
+            await removeRepositoryCheckout(`${owner}/${repo}`, { revision: resolvedRevision });
+            alreadyExisted = false;
+          }
         }
-        const repoUrl = `https://github.com/${owner}/${repo}.git`;
         try {
           deadline.throwIfExpired();
           const observability = createRetryObservability({
@@ -193,11 +242,13 @@ export async function cloneRepo(
           });
           if (!alreadyExisted) await retry(
             async (attempt) => {
-              if (attempt > 1) await removeRepositoryCheckout(`${owner}/${repo}`);
+              if (attempt > 1) await removeRepositoryCheckout(`${owner}/${repo}`, {
+                ...(resolvedRevision ? { revision: resolvedRevision } : {}),
+              });
               const attemptsRemaining = env.CLONE_MAX_RETRIES + 2 - attempt;
               const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
               await (options.executeClone ?? defaultCloneExecutor)(repoUrl, clonePath, attemptTimeoutMs);
-              await validateRepositoryCheckout(`${owner}/${repo}`, { mustExist: true });
+              await validateRepositoryCheckout(`${owner}/${repo}`, { revision: resolvedRevision, mustExist: true });
             },
             {
               maxAttempts: env.CLONE_MAX_RETRIES + 1,
@@ -217,6 +268,9 @@ export async function cloneRepo(
             timeoutMs: Math.max(1, Math.floor(deadline.remainingMs())),
           });
           deadline.throwIfExpired();
+          if (resolvedRevision && snapshot.commitSha !== resolvedRevision) {
+            throw new Error("Repository checkout does not match its revision directory.");
+          }
           return {
             clonePath,
             alreadyExisted,
@@ -225,7 +279,9 @@ export async function cloneRepo(
           };
         } catch (err) {
           try {
-            await removeRepositoryCheckout(`${owner}/${repo}`);
+            await removeRepositoryCheckout(`${owner}/${repo}`, {
+              ...(resolvedRevision ? { revision: resolvedRevision } : {}),
+            });
           } catch {
             logger.error("repository_cleanup_rejected", {
               requestId: options.requestId,
