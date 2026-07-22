@@ -23,6 +23,7 @@ import { recoverAbandonedRepositoryCheckouts } from "./services/repository/revis
 import { repositoryStore } from "./services/repository/store/runtimeRepositoryStore.js";
 import { runtimeRepositoryConnectionStore } from "./services/repository/connection/runtimeRepositoryConnectionStore.js";
 import { sessionStore } from "./services/sessions/store.js";
+import { repositoryHistoryStore } from "./services/repository/history/runtimeRepositoryHistoryStore.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -80,6 +81,25 @@ try {
   logger.error("session_persistence_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "session_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await repositoryHistoryStore.verifyPersistence();
+  const removed = await repositoryHistoryStore.cleanup({
+    maxRecordsPerType: env.REPOSITORY_HISTORY_MAX_RECORDS_PER_TYPE,
+    maxAgeMs: env.REPOSITORY_HISTORY_MAX_AGE_MS,
+  });
+  logger.info("repository_history_contract_verified", {
+    source: "backend_startup",
+    expiredOrExcessRecordsRemoved: removed,
+  });
+} catch {
+  logger.error("repository_history_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_history_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

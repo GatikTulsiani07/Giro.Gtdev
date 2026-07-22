@@ -4,6 +4,7 @@ import {
   type RepositoryLifecycleEventMetadata,
   type RepositoryLifecycleEventType,
 } from "./repositoryLifecycleEvents.js";
+import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
 
 export type RepositoryActivityTimelineTone =
   | "info"
@@ -116,8 +117,12 @@ export function buildRepositoryActivityTimeline(
 
 export function buildRepositoryActivityTimelineForRepository(
   repositoryId: string,
-): RepositoryActivityTimelineItem[] {
-  return buildRepositoryActivityTimeline(
-    listRepositoryLifecycleEvents(repositoryId),
-  );
+  ownerId?: string,
+): RepositoryActivityTimelineItem[];
+export function buildRepositoryActivityTimelineForRepository(
+  repositoryId: string,
+  ownerId?: string,
+): MaybePromise<RepositoryActivityTimelineItem[]> {
+  return mapMaybePromise(listRepositoryLifecycleEvents(repositoryId, ownerId),
+    buildRepositoryActivityTimeline);
 }

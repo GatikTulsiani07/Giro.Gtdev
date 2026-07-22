@@ -4,6 +4,7 @@ import { getRepositoryFileSnapshot } from "./fileSnapshotStore.js";
 import { getRepositoryIndexMetadata } from "./indexingService.js";
 import type { RepositoryIndexMetadata } from "./indexingTypes.js";
 import { getRepositoryIntelligenceHistory } from "./repositoryIntelligenceHistory.js";
+import type { RepositoryIntelligenceHistoryEntry } from "./repositoryIntelligenceHistory.js";
 import { getRepositorySymbols } from "./symbolIndexStore.js";
 
 export interface RepositoryCleanupResourceSection {
@@ -84,20 +85,23 @@ export function buildRepositoryCleanupPlan(
   const sessions = listAllSessions().filter(
     (session) => session.owner === owner && session.repo === repo,
   );
-  return buildPlan(owner, repo, metadata, sessions);
+  return buildPlan(owner, repo, metadata, sessions, getRepositoryIntelligenceHistory(`${owner}/${repo}`));
 }
 
 export async function buildRepositoryCleanupPlanAsync(
   owner: string,
   repo: string,
+  ownerId?: string,
 ): Promise<RepositoryCleanupPlan> {
-  const [metadata, allSessions] = await Promise.all([
+  const repositoryId = `${owner}/${repo}`;
+  const [metadata, allSessions, intelligenceHistory] = await Promise.all([
     Promise.resolve(getRepositoryIndexMetadata(owner, repo)),
     Promise.resolve(listAllSessions()),
+    Promise.resolve(getRepositoryIntelligenceHistory(repositoryId, ownerId)),
   ]);
   return buildPlan(owner, repo, metadata, allSessions.filter(
     (session) => session.owner === owner && session.repo === repo,
-  ));
+  ), intelligenceHistory);
 }
 
 function buildPlan(
@@ -105,12 +109,12 @@ function buildPlan(
   repo: string,
   metadata: RepositoryIndexMetadata | null,
   sessions: Awaited<ReturnType<typeof listAllSessions>>,
+  intelligenceHistory: RepositoryIntelligenceHistoryEntry[],
 ): RepositoryCleanupPlan {
   const repoId = `${owner}/${repo}`;
   const snapshot = getRepositoryFileSnapshot(repoId);
   const symbols = getRepositorySymbols(repoId);
   const graphMaps = getFileSymbolMaps(repoId);
-  const intelligenceHistory = getRepositoryIntelligenceHistory(repoId);
   const repositoryMetadata = metadataSection(metadata);
   const fileSnapshots = section(
     snapshot?.files.map((file) => file.filePath) ?? [],

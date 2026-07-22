@@ -5,6 +5,8 @@ import { removeRepositoryCheckout } from "../security/repositoryPaths.js";
 import type { RepositoryCleanupReport } from "./repositoryCleanupReport.js";
 import type { RepositoryDeletionTombstone, RepositoryStore } from "./store/repositoryStore.js";
 import { repositoryStore as runtimeRepositoryStore } from "./store/runtimeRepositoryStore.js";
+import type { RepositoryHistoryStore } from "./history/repositoryHistoryStore.js";
+import { repositoryHistoryStore } from "./history/runtimeRepositoryHistoryStore.js";
 
 export interface RepositoryDeletionResult {
   tombstone: RepositoryDeletionTombstone;
@@ -17,6 +19,7 @@ export class RepositoryDeletionService {
     repositoryStore: RepositoryStore;
     indexingJobStore: IndexingJobStore;
     removeCheckout?: typeof removeRepositoryCheckout;
+    repositoryHistoryStore?: RepositoryHistoryStore;
     logger?: Pick<StructuredLogger, "info" | "warn" | "error">;
   }) {}
 
@@ -48,6 +51,7 @@ export class RepositoryDeletionService {
     // The durable Supabase transaction fences/deletes jobs itself. This hook
     // supplies the same terminal behavior for the in-memory adapter.
     await this.dependencies.indexingJobStore.fenceAndDeleteRepositoryJobs?.(input.repositoryId);
+    await this.dependencies.repositoryHistoryStore?.deleteRepository(input.repositoryId);
     return { tombstone: await this.cleanup(tombstone), report: input.report, repeated: false };
   }
 
@@ -102,5 +106,6 @@ export class RepositoryDeletionService {
 export const runtimeRepositoryDeletionService = new RepositoryDeletionService({
   repositoryStore: runtimeRepositoryStore,
   indexingJobStore: runtimeIndexingJobStore,
+  repositoryHistoryStore,
   logger,
 });

@@ -56,6 +56,7 @@ import {
 import { repositoryStore as runtimeRepositoryStore } from "../../repository/store/runtimeRepositoryStore.js";
 import { normalizeGitHubRepositoryReference, normalizeRepositoryId } from "../../security/repositoryIdentity.js";
 import type { TrustedRepositoryCheckoutPath } from "../../security/repositoryPaths.js";
+import { recordRepositoryLifecycleEvent } from "../../repository/repositoryLifecycleEvents.js";
 import { BranchNameSchema } from "../../../validation/repositorySchemas.js";
 import {
   isRepositoryQuotaError,
@@ -723,6 +724,19 @@ export async function processNextIndexingJob(
     if (!succeeded) {
       throw new Error("Indexing job could not be marked succeeded");
     }
+    const publishedRevision = result.indexOptions?.indexedRevision ??
+      (await repositoryAuthorizationStore.getRepository(claimed.repositoryId))?.currentRevision;
+    await recordRepositoryLifecycleEvent({
+      repositoryId: claimed.repositoryId,
+      ownerId: claimed.ownerUserId,
+      repositoryRevision: publishedRevision ?? null,
+      type: "repository_indexed",
+      message: "Repository indexed.",
+      metadata: { jobId: claimed.jobId, files: result.counts.fileCount },
+      idempotencyKey: `repository-indexed:${claimed.jobId}`,
+      requestId: claimed.createdByRequestId,
+      traceId: currentTraceContext()?.traceId,
+    });
     logger.info("indexing_job_succeeded", {
       ...jobLogFields(claimed, workerId),
       durationMs: Math.max(0, Math.round(performance.now() - jobStartedAtMs)),

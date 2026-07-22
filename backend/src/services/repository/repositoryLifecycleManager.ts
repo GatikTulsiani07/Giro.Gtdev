@@ -5,6 +5,7 @@ import { buildRepositoryCleanupPlan } from "./repositoryCleanupPlanner.js";
 import { buildRepositoryCleanupReport } from "./repositoryCleanupReport.js";
 import type { RepositoryCleanupReport } from "./repositoryCleanupReport.js";
 import { recordRepositoryLifecycleEvent } from "./repositoryLifecycleEvents.js";
+import { flatMapMaybePromise } from "../../lib/maybePromise.js";
 
 export interface RepositoryLifecycleReference {
   owner: string;
@@ -106,25 +107,30 @@ export function cleanupRepository(
 
 export function getRepositorySummary(
   input: RepositoryLifecycleInput,
+  history?: { ownerId: string; repositoryRevision?: string | null; requestId?: string; traceId?: string },
 ): RepositoryDashboardSummary;
 export function getRepositorySummary(
   input: RepositoryLifecycleInput,
+  history?: { ownerId: string; repositoryRevision?: string | null; requestId?: string; traceId?: string },
 ): RepositoryDashboardSummary | Promise<RepositoryDashboardSummary> {
   const built = buildRepositoryDashboardSummary(input.owner, input.repo);
   const record = (summary: RepositoryDashboardSummary) => {
-  recordRepositoryLifecycleEvent({
-    repositoryId: `${input.owner}/${input.repo}`,
-    type: "repository_dashboard_viewed",
-    message: "Repository dashboard summary viewed.",
-    metadata: {
-      files: summary.metrics.files,
-      chunks: summary.metrics.chunks,
-      symbols: summary.metrics.symbols,
-      status: summary.status.health.status,
-    },
-  });
-
-    return summary;
+    return flatMapMaybePromise(recordRepositoryLifecycleEvent({
+      repositoryId: `${input.owner}/${input.repo}`,
+      ownerId: history?.ownerId,
+      repositoryRevision: history?.repositoryRevision,
+      requestId: history?.requestId,
+      traceId: history?.traceId,
+      idempotencyKey: history?.requestId ? `dashboard:${history.requestId}` : undefined,
+      type: "repository_dashboard_viewed",
+      message: "Repository dashboard summary viewed.",
+      metadata: {
+        files: summary.metrics.files,
+        chunks: summary.metrics.chunks,
+        symbols: summary.metrics.symbols,
+        status: summary.status.health.status,
+      },
+    }), () => summary);
   };
-  return built instanceof Promise ? built.then(record) : record(built);
+  return flatMapMaybePromise(built, record);
 }

@@ -24,6 +24,7 @@ import {
 import type { RepositoryLifecycleEvent } from "./repositoryLifecycleEvents.js";
 import type { RetrievalExplainabilitySummary } from "../retrieval/retrievalExplainabilitySummary.js";
 import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
+import { flatMapMaybePromise } from "../../lib/maybePromise.js";
 
 export interface RepositoryDashboardIntelligenceBundleInput {
   repositoryId?: string;
@@ -102,16 +103,15 @@ export function buildRepositoryDashboardIntelligenceBundle(
 export function buildRepositoryDashboardIntelligenceBundleForRepository(
   owner: string,
   repo: string,
+  ownerId?: string,
 ): RepositoryDashboardIntelligenceBundle;
 export function buildRepositoryDashboardIntelligenceBundleForRepository(
   owner: string,
   repo: string,
+  ownerId?: string,
 ): MaybePromise<RepositoryDashboardIntelligenceBundle> {
   const repositoryId = `${owner}/${repo}`;
-  return mapMaybePromise(buildRepositoryDashboardSummary(owner, repo), (dashboard) =>
-    buildRepositoryDashboardIntelligenceBundle({
-      repositoryId,
-      dashboard,
-      timeline: buildRepositoryActivityTimelineForRepository(repositoryId),
-    }));
+  return flatMapMaybePromise(buildRepositoryDashboardSummary(owner, repo), (dashboard) =>
+    mapMaybePromise(buildRepositoryActivityTimelineForRepository(repositoryId, ownerId), (timeline) =>
+      buildRepositoryDashboardIntelligenceBundle({ repositoryId, dashboard, timeline })));
 }

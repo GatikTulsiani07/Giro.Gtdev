@@ -55,6 +55,8 @@ import { isRepositoryPathSecurityError } from "../services/security/repositoryPa
 import { repositoryStore } from "../services/repository/store/runtimeRepositoryStore.js";
 import { currentTraceContext, formatTraceparent } from "../observability/tracing.js";
 import { isRepositoryQuotaError } from "../services/repository/quotas/repositoryQuota.js";
+import { env } from "../config/env.js";
+import { recordRepositoryLifecycleEvent } from "../services/repository/repositoryLifecycleEvents.js";
 import { getRequestDeadline } from "../middleware/requestTimeout.js";
 import {
   RepositoryConnectionIdempotencyConflictError,
@@ -186,6 +188,17 @@ repositoriesRoute.post("/connect", async (c) => {
     }, 422);
   }
   if (!transaction.replayed) await c.get("indexingProgressPublisher").publish(transaction.job);
+  await recordRepositoryLifecycleEvent({
+    repositoryId: repoId,
+    ownerId: user.userId,
+    repositoryRevision: connection.existing?.indexedRevision ?? null,
+    type: "repository_connected",
+    message: "Repository connected.",
+    metadata: { jobId: transaction.response.jobId },
+    idempotencyKey: `repository-connect:${idempotencyKey}`,
+    requestId: c.get("requestId"),
+    traceId: trace?.traceId,
+  });
   setRequestLogContext(c, { repositoryId: repoId, jobId: transaction.response.jobId });
 
   logger.info("repository_connected", {
@@ -382,7 +395,13 @@ repositoriesRoute.get("/intelligence/:owner/:repo", async (c) => {
       indexMetadata: await getRepositoryIndexMetadata(owner, repo),
     });
 
-    saveRepositoryIntelligence(intelligence);
+    await saveRepositoryIntelligence(intelligence, {
+      ownerId: access.repository.authenticatedUserId,
+      repositoryRevision: access.repository.indexedRevision ?? undefined,
+      idempotencyKey: `repository-intelligence:${access.repository.indexedRevision ?? "unpublished"}`,
+      provider: env.EMBEDDINGS_PROVIDER,
+      model: env.MODEL_NAME,
+    });
 
     return ok(c, buildRepositoryIntelligenceApiResponse(intelligence));
   } catch (err) {
@@ -534,7 +553,7 @@ repositoriesRoute.delete("/:owner/:repo", async (c) => {
   if (!access.ok) return access.response;
   const record = await repositoryStore.getRepository(repoId);
   if (!record) return fail(c, { code: "repo_not_connected", message: "Repository not connected. Call POST /repos/connect first." }, 404);
-  const plan = await buildRepositoryCleanupPlanAsync(owner, repo);
+  const plan = await buildRepositoryCleanupPlanAsync(owner, repo, user.userId);
   const report = buildRepositoryCleanupReport(describeRepositoryCleanupPlan(plan));
   try {
     await runtimeRepositoryDeletionService.delete({
@@ -586,7 +605,9 @@ repositoriesRoute.get("/:owner/:repo/dashboard/intelligence", async (c) => {
   const access = await authorizeRepositoryRequest(c, repoId, "repository_dashboard_intelligence");
   if (!access.ok) return access.response;
 
-  return ok(c, await buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo));
+  return ok(c, await buildRepositoryDashboardIntelligenceBundleForRepository(
+    owner, repo, access.repository.authenticatedUserId,
+  ));
 });
 
 // GET /repos/:owner/:repo/workspace — primary repository workspace payload.
@@ -612,7 +633,9 @@ repositoriesRoute.get("/:owner/:repo/workspace", async (c) => {
     );
   }
 
-  const bundle = await buildRepositoryDashboardIntelligenceBundleForRepository(owner, repo);
+  const bundle = await buildRepositoryDashboardIntelligenceBundleForRepository(
+    owner, repo, access.repository.authenticatedUserId,
+  );
   const recommendations = buildRepositoryRecommendations({
     dashboard: bundle.dashboard,
     health: bundle.health,
@@ -655,5 +678,10 @@ repositoriesRoute.get("/:owner/:repo/dashboard", async (c) => {
   const access = await authorizeRepositoryRequest(c, repoId, "repository_dashboard");
   if (!access.ok) return access.response;
 
-  return ok(c, await getRepositorySummary({ owner, repo }));
+  return ok(c, await getRepositorySummary({ owner, repo }, {
+    ownerId: access.repository.authenticatedUserId,
+    repositoryRevision: access.repository.indexedRevision,
+    requestId: c.get("requestId"),
+    traceId: currentTraceContext()?.traceId,
+  }));
 });

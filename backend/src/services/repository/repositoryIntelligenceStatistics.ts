@@ -1,6 +1,7 @@
 import {
   getRepositoryIntelligenceHistory,
 } from "./repositoryIntelligenceHistory.js";
+import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
 
 export interface RepositoryIntelligenceStatistics {
   snapshots: number;
@@ -10,8 +11,15 @@ export interface RepositoryIntelligenceStatistics {
 
 export function buildRepositoryIntelligenceStatistics(
   repositoryId: string,
-): RepositoryIntelligenceStatistics {
-  const history = getRepositoryIntelligenceHistory(repositoryId);
+  ownerId?: string,
+  repositoryRevision?: string,
+): RepositoryIntelligenceStatistics;
+export function buildRepositoryIntelligenceStatistics(
+  repositoryId: string,
+  ownerId?: string,
+  repositoryRevision?: string,
+): MaybePromise<RepositoryIntelligenceStatistics> {
+  return mapMaybePromise(getRepositoryIntelligenceHistory(repositoryId, ownerId, repositoryRevision), (history) => {
 
   if (history.length === 0) {
     return {
@@ -37,4 +45,5 @@ export function buildRepositoryIntelligenceStatistics(
     averageIntelligenceScore:
       totalIntelligence / history.length,
   };
+  });
 }
