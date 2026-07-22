@@ -12,7 +12,10 @@ import type {
   SelectedContextChunk,
   Session,
   SessionSummary,
+  SessionListCursor,
+  SessionSummaryPage,
 } from "./types.js";
+import type { CommitSessionTurnInput, CommitSessionTurnResult, SessionTurnLookupInput } from "./sessionTurn.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -49,18 +52,25 @@ export function getSessionById(id: string): MaybePromise<Session | null> {
   return store.getSession(id);
 }
 
+export function getSessionByIdForOwner(id: string, ownerUserId: string): MaybePromise<Session | null> {
+  return store.getSessionForOwner(id, ownerUserId);
+}
+
+export function getSessionSummaryById(id: string): MaybePromise<SessionSummary | null> {
+  return store.getSessionSummary(id);
+}
+
+export function listUserSessionSummaries(input: {
+  ownerUserId: string;
+  cursor?: SessionListCursor;
+  limit: number;
+}): MaybePromise<SessionSummaryPage> {
+  return store.listSessionSummaries(input);
+}
+
 export function listAllSessions(): SessionSummary[];
 export function listAllSessions(): MaybePromise<SessionSummary[]> {
-  return mapMaybePromise(store.listSessions(), (sessions) => sessions.map((s) => ({
-    id: s.id,
-    userId: s.userId,
-    owner: s.owner,
-    repo: s.repo,
-    title: s.title,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-    messageCount: s.messages.length,
-  })));
+  return store.listAllSessionSummaries();
 }
 
 export function addMessageToSession(
@@ -74,7 +84,22 @@ export function addMessageToSession(
   return flatMapMaybePromise(store.getSession(sessionId), (session) => {
     if (!session) return null;
 
-  const message: Message = {
+    const message = createSessionMessage(input);
+
+    return mapMaybePromise(store.appendMessage(sessionId, message, nowIso()), (saved) => {
+      if (!saved) return null;
+      logger.info("session_message_added", {
+        sessionId,
+        messageId: message.id,
+        role: message.role,
+      });
+      return saved;
+    });
+  });
+}
+
+export function createSessionMessage(input: AddMessageInput, createdAt = nowIso()): Message {
+  return {
     id: randomUUID(),
     role: input.role,
     content: input.content,
@@ -92,19 +117,16 @@ export function addMessageToSession(
             : undefined,
         }
       : undefined,
-    createdAt: nowIso(),
+    createdAt,
   };
+}
 
-    return mapMaybePromise(store.appendMessage(sessionId, message, nowIso()), (saved) => {
-      if (!saved) return null;
-      logger.info("session_message_added", {
-        sessionId,
-        messageId: message.id,
-        role: message.role,
-      });
-      return saved;
-    });
-  });
+export function getSessionTurnResult(input: SessionTurnLookupInput): Promise<CommitSessionTurnResult | null> {
+  return store.getSessionTurnResult(input);
+}
+
+export function commitSessionTurn(input: CommitSessionTurnInput): Promise<CommitSessionTurnResult> {
+  return store.commitSessionTurn(input);
 }
 
 export function replaceSelectedContext(
@@ -118,11 +140,11 @@ export function replaceSelectedContext(
   return flatMapMaybePromise(store.getSession(sessionId), (session) => {
     if (!session) return null;
 
-  const updated: Session = {
-    ...session,
-    selectedContext: [...chunks],
-    updatedAt: nowIso(),
-  };
+    const updated: Session = {
+      ...session,
+      selectedContext: [...chunks],
+      updatedAt: nowIso(),
+    };
 
     return mapMaybePromise(store.updateSession(updated), (saved) => {
       logger.info("selected_context_updated", {

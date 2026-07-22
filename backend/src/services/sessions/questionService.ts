@@ -29,15 +29,18 @@ import {
 } from "./answerAssembler.js";
 import type { AskResult } from "./answerTypes.js";
 import {
-  addMessageToSession,
+  commitSessionTurn,
+  createSessionMessage,
   getSessionById,
-  replaceSelectedContext,
+  getSessionTurnResult,
 } from "./sessionService.js";
 import type {
   PersistedRetrievalMetadata,
   SelectedContextChunk,
+  Session,
 } from "./types.js";
 import type { AuthorizedRepositoryContext } from "../repository/ownershipGuard.js";
+import { sessionTurnPayloadHash } from "./sessionTurn.js";
 
 export const INSUFFICIENT_REPOSITORY_EVIDENCE_MESSAGE =
   "I could not find enough repository evidence to answer this reliably.";
@@ -75,6 +78,9 @@ export interface AnswerSessionQuestionOptions {
   generateAnswer?: GenerateAnswer;
   now?: () => string;
   authorizedRepository?: AuthorizedRepositoryContext;
+  authorizedSession?: Session;
+  ownerUserId?: string;
+  idempotencyKey?: string;
 }
 
 function toRelativePath(filePath: string): string {
@@ -207,8 +213,19 @@ export async function answerSessionQuestion(
   options: AnswerSessionQuestionOptions = {},
 ): Promise<QuestionResult> {
   options.signal?.throwIfAborted();
-  const session = await getSessionById(sessionId);
+  const session = options.authorizedSession ?? await getSessionById(sessionId);
   if (!session) return "session_not_found";
+  const ownerUserId = options.ownerUserId ?? session.userId;
+  const idempotencyKey = options.idempotencyKey ?? `request:${options.requestId ?? crypto.randomUUID()}`;
+  const payloadHash = sessionTurnPayloadHash({ sessionId, ownerUserId, question });
+  const replay = await getSessionTurnResult({
+    sessionId,
+    ownerUserId,
+    idempotencyKey,
+    payloadHash,
+    signal: options.signal,
+  });
+  if (replay) return replay.response as AskResult;
 
   const repositoryId = `${session.owner}/${session.repo}`;
   if ((!options.authorizedRepository || options.authorizedRepository.repositoryId !== repositoryId) && !options.assembleContext) {
@@ -279,22 +296,6 @@ export async function answerSessionQuestion(
     confidence: toPublicRetrievalConfidence(confidence),
   };
 
-  if (!await addMessageToSession(sessionId, { role: "user", content: question })) {
-    throw new Error("Session disappeared before the question could be persisted.");
-  }
-  if (!await addMessageToSession(sessionId, {
-    role: "assistant",
-    content: answer,
-    citations,
-    evidence,
-    retrievalMetadata,
-  })) {
-    throw new Error("Session disappeared before the answer could be persisted.");
-  }
-  if (!await replaceSelectedContext(sessionId, evidence)) {
-    throw new Error("Session disappeared before evidence could be persisted.");
-  }
-
   const metadata = {
     retrievedFiles: sources.length,
     usedSummary: budget.selected.some((item) => item.filePath === "__repository_summary__"),
@@ -310,18 +311,40 @@ export async function answerSessionQuestion(
     confidence: toPublicRetrievalConfidence(confidence),
   };
 
-  logger.info("session_question_answered", {
-    sessionId,
-    repositoryId,
-    retrievedFiles: sources.length,
-    evidenceChunks: evidence.length,
-  });
-
-  return {
+  const result: AskResult = {
     answer,
     sources,
     citations,
     metadata,
     retrieval: buildInspectorResult(question, context, budget.selected, citations),
   };
+  const committedAt = (options.now ?? (() => new Date().toISOString()))();
+  const committed = await commitSessionTurn({
+    sessionId,
+    ownerUserId,
+    idempotencyKey,
+    payloadHash,
+    userMessage: createSessionMessage({ role: "user", content: question }, committedAt),
+    assistantMessage: createSessionMessage({
+      role: "assistant",
+      content: answer,
+      citations,
+      evidence,
+      retrievalMetadata,
+    }, committedAt),
+    selectedContext: evidence,
+    response: result,
+    updatedAt: committedAt,
+    signal: options.signal,
+  });
+
+  logger.info("session_question_answered", {
+    sessionId,
+    repositoryId,
+    retrievedFiles: sources.length,
+    evidenceChunks: evidence.length,
+    idempotencyReplayed: committed.replayed,
+  });
+
+  return committed.response as AskResult;
 }

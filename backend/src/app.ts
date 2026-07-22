@@ -153,6 +153,7 @@ export function createApp(options: CreateAppOptions = {}) {
         "X-RateLimit-Remaining",
         "Retry-After",
         "X-Retrieval-Confidence",
+        "X-Next-Cursor",
       ],
       credentials: true,
     }),

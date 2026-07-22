@@ -22,6 +22,7 @@ import { rateLimitBackend, runtimeRateLimitStore } from "./services/rateLimit/ru
 import { recoverAbandonedRepositoryCheckouts } from "./services/repository/revisionCheckouts.js";
 import { repositoryStore } from "./services/repository/store/runtimeRepositoryStore.js";
 import { runtimeRepositoryConnectionStore } from "./services/repository/connection/runtimeRepositoryConnectionStore.js";
+import { sessionStore } from "./services/sessions/store.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -63,6 +64,22 @@ try {
   logger.error("repository_connection_idempotency_verification_failed", {
     source: "backend_startup",
     reasonCode: "idempotency_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await sessionStore.verifyTurnPersistence();
+  const removed = await sessionStore.cleanupExpiredTurnIdempotency();
+  logger.info("session_persistence_contract_verified", {
+    source: "backend_startup",
+    expiredTurnRecordsRemoved: removed,
+  });
+} catch {
+  logger.error("session_persistence_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "session_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

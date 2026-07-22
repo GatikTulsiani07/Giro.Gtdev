@@ -8,7 +8,7 @@ import { createValidationError } from "../lib/apiErrors.js";
 import { requireAuthenticatedUser } from "../services/auth/authContext.js";
 import {
   createNewSession,
-  listAllSessions,
+  listUserSessionSummaries,
   addMessageToSession,
   removeSession,
 } from "../services/sessions/sessionService.js";
@@ -29,6 +29,9 @@ import { getRepositoryIndexMetadata } from "../services/repository/indexingServi
 import { authorizeRepositoryRequest } from "../services/security/repositoryRequestGuard.js";
 import { authorizeSessionRepository } from "../services/sessions/authorizedSessionRepository.js";
 import { validatePublishedRepositoryCheckout } from "../services/repository/ownershipGuard.js";
+import { env } from "../config/env.js";
+import { decodeSessionCursor, encodeSessionCursor } from "../services/sessions/sessionPagination.js";
+import { SessionTurnIdempotencyConflictError } from "../services/sessions/sessionTurn.js";
 
 const LegacyCitationSchema = z
   .object({
@@ -77,6 +80,7 @@ const AskBody = z.object({
     message: "question must contain at most 2000 character(s)",
   }),
 });
+const IdempotencyKeySchema = z.string().trim().min(1).max(200).regex(/^[\x21-\x7E]+$/);
 
 const sessionsRouter = new Hono<{
   Variables: { requestId: string; retrievalCache: RetrievalCache };
@@ -130,15 +134,22 @@ sessionsRouter.post("/", async (c) => {
 sessionsRouter.get("/", async (c) => {
   try {
     const user = requireAuthenticatedUser(c);
-
-    const ownedSessions = (await listAllSessions()).filter((session) => session.userId === user.userId);
-    const authorized = await Promise.all(ownedSessions.map((session) => authorizeSessionRepository({
-      sessionId: session.id,
-      userId: user.userId,
-      requestId: c.get("requestId"),
-      operation: "session_list",
+    const limit = z.coerce.number().int().min(1).max(env.SESSION_LIST_MAX_PAGE_SIZE)
+      .safeParse(c.req.query("limit") ?? env.SESSION_LIST_DEFAULT_PAGE_SIZE);
+    if (!limit.success) return fail(c, createValidationError(limit.error.flatten()), 400);
+    let cursor;
+    try {
+      cursor = c.req.query("cursor") ? decodeSessionCursor(c.req.query("cursor")!) : undefined;
+    } catch {
+      return fail(c, createValidationError({ fieldErrors: { cursor: ["cursor is invalid"] } }), 400);
+    }
+    const page = await listUserSessionSummaries({ ownerUserId: user.userId, cursor, limit: limit.data });
+    const authorized = await Promise.all(page.sessions.map(async (session) => ({
+      session,
+      access: await authorizeRepositoryRequest(c, `${session.owner}/${session.repo}`, "session_list"),
     })));
-    const sessions = authorized.filter((result) => result.ok).map((result) => result.session);
+    const sessions = authorized.filter((item) => item.access.ok).map((item) => item.session);
+    if (page.nextCursor) c.header("X-Next-Cursor", encodeSessionCursor(page.nextCursor));
 
     return ok(c, { sessions, count: sessions.length });
   } catch (err) {
@@ -287,6 +298,15 @@ sessionsRouter.post("/:id/ask", async (c) => {
 
   try {
     const user = requireAuthenticatedUser(c);
+    const suppliedIdempotencyKey = c.req.header("Idempotency-Key");
+    const parsedIdempotencyKey = suppliedIdempotencyKey === undefined
+      ? null
+      : IdempotencyKeySchema.safeParse(suppliedIdempotencyKey);
+    if (parsedIdempotencyKey && !parsedIdempotencyKey.success) {
+      return fail(c, createValidationError({
+        fieldErrors: { idempotencyKey: ["Idempotency-Key must contain 1-200 visible ASCII characters"] },
+      }), 400);
+    }
 
     const access = await authorizeSessionRepository({
       sessionId: id,
@@ -323,6 +343,9 @@ sessionsRouter.post("/:id/ask", async (c) => {
       requestId: c.get("requestId"),
       cache: c.get("retrievalCache"),
       authorizedRepository: access.repository,
+      authorizedSession: access.session,
+      ownerUserId: user.userId,
+      idempotencyKey: parsedIdempotencyKey?.data ?? `request:${c.get("requestId")}`,
     });
 
     if (result === "session_not_found") {
@@ -331,6 +354,9 @@ sessionsRouter.post("/:id/ask", async (c) => {
 
     return ok(c, result);
   } catch (err) {
+    if (err instanceof SessionTurnIdempotencyConflictError) {
+      return fail(c, { code: err.code, message: err.message }, 409);
+    }
     if (isDeadlineExceeded(err) || isDependencyUnavailable(err)) throw err;
 
     logger.error("session_ask_failed", {

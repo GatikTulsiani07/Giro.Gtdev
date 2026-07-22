@@ -108,3 +108,13 @@ export interface SessionSummary {
   updatedAt: string;
   messageCount: number;
 }
+
+export interface SessionListCursor {
+  updatedAt: string;
+  sessionId: string;
+}
+
+export interface SessionSummaryPage {
+  sessions: SessionSummary[];
+  nextCursor: SessionListCursor | null;
+}

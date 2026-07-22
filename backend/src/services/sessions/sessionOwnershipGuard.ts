@@ -1,5 +1,5 @@
-import { getSessionById } from "./sessionService.js";
-import { mapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
+import { getSessionByIdForOwner, getSessionSummaryById } from "./sessionService.js";
+import { flatMapMaybePromise, type MaybePromise } from "../../lib/maybePromise.js";
 import type { Session } from "./types.js";
 
 export type SessionAccessResult =
@@ -25,8 +25,8 @@ export function requireSessionAccess({
   sessionId: string;
   userId: string;
 }): MaybePromise<SessionAccessResult> {
-  return mapMaybePromise(getSessionById(sessionId), (session) => {
-    if (!session) {
+  return flatMapMaybePromise(getSessionSummaryById(sessionId), (summary) => {
+    if (!summary) {
       return {
         ok: false,
         status: 404,
@@ -35,7 +35,7 @@ export function requireSessionAccess({
       };
     }
 
-    if (session.userId !== userId) {
+    if (summary.userId !== userId) {
       return {
         ok: false,
         status: 403,
@@ -44,6 +44,9 @@ export function requireSessionAccess({
       };
     }
 
-    return { ok: true, session };
+    return flatMapMaybePromise(getSessionByIdForOwner(sessionId, userId), (session) =>
+      session
+        ? { ok: true as const, session }
+        : { ok: false as const, status: 404 as const, code: "session_not_found", message: "Session not found" });
   });
 }
