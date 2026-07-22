@@ -36,11 +36,16 @@ import {
 import { TRACEPARENT_HEADER } from "./observability/tracing.js";
 import type { RateLimitStore } from "./services/rateLimit/rateLimitStore.js";
 import { MemoryRateLimitStore } from "./services/rateLimit/memoryRateLimitStore.js";
+import type { RepositoryConnectionStore } from "./services/repository/connection/repositoryConnectionStore.js";
+import { MemoryRepositoryConnectionStore } from "./services/repository/connection/memoryRepositoryConnectionStore.js";
+import { runtimeRepositoryConnectionStore } from "./services/repository/connection/runtimeRepositoryConnectionStore.js";
+import { repositoryStore } from "./services/repository/store/runtimeRepositoryStore.js";
 
 type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
   indexingProgressPublisher: IndexingProgressPublisher;
   retrievalCache: RetrievalCache;
+  repositoryConnectionStore: RepositoryConnectionStore;
 };
 
 export interface CreateAppOptions {
@@ -59,6 +64,7 @@ export interface CreateAppOptions {
   rateLimitPolicy?: RateLimitPolicy;
   rateLimitStore?: RateLimitStore;
   trustedProxyCidrs?: readonly string[];
+  repositoryConnectionStore?: RepositoryConnectionStore;
   requestTimeout?: Omit<RequestTimeoutOptions, "timeoutMs"> & {
     timeoutMs?: number;
   };
@@ -69,6 +75,11 @@ export function createApp(options: CreateAppOptions = {}) {
     env.NODE_ENV === "test" ? new MemoryRateLimitStore() : undefined
   );
   const indexingJobStore = options.indexingJobStore ?? runtimeIndexingJobStore;
+  const repositoryConnectionStore = options.repositoryConnectionStore ?? (
+    env.NODE_ENV !== "test" && indexingJobStore === runtimeIndexingJobStore
+      ? runtimeRepositoryConnectionStore
+      : new MemoryRepositoryConnectionStore(repositoryStore, indexingJobStore)
+  );
   const metrics = options.metrics ?? runtimeMetrics;
   const indexingProgressPublisher = options.indexingProgressPublisher ?? (
     indexingJobStore === runtimeIndexingJobStore && metrics === runtimeMetrics
@@ -126,6 +137,7 @@ export function createApp(options: CreateAppOptions = {}) {
     c.set("indexingJobStore", indexingJobStore);
     c.set("indexingProgressPublisher", indexingProgressPublisher);
     c.set("retrievalCache", retrievalCache);
+    c.set("repositoryConnectionStore", repositoryConnectionStore);
     await next();
   });
   app.use(
@@ -133,7 +145,7 @@ export function createApp(options: CreateAppOptions = {}) {
     cors({
       origin: env.CORS_ORIGINS,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", TRACEPARENT_HEADER],
+      allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "Idempotency-Key", TRACEPARENT_HEADER],
       exposeHeaders: [
         "X-Request-ID",
         TRACEPARENT_HEADER,

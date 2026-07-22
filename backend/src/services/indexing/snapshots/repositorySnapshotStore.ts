@@ -29,17 +29,25 @@ export interface PublishRepositorySnapshotInput extends RepositorySnapshotIdenti
 }
 
 export interface RepositorySnapshotStore {
-  begin(identity: RepositorySnapshotIdentity): Promise<BeginRepositorySnapshotResult>;
-  saveSummary(identity: RepositorySnapshotIdentity, summary: RepositorySummary): Promise<void>;
-  publish(input: PublishRepositorySnapshotInput): Promise<void>;
-  discard(identity: RepositorySnapshotIdentity): Promise<void>;
+  begin(identity: RepositorySnapshotIdentity, signal?: AbortSignal): Promise<BeginRepositorySnapshotResult>;
+  saveSummary(identity: RepositorySnapshotIdentity, summary: RepositorySummary, signal?: AbortSignal): Promise<void>;
+  publish(input: PublishRepositorySnapshotInput, signal?: AbortSignal): Promise<void>;
+  discard(identity: RepositorySnapshotIdentity, signal?: AbortSignal): Promise<void>;
 }
 
-interface DatabaseClient {
-  rpc(name: string, parameters: Record<string, unknown>): PromiseLike<{
+interface RpcQuery extends PromiseLike<{
     data: unknown;
     error: { code?: string; message?: string } | null;
-  }>;
+  }> { abortSignal?(signal: AbortSignal): RpcQuery }
+interface DatabaseClient {
+  rpc(name: string, parameters: Record<string, unknown>): RpcQuery;
+}
+
+async function rpc(client: DatabaseClient, name: string, parameters: Record<string, unknown>, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  let query = client.rpc(name, parameters);
+  if (signal && typeof query.abortSignal === "function") query = query.abortSignal(signal);
+  return query;
 }
 
 function throwSnapshotError(
@@ -78,15 +86,15 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
     this.client = client as DatabaseClient;
   }
 
-  async begin(identity: RepositorySnapshotIdentity): Promise<BeginRepositorySnapshotResult> {
-    const { data, error } = await this.client.rpc("begin_repository_snapshot", {
+  async begin(identity: RepositorySnapshotIdentity, signal?: AbortSignal): Promise<BeginRepositorySnapshotResult> {
+    const { data, error } = await rpc(this.client, "begin_repository_snapshot", {
       input_repository_id: identity.repositoryId,
       input_revision: identity.revision,
       input_branch: identity.branch,
       input_job_id: identity.jobId,
       input_worker_id: identity.workerId,
       input_claim_token: identity.claimToken,
-    });
+    }, signal);
     throwSnapshotError(error, "Repository snapshot staging failed.");
     const row = firstRow(data);
     if (!row) throw new Error("Repository snapshot staging returned no state.");
@@ -97,26 +105,26 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
     };
   }
 
-  async saveSummary(identity: RepositorySnapshotIdentity, summary: RepositorySummary): Promise<void> {
-    const { error } = await this.client.rpc("save_repository_snapshot_summary", {
+  async saveSummary(identity: RepositorySnapshotIdentity, summary: RepositorySummary, signal?: AbortSignal): Promise<void> {
+    const { error } = await rpc(this.client, "save_repository_snapshot_summary", {
       input_repository_id: identity.repositoryId,
       input_revision: identity.revision,
       input_job_id: identity.jobId,
       input_worker_id: identity.workerId,
       input_claim_token: identity.claimToken,
       input_summary: summary,
-    });
+    }, signal);
     throwSnapshotError(error, "Repository snapshot summary persistence failed.");
   }
 
-  async publish(input: PublishRepositorySnapshotInput): Promise<void> {
+  async publish(input: PublishRepositorySnapshotInput, signal?: AbortSignal): Promise<void> {
     const quotaParameters = input.ownerUserId ? {
       input_owner_user_id: input.ownerUserId,
       input_repository_storage_bytes: input.repositoryStorageBytes ?? 0,
       input_max_indexed_repositories: input.maxIndexedRepositoriesPerUser ?? runtimeRepositoryQuotas.maxIndexedRepositoriesPerUser,
       input_max_user_storage_bytes: input.maxStorageBytesPerUser ?? runtimeRepositoryQuotas.maxStorageBytesPerUser,
     } : {};
-    const { error } = await this.client.rpc("publish_repository_snapshot", {
+    const { error } = await rpc(this.client, "publish_repository_snapshot", {
       input_repository_id: input.repositoryId,
       input_revision: input.revision,
       input_branch: input.branch,
@@ -132,18 +140,18 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
       input_index_mode: input.indexOptions?.indexMode ?? "full",
       input_changed_file_count: input.indexOptions?.changedFileCount ?? input.counts.fileCount,
       ...quotaParameters,
-    });
+    }, signal);
     throwSnapshotError(error, "Repository snapshot publication failed.");
   }
 
-  async discard(identity: RepositorySnapshotIdentity): Promise<void> {
-    const { error } = await this.client.rpc("discard_repository_snapshot", {
+  async discard(identity: RepositorySnapshotIdentity, signal?: AbortSignal): Promise<void> {
+    const { error } = await rpc(this.client, "discard_repository_snapshot", {
       input_repository_id: identity.repositoryId,
       input_revision: identity.revision,
       input_job_id: identity.jobId,
       input_worker_id: identity.workerId,
       input_claim_token: identity.claimToken,
-    });
+    }, signal);
     throwSnapshotError(error, "Repository snapshot rollback failed.");
   }
 }

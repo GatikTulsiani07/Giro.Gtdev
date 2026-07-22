@@ -27,8 +27,8 @@ import { repositoryStorageRoot } from "../../config/repositoryStorage.js";
 import { scanRepositoryQuota } from "./quotas/repositoryQuotaScanner.js";
 import { isRepositoryQuotaError, runtimeRepositoryQuotas, type RepositoryQuotas } from "./quotas/repositoryQuota.js";
 
-export type CloneExecutor = (repoUrl: string, clonePath: string, timeoutMs: number) => Promise<void>;
-export type RevisionResolver = (repoUrl: string, branch: string | null, timeoutMs: number) => Promise<string>;
+export type CloneExecutor = (repoUrl: string, clonePath: string, timeoutMs: number, signal?: AbortSignal) => Promise<void>;
+export type RevisionResolver = (repoUrl: string, branch: string | null, timeoutMs: number, signal?: AbortSignal) => Promise<string>;
 export interface SnapshotCheckoutResult {
   commitSha: string;
   branch: string | null;
@@ -38,23 +38,29 @@ export type SnapshotCheckoutExecutor = (input: {
   branch: string | null;
   reusedClone: boolean;
   timeoutMs: number;
+  signal?: AbortSignal;
 }) => Promise<SnapshotCheckoutResult>;
 
-const defaultCloneExecutor: CloneExecutor = async (repoUrl, clonePath, timeoutMs) => {
+const defaultCloneExecutor: CloneExecutor = async (repoUrl, clonePath, timeoutMs, signal) => {
+  signal?.throwIfAborted();
   await simpleGit({ timeout: { block: timeoutMs } }).clone(repoUrl, clonePath, ["--depth", "1"]);
+  signal?.throwIfAborted();
 };
 
-const defaultRevisionResolver: RevisionResolver = async (repoUrl, branch, timeoutMs) => {
+const defaultRevisionResolver: RevisionResolver = async (repoUrl, branch, timeoutMs, signal) => {
+  signal?.throwIfAborted();
   const output = await simpleGit({ timeout: { block: timeoutMs } }).listRemote([
     repoUrl,
     branch ? `refs/heads/${branch}` : "HEAD",
   ]);
+  signal?.throwIfAborted();
   const revision = output.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
   if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("Repository revision could not be resolved.");
   return revision;
 };
 
 const defaultSnapshotCheckoutExecutor: SnapshotCheckoutExecutor = async (input) => {
+  input.signal?.throwIfAborted();
   const checkout = await validateGitWorkingDirectory(input.clonePath);
   const git = simpleGit(checkout, { timeout: { block: input.timeoutMs } });
   let resolvedBranch = input.branch;
@@ -89,6 +95,7 @@ const defaultSnapshotCheckoutExecutor: SnapshotCheckoutExecutor = async (input) 
   await git.reset(["--hard", revision]);
   await git.clean("f", ["-d"]);
   const checkedOutRevision = (await git.revparse(["HEAD"])).trim().toLowerCase();
+  input.signal?.throwIfAborted();
   if (checkedOutRevision !== revision) {
     throw new Error("Repository checkout does not match the resolved revision.");
   }
@@ -202,6 +209,7 @@ export async function cloneRepo(
           repoUrl,
           options.branch ?? null,
           Math.max(1, Math.floor(deadline.remainingMs())),
+          deadline.signal,
         );
         await ensureRepositoryRevisionRoot(`${owner}/${repo}`);
         const clonePath = repoClonePath(owner, repo, resolvedRevision ?? undefined);
@@ -251,7 +259,7 @@ export async function cloneRepo(
               });
               const attemptsRemaining = env.CLONE_MAX_RETRIES + 2 - attempt;
               const attemptTimeoutMs = Math.max(1, Math.floor(deadline.remainingMs() / attemptsRemaining));
-              await (options.executeClone ?? defaultCloneExecutor)(repoUrl, clonePath, attemptTimeoutMs);
+              await (options.executeClone ?? defaultCloneExecutor)(repoUrl, clonePath, attemptTimeoutMs, deadline.signal);
               await validateRepositoryCheckout(`${owner}/${repo}`, { revision: resolvedRevision, mustExist: true });
             },
             {
@@ -270,6 +278,7 @@ export async function cloneRepo(
             branch: options.branch ?? null,
             reusedClone: alreadyExisted,
             timeoutMs: Math.max(1, Math.floor(deadline.remainingMs())),
+            signal: deadline.signal,
           });
           deadline.throwIfExpired();
           if (resolvedRevision && snapshot.commitSha !== resolvedRevision) {

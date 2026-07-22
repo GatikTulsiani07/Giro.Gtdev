@@ -385,7 +385,8 @@ export async function executeRepositoryIndexingPipeline(
     workerId: job.claimedBy ?? "",
     claimToken: job.claimToken ?? "",
   };
-  const staged = await snapshotStore.begin(identity);
+  input.signal?.throwIfAborted();
+  const staged = await snapshotStore.begin(identity, input.signal);
   if (staged.alreadyPublished && staged.counts) {
     const indexOptions = {
       indexMode: "incremental" as const,
@@ -399,7 +400,7 @@ export async function executeRepositoryIndexingPipeline(
       ownerUserId: job.ownerUserId,
       maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
       maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
-    });
+    }, input.signal);
     return { counts: staged.counts, indexOptions, publicationHandled: true };
   }
 
@@ -450,21 +451,25 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   const quotas = input.quotas ?? runtimeRepositoryQuotas;
 
   await reportStage({ stage: "scan", progress: 25 });
+  input.signal?.throwIfAborted();
   const stats = await scanRepo(clonePath, quotas, input.signal);
-  const previousSnapshot = (await artifactStore.loadCurrent(repoId))?.fileSnapshot ?? null;
+  const previousSnapshot = (await artifactStore.loadCurrent(repoId, input.signal))?.fileSnapshot ?? null;
   const indexingPlan = buildRepositoryIndexingPlan({
     previousSnapshot,
     currentFiles: stats.files,
   });
 
   await reportStage({ stage: "structure", progress: 40 });
+  input.signal?.throwIfAborted();
   const analysis = await analyzeRepository(clonePath, stats);
 
   await reportStage({ stage: "symbols", progress: 55 });
+  input.signal?.throwIfAborted();
   const symbolMaps = await extractRepoSymbols(clonePath);
   const symbolCount = symbolMaps.reduce((count, map) => count + map.symbols.length, 0);
 
   await reportStage({ stage: "graph", progress: 70 });
+  input.signal?.throwIfAborted();
   const builtGraph = buildDependencyGraph(symbolMaps);
   const graph = {
     ...builtGraph,
@@ -493,9 +498,10 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     symbolMaps,
     dependencyGraph: graph,
   });
-  await snapshotStore.saveSummary(identity, summary);
+  await snapshotStore.saveSummary(identity, summary, input.signal);
 
   await reportStage({ stage: "chunk", progress: 80 });
+  input.signal?.throwIfAborted();
   await executeIndexingPlan({
     plan: indexingPlan,
     currentFiles: stats.files,
@@ -507,6 +513,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   });
 
   await reportStage({ stage: "embed", progress: 90 });
+  input.signal?.throwIfAborted();
   const context = await buildRepositoryContext(clonePath, repoId, {
     signal: input.signal,
     requestId: job.createdByRequestId ?? undefined,
@@ -517,6 +524,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   });
 
   await reportStage({ stage: "finalize", progress: 95 });
+  input.signal?.throwIfAborted();
   const counts = {
       chunkCount: context.totalChunks,
       fileCount: stats.totalFiles,
@@ -546,7 +554,8 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
         lastSeenAt: snapshotTimestamp,
       })),
     },
-  }, quotas.maxArtifactBytes);
+  }, quotas.maxArtifactBytes, input.signal);
+  input.signal?.throwIfAborted();
   await sealRepositoryCheckout(clonePath);
   await snapshotStore.publish({
     ...identity,
@@ -556,7 +565,7 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
     repositoryStorageBytes: stats.repositoryBytes ?? stats.indexedTextBytes ?? 0,
     maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
     maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
-  });
+  }, input.signal);
   try {
     await refreshPreviousCheckoutReadLease(repoId);
   } catch (error: unknown) {

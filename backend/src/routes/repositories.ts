@@ -38,15 +38,13 @@ import { buildRepositoryRecommendations } from "../services/repository/repositor
 import { buildRepositoryIntelligenceReport } from "../services/repository/repositoryIntelligenceReport.js";
 import { buildRepositoryIntelligencePresentation } from "../services/repository/repositoryIntelligencePresenter.js";
 import {
-  setRepositoryOwner,
-} from "../services/repository/ownershipStore.js";
-import { authorizeRepositoryConnection, validatePublishedRepositoryCheckout } from "../services/repository/ownershipGuard.js";
+  authorizeRepositoryConnection, validatePublishedRepositoryCheckout,
+} from "../services/repository/ownershipGuard.js";
 import { getAuthenticatedUser } from "../services/auth/authContext.js";
 import type { AuthenticatedUser } from "../services/auth/authTypes.js";
 import {
   getRepositoryIndexMetadata,
   isRepositoryStale,
-  setRepositoryIndexing,
   listIndexedRepositories,
 } from "../services/repository/indexingService.js";
 import type { IndexingJobStore } from "../services/indexing/jobs/indexingJobStore.js";
@@ -57,6 +55,12 @@ import { isRepositoryPathSecurityError } from "../services/security/repositoryPa
 import { repositoryStore } from "../services/repository/store/runtimeRepositoryStore.js";
 import { currentTraceContext, formatTraceparent } from "../observability/tracing.js";
 import { isRepositoryQuotaError } from "../services/repository/quotas/repositoryQuota.js";
+import { getRequestDeadline } from "../middleware/requestTimeout.js";
+import {
+  RepositoryConnectionIdempotencyConflictError,
+  repositoryConnectionPayloadHash,
+  type RepositoryConnectionStore,
+} from "../services/repository/connection/repositoryConnectionStore.js";
 
 type Variables = {
   requestId: string;
@@ -64,6 +68,7 @@ type Variables = {
   indexingJobStore: IndexingJobStore;
   indexingProgressPublisher: IndexingProgressPublisher;
   retrievalCache: RetrievalCache;
+  repositoryConnectionStore: RepositoryConnectionStore;
 };
 
 export const repositoriesRoute = new Hono<{ Variables: Variables }>();
@@ -77,6 +82,7 @@ const RepositoryConnectBodySchema = z.object({
   repoUrl: GithubRepositoryUrlSchema,
   cloneOptions: CloneOptionsSchema.optional(),
 });
+const IdempotencyKeySchema = z.string().trim().min(1).max(200).regex(/^[\x21-\x7E]+$/);
 
 function parseRepositoryParams(owner: string, repo: string) {
   return RepositoryRouteParamsSchema.safeParse({ owner, repo });
@@ -117,6 +123,15 @@ repositoriesRoute.post("/connect", async (c) => {
   }
   const repoId = `${owner}/${repo}`;
   setRequestLogContext(c, { repositoryId: repoId });
+  const suppliedIdempotencyKey = c.req.header("Idempotency-Key");
+  const parsedIdempotencyKey = suppliedIdempotencyKey === undefined
+    ? null
+    : IdempotencyKeySchema.safeParse(suppliedIdempotencyKey);
+  if (parsedIdempotencyKey && !parsedIdempotencyKey.success) {
+    return fail(c, createValidationError({
+      fieldErrors: { idempotencyKey: ["Idempotency-Key must contain 1-200 visible ASCII characters"] },
+    }), 400);
+  }
 
   const connection = await authorizeRepositoryConnection({
     repositoryId: repoId,
@@ -131,22 +146,33 @@ repositoriesRoute.post("/connect", async (c) => {
     logger.info("repos_reindex_stale", { requestId: c.get("requestId"), owner, repo });
   }
 
-  await setRepositoryOwner(repoId, user.userId);
-  const indexingJobStore = c.get("indexingJobStore");
   const trace = currentTraceContext();
-  let job;
+  const branch = parsed.data.cloneOptions?.branch ?? null;
+  const idempotencyKey = parsedIdempotencyKey?.data ?? `request:${c.get("requestId")}`;
+  let transaction;
   try {
-    job = await indexingJobStore.createJob({
-      repositoryId: repoId,
+    transaction = await c.get("repositoryConnectionStore").connect({
+      idempotencyKey,
+      payloadHash: repositoryConnectionPayloadHash({
+        ownerUserId: user.userId,
+        repositoryOwner: owner,
+        repositoryName: repo,
+        repositoryUrl: parsed.data.repoUrl,
+        branch,
+      }),
       ownerUserId: user.userId,
       repositoryOwner: owner,
       repositoryName: repo,
       repositoryUrl: parsed.data.repoUrl,
-      branch: parsed.data.cloneOptions?.branch ?? null,
-      createdByRequestId: c.get("requestId"),
-      ...(trace ? { createdByTraceparent: formatTraceparent(trace) } : {}),
+      branch,
+      requestId: c.get("requestId"),
+      traceparent: trace ? formatTraceparent(trace) : null,
+      signal: getRequestDeadline(c)?.signal,
     });
   } catch (error) {
+    if (error instanceof RepositoryConnectionIdempotencyConflictError) {
+      return fail(c, { code: error.code, message: error.message }, 409);
+    }
     const quota = isRepositoryQuotaError(error) ? error : null;
     const persistenceQuota = error && typeof error === "object" &&
       (error as { code?: unknown }).code === "repository_quota_exceeded";
@@ -159,22 +185,18 @@ repositoriesRoute.post("/connect", async (c) => {
       },
     }, 422);
   }
-  await c.get("indexingProgressPublisher").publish(job);
-  setRequestLogContext(c, { repositoryId: repoId, jobId: job.jobId });
-  await setRepositoryIndexing(owner, repo);
+  if (!transaction.replayed) await c.get("indexingProgressPublisher").publish(transaction.job);
+  setRequestLogContext(c, { repositoryId: repoId, jobId: transaction.response.jobId });
 
   logger.info("repository_connected", {
     requestId: c.get("requestId"),
     userId: user.userId,
     repositoryId: repoId,
-    jobId: job.jobId,
+    jobId: transaction.response.jobId,
+    idempotencyReplayed: transaction.replayed,
   });
 
-  return ok(c, {
-    repositoryId: repoId,
-    jobId: job.jobId,
-    status: "queued",
-  });
+  return ok(c, transaction.response);
 });
 
 repositoriesRoute.get("/indexed", async (c) => {

@@ -23,9 +23,9 @@ export interface PublishedRepositoryArtifacts extends RepositoryArtifacts {
 }
 
 export interface RepositoryArtifactStore {
-  stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes?: number): Promise<void>;
-  load(repositoryId: string, repositoryRevision: string): Promise<PublishedRepositoryArtifacts | null>;
-  loadCurrent(repositoryId: string): Promise<PublishedRepositoryArtifacts | null>;
+  stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes?: number, signal?: AbortSignal): Promise<void>;
+  load(repositoryId: string, repositoryRevision: string, signal?: AbortSignal): Promise<PublishedRepositoryArtifacts | null>;
+  loadCurrent(repositoryId: string, signal?: AbortSignal): Promise<PublishedRepositoryArtifacts | null>;
   collect(repositoryId: string, retentionCount?: number): Promise<number>;
 }
 
@@ -67,7 +67,8 @@ export class MemoryRepositoryArtifactStore implements RepositoryArtifactStore {
     this.revisions.set(identity.repositoryId, revisions);
   }
 
-  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes = runtimeRepositoryQuotas.maxArtifactBytes): Promise<void> {
+  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes = runtimeRepositoryQuotas.maxArtifactBytes, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     assertRepositoryQuota("artifact_size", serializedArtifactBytes(artifacts), maxArtifactBytes);
     const revision = this.revisions.get(identity.repositoryId)?.get(identity.revision);
     if (!revision || revision.state !== "building" ||
@@ -77,6 +78,7 @@ export class MemoryRepositoryArtifactStore implements RepositoryArtifactStore {
       throw new Error("indexing_job_lease_conflict");
     }
     revision.artifacts = clone(artifacts);
+    signal?.throwIfAborted();
   }
 
   publish(identity: RepositorySnapshotIdentity): void {
@@ -105,16 +107,18 @@ export class MemoryRepositoryArtifactStore implements RepositoryArtifactStore {
     }
   }
 
-  async load(repositoryId: string, repositoryRevision: string): Promise<PublishedRepositoryArtifacts | null> {
+  async load(repositoryId: string, repositoryRevision: string, signal?: AbortSignal): Promise<PublishedRepositoryArtifacts | null> {
+    signal?.throwIfAborted();
     const revision = this.revisions.get(repositoryId)?.get(repositoryRevision);
     return revision?.state === "published" && revision.artifacts
       ? published(repositoryId, repositoryRevision, revision.artifacts)
       : null;
   }
 
-  async loadCurrent(repositoryId: string): Promise<PublishedRepositoryArtifacts | null> {
+  async loadCurrent(repositoryId: string, signal?: AbortSignal): Promise<PublishedRepositoryArtifacts | null> {
+    signal?.throwIfAborted();
     const revision = this.active.get(repositoryId);
-    return revision ? this.load(repositoryId, revision) : null;
+    return revision ? this.load(repositoryId, revision, signal) : null;
   }
 
   async collect(repositoryId: string, retentionCount = env.REPOSITORY_ARTIFACT_RETENTION_COUNT): Promise<number> {
@@ -137,11 +141,12 @@ export class MemoryRepositoryArtifactStore implements RepositoryArtifactStore {
   }
 }
 
-interface DatabaseClient {
-  rpc(name: string, parameters: Record<string, unknown>): PromiseLike<{
+interface RpcQuery extends PromiseLike<{
     data: unknown;
     error: { code?: string; message?: string } | null;
-  }>;
+  }> { abortSignal?(signal: AbortSignal): RpcQuery }
+interface DatabaseClient {
+  rpc(name: string, parameters: Record<string, unknown>): RpcQuery;
 }
 
 function rowToArtifacts(row: Record<string, unknown>): PublishedRepositoryArtifacts {
@@ -159,9 +164,10 @@ function rowToArtifacts(row: Record<string, unknown>): PublishedRepositoryArtifa
 export class SupabaseRepositoryArtifactStore implements RepositoryArtifactStore {
   constructor(private readonly client: DatabaseClient | SupabaseClient) {}
 
-  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes = runtimeRepositoryQuotas.maxArtifactBytes): Promise<void> {
+  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes = runtimeRepositoryQuotas.maxArtifactBytes, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     assertRepositoryQuota("artifact_size", serializedArtifactBytes(artifacts), maxArtifactBytes);
-    const { error } = await (this.client as DatabaseClient).rpc("stage_repository_artifacts", {
+    let query = (this.client as DatabaseClient).rpc("stage_repository_artifacts", {
       input_repository_id: identity.repositoryId,
       input_repository_revision: identity.revision,
       input_job_id: identity.jobId,
@@ -174,23 +180,29 @@ export class SupabaseRepositoryArtifactStore implements RepositoryArtifactStore 
       input_graph_source: artifacts.graphSource,
       input_max_artifact_bytes: maxArtifactBytes,
     });
+    if (signal && typeof query.abortSignal === "function") query = query.abortSignal(signal);
+    const { error } = await query;
     if (error) throw repositoryQuotaErrorFromMessage(error.message) ?? new Error(error.message ?? "Repository artifact staging failed.");
   }
 
-  async load(repositoryId: string, repositoryRevision: string): Promise<PublishedRepositoryArtifacts | null> {
-    const { data, error } = await (this.client as DatabaseClient).rpc("get_repository_artifacts", {
+  async load(repositoryId: string, repositoryRevision: string, signal?: AbortSignal): Promise<PublishedRepositoryArtifacts | null> {
+    let query = (this.client as DatabaseClient).rpc("get_repository_artifacts", {
       input_repository_id: repositoryId,
       input_repository_revision: repositoryRevision,
     });
+    if (signal && typeof query.abortSignal === "function") query = query.abortSignal(signal);
+    const { data, error } = await query;
     if (error) throw new Error(error.message ?? "Repository artifact read failed.");
     const row = Array.isArray(data) ? data[0] : data;
     return row && typeof row === "object" ? rowToArtifacts(row as Record<string, unknown>) : null;
   }
 
-  async loadCurrent(repositoryId: string): Promise<PublishedRepositoryArtifacts | null> {
-    const { data, error } = await (this.client as DatabaseClient).rpc("get_current_repository_artifacts", {
+  async loadCurrent(repositoryId: string, signal?: AbortSignal): Promise<PublishedRepositoryArtifacts | null> {
+    let query = (this.client as DatabaseClient).rpc("get_current_repository_artifacts", {
       input_repository_id: repositoryId,
     });
+    if (signal && typeof query.abortSignal === "function") query = query.abortSignal(signal);
+    const { data, error } = await query;
     if (error) throw new Error(error.message ?? "Current repository artifact read failed.");
     const row = Array.isArray(data) ? data[0] : data;
     return row && typeof row === "object" ? rowToArtifacts(row as Record<string, unknown>) : null;

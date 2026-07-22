@@ -21,6 +21,7 @@ import { runtimeRepositoryDeletionService } from "./services/repository/reposito
 import { rateLimitBackend, runtimeRateLimitStore } from "./services/rateLimit/runtimeRateLimitStore.js";
 import { recoverAbandonedRepositoryCheckouts } from "./services/repository/revisionCheckouts.js";
 import { repositoryStore } from "./services/repository/store/runtimeRepositoryStore.js";
+import { runtimeRepositoryConnectionStore } from "./services/repository/connection/runtimeRepositoryConnectionStore.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -46,6 +47,22 @@ try {
     source: "backend_startup",
     backend: rateLimitBackend,
     reasonCode: "rate_limit_backend_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryConnectionStore.verify();
+  const removed = await runtimeRepositoryConnectionStore.cleanupExpired();
+  logger.info("repository_connection_idempotency_verified", {
+    source: "backend_startup",
+    expiredRecordsRemoved: removed,
+  });
+} catch {
+  logger.error("repository_connection_idempotency_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "idempotency_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
