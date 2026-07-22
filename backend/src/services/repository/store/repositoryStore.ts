@@ -7,6 +7,23 @@ export type RepositoryStoreStatus =
   | "failed"
   | "stale";
 
+export type RepositoryDeletionState = "active" | "deleting";
+
+export interface RepositoryDeletionTombstone {
+  repositoryId: string;
+  owner: string;
+  repo: string;
+  ownerUserId: string;
+  deletionState: "deleted";
+  deletedAt: string;
+  deletedRepositoryVersion: number;
+  cleanupPending: boolean;
+  cleanupAttempts: number;
+  cleanupLastError: string | null;
+  cleanupCompletedAt: string | null;
+  responseReport: unknown;
+}
+
 export interface RepositoryStoreCounts {
   chunkCount: number;
   fileCount: number;
@@ -24,6 +41,7 @@ export interface RepositoryRecord extends RepositoryStoreCounts {
   repo: string;
   ownerUserId: string | null;
   status: RepositoryStoreStatus;
+  deletionState: RepositoryDeletionState;
   connectedAt: string;
   updatedAt: string;
   indexedAt: string | null;
@@ -40,6 +58,12 @@ export interface RepositoryRecord extends RepositoryStoreCounts {
   retryCount: number;
   lastRetryAt: string | null;
   indexedRevision: string | null;
+  /** Atomic filesystem/artifact publication pointer. */
+  currentRevision: string | null;
+  /** Revision currently owned by an indexing lease. */
+  publishingRevision: string | null;
+  /** Last published revision, retained as the rollback target. */
+  previousRevision: string | null;
   lastLifecycleSeverity: "none" | "low" | "medium" | "high" | null;
   lastReindexMode: RepositoryStoreIndexMode | "none" | null;
   lastReindexReason: string | null;
@@ -68,6 +92,9 @@ export interface UpdateRepositoryInput {
   retryCount?: number;
   lastRetryAt?: string | null;
   indexedRevision?: string | null;
+  currentRevision?: string | null;
+  publishingRevision?: string | null;
+  previousRevision?: string | null;
   lastLifecycleSeverity?: "none" | "low" | "medium" | "high" | null;
   lastReindexMode?: RepositoryStoreIndexMode | "none" | null;
   lastReindexReason?: string | null;
@@ -97,9 +124,24 @@ export interface RepositoryStore {
     expectedVersion?: number,
   ): MaybePromise<RepositoryRecord | null>;
   deleteRepository(repositoryId: string): MaybePromise<boolean>;
+  deleteRepositoryDurably?(input: {
+    repositoryId: string;
+    ownerUserId: string;
+    expectedVersion: number;
+    responseReport: unknown;
+  }): MaybePromise<RepositoryDeletionTombstone>;
+  getDeletionTombstone?(repositoryId: string): MaybePromise<RepositoryDeletionTombstone | null>;
+  listPendingDeletionCleanups?(): MaybePromise<RepositoryDeletionTombstone[]>;
+  recordDeletionCleanupResult?(input: {
+    repositoryId: string;
+    succeeded: boolean;
+    error?: string | null;
+  }): MaybePromise<RepositoryDeletionTombstone | null>;
   markIndexing(repositoryId: string): MaybePromise<RepositoryRecord | null>;
   markIndexed(repositoryId: string, input: MarkIndexedInput): MaybePromise<RepositoryRecord | null>;
   markFailed(repositoryId: string, input?: MarkFailedInput): MaybePromise<RepositoryRecord | null>;
+  beginPublishing?(repositoryId: string, revision: string): MaybePromise<RepositoryRecord | null>;
+  rollbackRevision?(repositoryId: string): MaybePromise<RepositoryRecord | null>;
   touchAccess(repositoryId: string): MaybePromise<RepositoryRecord | null>;
   repositoryExists(repositoryId: string): MaybePromise<boolean>;
   clear(): MaybePromise<void>;

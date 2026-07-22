@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { lstatSync, realpathSync, statSync } from "node:fs";
 import {
@@ -86,9 +86,18 @@ export function repositoryCheckoutKey(repositoryId: string): RepositoryCheckoutK
 
 export function repositoryCheckoutPath(
   repositoryId: string,
-  storageRoot: CanonicalRepositoryStorageRoot = repositoryStorageRoot,
+  revisionOrStorageRoot?: string | null,
+  explicitStorageRoot?: CanonicalRepositoryStorageRoot,
 ): TrustedRepositoryCheckoutPath {
-  const target = path.resolve(storageRoot, repositoryCheckoutKey(repositoryId));
+  const legacyStorageRoot = revisionOrStorageRoot != null && path.isAbsolute(revisionOrStorageRoot)
+    ? revisionOrStorageRoot as CanonicalRepositoryStorageRoot
+    : null;
+  const storageRoot = explicitStorageRoot ?? legacyStorageRoot ?? repositoryStorageRoot;
+  const revision = legacyStorageRoot ? null : revisionOrStorageRoot;
+  if (revision != null && !/^[0-9a-f]{40}$/.test(revision)) {
+    throw new RepositoryPathSecurityError("invalid_path", "Repository revision is invalid.");
+  }
+  const target = path.resolve(storageRoot, repositoryCheckoutKey(repositoryId), revision ?? "");
   if (!isContained(storageRoot, target, false)) {
     throw new RepositoryPathSecurityError("unsafe_checkout");
   }
@@ -97,10 +106,10 @@ export function repositoryCheckoutPath(
 
 export async function validateRepositoryCheckout(
   repositoryId: string,
-  options: { mustExist?: boolean; storageRoot?: CanonicalRepositoryStorageRoot } = {},
+  options: { revision?: string | null; mustExist?: boolean; storageRoot?: CanonicalRepositoryStorageRoot } = {},
 ): Promise<TrustedRepositoryCheckoutPath> {
   const storageRoot = options.storageRoot ?? repositoryStorageRoot;
-  const checkout = repositoryCheckoutPath(repositoryId, storageRoot);
+  const checkout = repositoryCheckoutPath(repositoryId, options.revision, storageRoot);
   let checkoutInfo;
   try {
     checkoutInfo = await lstat(checkout);
@@ -177,11 +186,14 @@ export async function resolveRepositoryPath(
 
 export async function removeRepositoryCheckout(
   repositoryId: string,
-  options: { storageRoot?: CanonicalRepositoryStorageRoot } = {},
+  options: { revision?: string; storageRoot?: CanonicalRepositoryStorageRoot } = {},
 ): Promise<boolean> {
   const storageRoot = options.storageRoot ?? repositoryStorageRoot;
-  const checkout = repositoryCheckoutPath(repositoryId, storageRoot);
-  if ((checkout as string) === (storageRoot as string) || path.dirname(checkout) !== storageRoot) {
+  const checkout = repositoryCheckoutPath(repositoryId, options.revision, storageRoot);
+  const expectedParent = options.revision
+    ? repositoryCheckoutPath(repositoryId, null, storageRoot)
+    : storageRoot;
+  if ((checkout as string) === (storageRoot as string) || path.dirname(checkout) !== expectedParent) {
     throw new RepositoryPathSecurityError("unsafe_cleanup_rejection");
   }
   try {
@@ -193,9 +205,46 @@ export async function removeRepositoryCheckout(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
-  await validateRepositoryCheckout(repositoryId, { mustExist: true, storageRoot });
+  await validateRepositoryCheckout(repositoryId, { revision: options.revision, mustExist: true, storageRoot });
+  const prepareRemoval = async (directory: string): Promise<void> => {
+    await chmod(directory, 0o700);
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) await prepareRemoval(target);
+      else await chmod(target, 0o600);
+    }
+  };
+  await prepareRemoval(checkout);
   await rm(checkout, { recursive: true, force: false, maxRetries: 2 });
   return true;
+}
+
+export async function ensureRepositoryRevisionRoot(
+  repositoryId: string,
+  storageRoot: CanonicalRepositoryStorageRoot = repositoryStorageRoot,
+): Promise<void> {
+  await ensureRepositoryStorageRoot();
+  const root = repositoryCheckoutPath(repositoryId, null, storageRoot);
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  await validateRepositoryCheckout(repositoryId, { mustExist: true, storageRoot });
+}
+
+export async function listRepositoryCheckoutRevisions(
+  repositoryId: string,
+  storageRoot: CanonicalRepositoryStorageRoot = repositoryStorageRoot,
+): Promise<string[]> {
+  let root: TrustedRepositoryCheckoutPath;
+  try {
+    root = await validateRepositoryCheckout(repositoryId, { mustExist: true, storageRoot });
+  } catch {
+    return [];
+  }
+  const entries = await readdir(root, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && /^[0-9a-f]{40}$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
 }
 
 export async function collectContainedDirectories(

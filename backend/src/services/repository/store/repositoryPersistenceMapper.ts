@@ -12,6 +12,7 @@ export interface RepositoryPersistenceRow {
   repository_owner: string;
   repository_name: string;
   status: RepositoryStoreStatus;
+  deletion_state?: "active" | "deleting";
   indexing_mode: RepositoryStoreIndexMode | null;
   file_count: number;
   symbol_count: number;
@@ -36,6 +37,9 @@ export interface RepositoryPersistenceRow {
   created_at?: string;
   updated_at: string;
   indexed_revision: string | null;
+  current_revision?: string | null;
+  publishing_revision?: string | null;
+  previous_revision?: string | null;
   last_lifecycle_severity: "none" | "low" | "medium" | "high" | null;
   last_reindex_mode: RepositoryStoreIndexMode | "none" | null;
   last_reindex_reason: string | null;
@@ -45,6 +49,7 @@ export type RepositoryPersistencePatch = Partial<Pick<
   RepositoryPersistenceRow,
   | "owner_user_id"
   | "status"
+  | "deletion_state"
   | "indexing_mode"
   | "file_count"
   | "symbol_count"
@@ -66,6 +71,9 @@ export type RepositoryPersistencePatch = Partial<Pick<
   | "last_accessed_at"
   | "updated_at"
   | "indexed_revision"
+  | "current_revision"
+  | "publishing_revision"
+  | "previous_revision"
   | "last_lifecycle_severity"
   | "last_reindex_mode"
   | "last_reindex_reason"
@@ -98,6 +106,9 @@ export function repositoryUpdateToRow(
     ...(input.retryCount !== undefined ? { retry_count: input.retryCount } : {}),
     ...(hasOwn(input, "lastRetryAt") ? { last_retry_at: input.lastRetryAt ?? null } : {}),
     ...(hasOwn(input, "indexedRevision") ? { indexed_revision: input.indexedRevision ?? null } : {}),
+    ...(hasOwn(input, "currentRevision") ? { current_revision: input.currentRevision ?? null } : {}),
+    ...(hasOwn(input, "publishingRevision") ? { publishing_revision: input.publishingRevision ?? null } : {}),
+    ...(hasOwn(input, "previousRevision") ? { previous_revision: input.previousRevision ?? null } : {}),
     ...(hasOwn(input, "lastLifecycleSeverity") ? { last_lifecycle_severity: input.lastLifecycleSeverity ?? null } : {}),
     ...(hasOwn(input, "lastReindexMode") ? { last_reindex_mode: input.lastReindexMode ?? null } : {}),
     ...(hasOwn(input, "lastReindexReason") ? { last_reindex_reason: input.lastReindexReason ?? null } : {}),
@@ -122,6 +133,7 @@ export function repositoryRecordToRow(
     repository_owner: record.owner,
     repository_name: record.repo,
     status: record.status,
+    deletion_state: record.deletionState,
     indexing_mode: record.lastIndexMode ?? null,
     file_count: record.fileCount,
     symbol_count: record.symbolCount,
@@ -144,6 +156,9 @@ export function repositoryRecordToRow(
     last_accessed_at: record.lastAccessedAt ?? null,
     updated_at: record.updatedAt,
     indexed_revision: record.indexedRevision,
+    current_revision: record.currentRevision,
+    publishing_revision: record.publishingRevision,
+    previous_revision: record.previousRevision,
     last_lifecycle_severity: record.lastLifecycleSeverity,
     last_reindex_mode: record.lastReindexMode,
     last_reindex_reason: record.lastReindexReason,
@@ -162,6 +177,7 @@ export function repositoryRowToRecord(
     repo: row.repository_name,
     ownerUserId: row.owner_user_id ?? null,
     status: row.status,
+    deletionState: row.deletion_state ?? "active",
     connectedAt: row.connected_at,
     updatedAt: row.updated_at,
     indexedAt: row.indexed_at ?? null,
@@ -184,6 +200,9 @@ export function repositoryRowToRecord(
     retryCount: row.retry_count,
     lastRetryAt: row.last_retry_at ?? null,
     indexedRevision: row.indexed_revision ?? null,
+    currentRevision: row.current_revision ?? row.indexed_revision ?? null,
+    publishingRevision: row.publishing_revision ?? null,
+    previousRevision: row.previous_revision ?? null,
     lastLifecycleSeverity: row.last_lifecycle_severity ?? null,
     lastReindexMode: row.last_reindex_mode ?? null,
     lastReindexReason: row.last_reindex_reason ?? null,

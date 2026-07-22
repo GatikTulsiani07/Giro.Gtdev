@@ -4,6 +4,7 @@ import {
   type MarkFailedInput,
   type MarkIndexedInput,
   type RepositoryRecord,
+  type RepositoryDeletionTombstone,
   type RepositoryStore,
   type RepositoryStoreCounts,
   type UpdateRepositoryInput,
@@ -36,6 +37,7 @@ function cloneRecord(record: RepositoryRecord): RepositoryRecord {
     repo: record.repo,
     ownerUserId: record.ownerUserId,
     status: record.status,
+    deletionState: record.deletionState,
     connectedAt: record.connectedAt,
     updatedAt: record.updatedAt,
     indexedAt: record.indexedAt,
@@ -58,6 +60,9 @@ function cloneRecord(record: RepositoryRecord): RepositoryRecord {
     retryCount: record.retryCount,
     lastRetryAt: record.lastRetryAt,
     indexedRevision: record.indexedRevision,
+    currentRevision: record.currentRevision,
+    publishingRevision: record.publishingRevision,
+    previousRevision: record.previousRevision,
     lastLifecycleSeverity: record.lastLifecycleSeverity,
     lastReindexMode: record.lastReindexMode,
     lastReindexReason: record.lastReindexReason,
@@ -76,6 +81,7 @@ function createRecord(input: ConnectRepositoryInput, timestamp: string): Reposit
     repo: input.repo,
     ownerUserId: input.ownerUserId ?? null,
     status: "connected",
+    deletionState: "active",
     connectedAt: timestamp,
     updatedAt: timestamp,
     indexedAt: null,
@@ -93,6 +99,9 @@ function createRecord(input: ConnectRepositoryInput, timestamp: string): Reposit
     retryCount: 0,
     lastRetryAt: null,
     indexedRevision: null,
+    currentRevision: null,
+    publishingRevision: null,
+    previousRevision: null,
     lastLifecycleSeverity: null,
     lastReindexMode: null,
     lastReindexReason: null,
@@ -108,9 +117,11 @@ function hasOwn<T extends object>(
 
 export class MemoryRepositoryStore implements RepositoryStore {
   private readonly repositories = new Map<string, RepositoryRecord>();
+  private readonly deletionTombstones = new Map<string, RepositoryDeletionTombstone>();
 
   connectRepository(input: ConnectRepositoryInput): RepositoryRecord {
     const id = repositoryId(input.owner, input.repo);
+    if (this.deletionTombstones.has(id)) throw new Error("repository_deleted");
     const timestamp = now();
     const existing = this.repositories.get(id);
 
@@ -204,6 +215,15 @@ export class MemoryRepositoryStore implements RepositoryStore {
       indexedRevision: hasOwn(input, "indexedRevision")
         ? (input.indexedRevision ?? null)
         : existing.indexedRevision,
+      currentRevision: hasOwn(input, "currentRevision")
+        ? (input.currentRevision ?? null)
+        : existing.currentRevision,
+      publishingRevision: hasOwn(input, "publishingRevision")
+        ? (input.publishingRevision ?? null)
+        : existing.publishingRevision,
+      previousRevision: hasOwn(input, "previousRevision")
+        ? (input.previousRevision ?? null)
+        : existing.previousRevision,
       lastLifecycleSeverity: hasOwn(input, "lastLifecycleSeverity")
         ? (input.lastLifecycleSeverity ?? null)
         : existing.lastLifecycleSeverity,
@@ -223,11 +243,93 @@ export class MemoryRepositoryStore implements RepositoryStore {
     return this.repositories.delete(repositoryId);
   }
 
+  deleteRepositoryDurably(input: {
+    repositoryId: string;
+    ownerUserId: string;
+    expectedVersion: number;
+    responseReport: unknown;
+  }): RepositoryDeletionTombstone {
+    const existingTombstone = this.deletionTombstones.get(input.repositoryId);
+    if (existingTombstone) {
+      if (existingTombstone.ownerUserId !== input.ownerUserId) throw new Error("repository_not_owned");
+      return structuredClone(existingTombstone);
+    }
+    const repository = this.repositories.get(input.repositoryId);
+    if (!repository || repository.ownerUserId !== input.ownerUserId) throw new Error("repository_not_owned");
+    const version = repository.persistenceVersion ?? 1;
+    if (version !== input.expectedVersion) throw new RepositoryConcurrencyError(input.repositoryId, input.expectedVersion);
+    const tombstone: RepositoryDeletionTombstone = {
+      repositoryId: repository.repositoryId,
+      owner: repository.owner,
+      repo: repository.repo,
+      ownerUserId: input.ownerUserId,
+      deletionState: "deleted",
+      deletedAt: now(),
+      deletedRepositoryVersion: version + 1,
+      cleanupPending: true,
+      cleanupAttempts: 0,
+      cleanupLastError: null,
+      cleanupCompletedAt: null,
+      responseReport: structuredClone(input.responseReport),
+    };
+    this.repositories.delete(input.repositoryId);
+    this.deletionTombstones.set(input.repositoryId, structuredClone(tombstone));
+    return structuredClone(tombstone);
+  }
+
+  getDeletionTombstone(repositoryId: string): RepositoryDeletionTombstone | null {
+    const tombstone = this.deletionTombstones.get(repositoryId);
+    return tombstone ? structuredClone(tombstone) : null;
+  }
+
+  listPendingDeletionCleanups(): RepositoryDeletionTombstone[] {
+    return [...this.deletionTombstones.values()].filter((value) => value.cleanupPending).map((value) => structuredClone(value));
+  }
+
+  recordDeletionCleanupResult(input: { repositoryId: string; succeeded: boolean; error?: string | null }): RepositoryDeletionTombstone | null {
+    const tombstone = this.deletionTombstones.get(input.repositoryId);
+    if (!tombstone) return null;
+    const updated: RepositoryDeletionTombstone = {
+      ...tombstone,
+      cleanupPending: !input.succeeded,
+      cleanupAttempts: tombstone.cleanupAttempts + 1,
+      cleanupLastError: input.succeeded ? null : (input.error ?? "filesystem cleanup failed"),
+      cleanupCompletedAt: input.succeeded ? now() : null,
+    };
+    this.deletionTombstones.set(input.repositoryId, structuredClone(updated));
+    return structuredClone(updated);
+  }
+
   markIndexing(repositoryId: string): RepositoryRecord | null {
     const existing = this.repositories.get(repositoryId);
     if (!existing) return null;
     return this.updateRepository(repositoryId, {
-      status: existing.indexedRevision ? "indexed" : "indexing",
+      status: existing.currentRevision ? "indexed" : "indexing",
+    }, existing.persistenceVersion ?? 1);
+  }
+
+  beginPublishing(repositoryId: string, revision: string): RepositoryRecord | null {
+    if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("Repository revision is invalid.");
+    const existing = this.repositories.get(repositoryId);
+    if (!existing) return null;
+    if (existing.publishingRevision && existing.publishingRevision !== revision) {
+      throw new RepositoryConcurrencyError(repositoryId, existing.persistenceVersion ?? 1);
+    }
+    return this.updateRepository(repositoryId, { publishingRevision: revision }, existing.persistenceVersion ?? 1);
+  }
+
+  rollbackRevision(repositoryId: string): RepositoryRecord | null {
+    const existing = this.repositories.get(repositoryId);
+    if (!existing) return null;
+    if (existing.publishingRevision) {
+      throw new RepositoryConcurrencyError(repositoryId, existing.persistenceVersion ?? 1);
+    }
+    if (!existing.previousRevision) throw new Error("Repository rollback revision is unavailable.");
+    return this.updateRepository(repositoryId, {
+      indexedRevision: existing.previousRevision,
+      currentRevision: existing.previousRevision,
+      previousRevision: existing.currentRevision,
+      status: "indexed",
     }, existing.persistenceVersion ?? 1);
   }
 
@@ -250,7 +352,14 @@ export class MemoryRepositoryStore implements RepositoryStore {
         ? { lastChangedFileCount: input.changedFileCount }
         : {}),
       ...(input.indexedRevision !== undefined
-        ? { indexedRevision: input.indexedRevision }
+        ? {
+            indexedRevision: input.indexedRevision,
+            currentRevision: input.indexedRevision,
+            previousRevision: existing.currentRevision === input.indexedRevision
+              ? existing.previousRevision
+              : existing.currentRevision,
+            publishingRevision: null,
+          }
         : {}),
       counts: input.counts,
     }, existing.persistenceVersion ?? 1);
@@ -265,7 +374,8 @@ export class MemoryRepositoryStore implements RepositoryStore {
 
     const timestamp = now();
     return this.updateRepository(repositoryId, {
-      status: existing.indexedRevision ? "indexed" : "failed",
+      status: existing.currentRevision ? "indexed" : "failed",
+      publishingRevision: null,
       lastFailureAt: timestamp,
       ...(input.reason !== undefined ? { failureReason: input.reason } : {}),
       ...(input.failedFileCount !== undefined
@@ -294,5 +404,6 @@ export class MemoryRepositoryStore implements RepositoryStore {
 
   clear(): void {
     this.repositories.clear();
+    this.deletionTombstones.clear();
   }
 }
