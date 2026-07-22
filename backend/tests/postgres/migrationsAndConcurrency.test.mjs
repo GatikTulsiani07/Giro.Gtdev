@@ -80,9 +80,9 @@ test("full migration chain installs fresh, upgrades from previous, and verifies 
     const previous = files.slice(0, -1);
     const latest = files.at(-1);
     assert.deepEqual(await applyMigrations(url, { files: previous }), previous);
-    assert.equal(scalar(url, "select to_regclass('public.repository_artifacts') is null"), "t");
+    assert.equal(scalar(url, "select exists(select 1 from information_schema.columns where table_schema='public' and table_name='indexing_workers' and column_name='functional_ready')"), "f");
     assert.deepEqual(await applyMigrations(url, { files: [latest] }), [latest]);
-    assert.equal(scalar(url, "select to_regclass('public.repository_artifacts') is not null"), "t");
+    assert.equal(scalar(url, "select exists(select 1 from information_schema.columns where table_schema='public' and table_name='indexing_workers' and column_name='functional_ready')"), "t");
     assert.deepEqual(await applyMigrations(url), []);
   });
 });
@@ -115,10 +115,15 @@ test("real schema contains required production objects, grants, RLS, and constra
       has_table_privilege('anon','public.repository_artifacts','select')::int || ':' ||
       has_function_privilege('service_role','public.collect_repository_artifacts(text,integer)','execute')::int || ':' ||
       has_function_privilege('anon','public.collect_repository_artifacts(text,integer)','execute')::int`), "1:0:1:0");
+    assert.equal(scalar(url, `select
+      (public.validate_indexing_worker_contract()->>'contract_valid') || ':' ||
+      (public.validate_indexing_worker_contract()->>'migration_version')`),
+      "true:20260802000000_add_worker_functional_readiness.sql");
 
     assert.equal(psql(url, `set role service_role;
       select count(*) from public.repository_artifacts;
-      select public.collect_repository_artifacts('missing/repo', 1)`).status, 0);
+      select public.collect_repository_artifacts('missing/repo', 1);
+      select public.validate_indexing_worker_contract()`).status, 0);
     assert.notEqual(psql(url, "set role anon; select count(*) from public.repository_artifacts", { allowFailure: true }).status, 0);
     assert.notEqual(psql(url, "set role anon; select count(*) from public.indexing_jobs", { allowFailure: true }).status, 0);
     assert.notEqual(psql(url, "set role authenticated; select public.collect_repository_artifacts('missing/repo', 1)", { allowFailure: true }).status, 0);

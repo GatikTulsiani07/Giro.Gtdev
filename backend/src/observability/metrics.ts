@@ -93,6 +93,13 @@ export class MetricsRegistry {
   private askGiroRequests = 0;
   private retrievalRequests = 0;
   private readiness = 0;
+  private readinessInitialized = false;
+  private readinessTransitions = 0;
+  private workerDatabaseFailures = 0;
+  private workerConsecutiveDatabaseFailures = 0;
+  private workerLastSuccessfulPollSeconds = 0;
+  private workerLastSuccessfulClaimSeconds = 0;
+  private workerStalled = 0;
   private readonly timeouts = new Map<TimeoutMetricCategory, number>();
   private readonly retries = new Map<string, { category: RetryMetricCategory; result: RetryMetricResult; attempt: number; value: number }>();
   private readonly circuitStates = new Map<CircuitDependency, CircuitState>();
@@ -250,7 +257,26 @@ export class MetricsRegistry {
   }
 
   setReadiness(ready: boolean): void {
-    this.readiness = ready ? 1 : 0;
+    const next = ready ? 1 : 0;
+    if (this.readinessInitialized && this.readiness !== next) this.readinessTransitions += 1;
+    this.readinessInitialized = true;
+    this.readiness = next;
+  }
+
+  recordWorkerDatabaseFailure(consecutiveFailures: number): void {
+    this.workerDatabaseFailures += 1;
+    this.workerConsecutiveDatabaseFailures = Math.max(0, Math.trunc(consecutiveFailures));
+  }
+
+  recordWorkerDatabaseSuccess(kind: "poll" | "claim", timestampMs: number): void {
+    this.workerConsecutiveDatabaseFailures = 0;
+    const seconds = Math.max(0, timestampMs / 1_000);
+    if (kind === "poll") this.workerLastSuccessfulPollSeconds = seconds;
+    else this.workerLastSuccessfulClaimSeconds = seconds;
+  }
+
+  setWorkerStalled(stalled: boolean): void {
+    this.workerStalled = stalled ? 1 : 0;
   }
 
   incrementTimeout(category: TimeoutMetricCategory): void {
@@ -518,6 +544,24 @@ export class MetricsRegistry {
       "# HELP giro_health_readiness Application readiness state (1 ready, 0 not ready).",
       "# TYPE giro_health_readiness gauge",
       `giro_health_readiness ${this.readiness}`,
+      "# HELP giro_readiness_transitions_total Readiness state transitions.",
+      "# TYPE giro_readiness_transitions_total counter",
+      `giro_readiness_transitions_total ${this.readinessTransitions}`,
+      "# HELP giro_worker_database_failures_total Worker database operation failures.",
+      "# TYPE giro_worker_database_failures_total counter",
+      `giro_worker_database_failures_total ${this.workerDatabaseFailures}`,
+      "# HELP giro_worker_consecutive_database_failures Current consecutive worker database failures.",
+      "# TYPE giro_worker_consecutive_database_failures gauge",
+      `giro_worker_consecutive_database_failures ${this.workerConsecutiveDatabaseFailures}`,
+      "# HELP giro_worker_last_successful_poll_timestamp_seconds Last successful worker database poll Unix timestamp.",
+      "# TYPE giro_worker_last_successful_poll_timestamp_seconds gauge",
+      `giro_worker_last_successful_poll_timestamp_seconds ${finiteMetricValue(this.workerLastSuccessfulPollSeconds)}`,
+      "# HELP giro_worker_last_successful_claim_timestamp_seconds Last successful worker claim attempt Unix timestamp.",
+      "# TYPE giro_worker_last_successful_claim_timestamp_seconds gauge",
+      `giro_worker_last_successful_claim_timestamp_seconds ${finiteMetricValue(this.workerLastSuccessfulClaimSeconds)}`,
+      "# HELP giro_worker_stalled Worker loop stalled state (1 stalled, 0 progressing).",
+      "# TYPE giro_worker_stalled gauge",
+      `giro_worker_stalled ${this.workerStalled}`,
       "# HELP giro_timeouts_total Deadline and upstream timeout events.",
       "# TYPE giro_timeouts_total counter",
     );

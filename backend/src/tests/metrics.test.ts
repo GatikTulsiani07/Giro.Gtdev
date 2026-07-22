@@ -328,3 +328,21 @@ test("circuit metrics expose one active state per dependency", () => {
   assert.match(output, /giro_circuit_transitions_total\{dependency="database",from="closed",to="open"\} 1/);
   assert.match(output, /giro_circuit_rejections_total\{dependency="database"\} 1/);
 });
+
+test("worker functional readiness metrics expose failures, timestamps, stall, and transitions", () => {
+  const metrics = new MetricsRegistry();
+  metrics.recordWorkerDatabaseFailure(2);
+  metrics.recordWorkerDatabaseSuccess("poll", 1_700_000_000_000);
+  metrics.recordWorkerDatabaseSuccess("claim", 1_700_000_001_000);
+  metrics.setWorkerStalled(true);
+  metrics.setReadiness(true);
+  metrics.setReadiness(false);
+  const output = metrics.render();
+
+  assert.match(output, /giro_worker_database_failures_total 1/);
+  assert.match(output, /giro_worker_consecutive_database_failures 0/);
+  assert.match(output, /giro_worker_last_successful_poll_timestamp_seconds 1700000000/);
+  assert.match(output, /giro_worker_last_successful_claim_timestamp_seconds 1700000001/);
+  assert.match(output, /giro_worker_stalled 1/);
+  assert.match(output, /giro_readiness_transitions_total 1/);
+});

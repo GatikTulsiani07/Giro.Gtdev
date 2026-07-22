@@ -4,10 +4,22 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { validateIndexingWorkerStartup } from "../services/indexing/worker/indexingWorkerStartup.js";
+import {
+  INDEXING_WORKER_CONTRACT_VERSION,
+  validateIndexingWorkerStartup,
+} from "../services/indexing/worker/indexingWorkerStartup.js";
 
 const backendRoot = process.cwd();
 const compiledWorker = path.join(backendRoot, "dist/commands/runIndexingWorker.js");
+const validContract = {
+  migration_version: INDEXING_WORKER_CONTRACT_VERSION,
+  contract_valid: true,
+  validated_operations: [
+    "claim", "recovery", "lease_heartbeat", "lease_fencing", "completion",
+    "failure", "revision_publication", "artifact_publication", "repository_cas",
+    "worker_state",
+  ],
+};
 
 test("build emits the production worker entrypoint", () => {
   assert.equal(existsSync(compiledWorker), true, "run pnpm build before production smoke tests");
@@ -42,7 +54,10 @@ test("startup validation connects to the migrated worker state contract before p
       retryBaseMs: 100,
       retryMaxMs: 1_000,
       shutdownTimeoutMs: 1_000,
+      maxConsecutiveDatabaseFailures: 3,
+      stallTimeoutMs: 60_000,
     },
+    contractValidator: { validate: async () => validContract },
     stateStore: {
       record: async (update) => {
         events.push(`migration:${update.workerId}:${update.state}`);
@@ -72,7 +87,10 @@ test("startup validation fails closed when the worker migration is unavailable",
       retryBaseMs: 100,
       retryMaxMs: 1_000,
       shutdownTimeoutMs: 1_000,
+      maxConsecutiveDatabaseFailures: 3,
+      stallTimeoutMs: 60_000,
     },
+    contractValidator: { validate: async () => validContract },
     stateStore: {
       record: async () => { throw new Error("worker migration unavailable"); },
     },
@@ -84,6 +102,36 @@ test("startup validation fails closed when the worker migration is unavailable",
   assert.equal(logged, false);
 });
 
+test("startup validation fails when the claim RPC is missing", async () => {
+  await assert.rejects(validateIndexingWorkerStartup({
+    config: {
+      workerId: "production-worker-1", pollIntervalMs: 100, idleBackoffMs: 100,
+      maxPollIntervalMs: 200, staleClaimMs: 10_000, heartbeatMs: 1_000,
+      retryBaseMs: 100, retryMaxMs: 1_000, shutdownTimeoutMs: 1_000,
+      maxConsecutiveDatabaseFailures: 3, stallTimeoutMs: 60_000,
+    },
+    contractValidator: {
+      validate: async () => { throw new Error("claim_next_indexing_job:missing_or_wrong_signature"); },
+    },
+    stateStore: { record: async () => { throw new Error("must not record"); } },
+    logger: { info: () => undefined, error: () => undefined },
+  }), /claim_next_indexing_job:missing_or_wrong_signature/);
+});
+
+test("startup validation fails on the wrong RPC signature or return contract", async () => {
+  await assert.rejects(validateIndexingWorkerStartup({
+    config: {
+      workerId: "production-worker-1", pollIntervalMs: 100, idleBackoffMs: 100,
+      maxPollIntervalMs: 200, staleClaimMs: 10_000, heartbeatMs: 1_000,
+      retryBaseMs: 100, retryMaxMs: 1_000, shutdownTimeoutMs: 1_000,
+      maxConsecutiveDatabaseFailures: 3, stallTimeoutMs: 60_000,
+    },
+    contractValidator: { validate: async () => ({ ...validContract, validated_operations: ["claim"] }) },
+    stateStore: { record: async () => undefined },
+    logger: { info: () => undefined, error: () => undefined },
+  }), /version or return shape is invalid/);
+});
+
 test("compiled production worker starts and exits cleanly after configuration preflight", async () => {
   const child = spawn(process.execPath, [compiledWorker, "--validate-config"], {
     cwd: backendRoot,
@@ -91,6 +139,7 @@ test("compiled production worker starts and exits cleanly after configuration pr
     env: {
       ...process.env,
       NODE_ENV: "production",
+      LOG_LEVEL: "info",
       SUPABASE_URL: "https://production-smoke.supabase.co",
       SUPABASE_SERVICE_ROLE_KEY: "production-smoke-service-role-key",
       SUPABASE_ANON_KEY: "",

@@ -30,6 +30,8 @@ const CONFIG: ContinuousIndexingWorkerConfig = {
   retryBaseMs: 20,
   retryMaxMs: 80,
   shutdownTimeoutMs: 15,
+  maxConsecutiveDatabaseFailures: 3,
+  stallTimeoutMs: 100,
 };
 
 const IDLE: IndexingJobExecutionReport = {
@@ -122,7 +124,7 @@ test("continuous worker polls repeatedly and applies bounded idle backoff", asyn
   assert.equal(polls, 3);
   assert.deepEqual(sleeps, [20, 30]);
   assert.equal(store.recoveries.length, 1);
-  assert.ok(health.updates.some((update) => update.polled));
+  assert.ok(health.updates.some((update) => update.pollSucceeded));
   assert.deepEqual(workerLogs.map((entry) => entry.event), [
     "indexing_worker_started",
     "indexing_recovery_started",
@@ -239,4 +241,66 @@ test("worker logs only identifiers and sanitized failure messages", async () => 
   await worker.pollOnce();
   const output = entries.join("\n");
   assert.doesNotMatch(output, /github\.com|source code|token/i);
+});
+
+test("repeated poll failures make the worker unready and a successful poll restores it", async () => {
+  const store = new SupervisedMemoryStore();
+  let fail = true;
+  const worker = new ContinuousIndexingWorker({
+    config: CONFIG,
+    jobStore: store,
+    stateStore: new HealthStore(),
+    logger,
+    executeNext: async () => {
+      if (fail) throw new Error("database unavailable");
+      return IDLE;
+    },
+  });
+
+  await worker.pollOnce();
+  await worker.pollOnce();
+  await worker.pollOnce();
+  assert.equal(worker.isReady(), false);
+
+  fail = false;
+  await worker.pollOnce();
+  assert.equal(worker.isReady(), true);
+});
+
+test("failed lease heartbeat makes the worker unready", async () => {
+  const store = new SupervisedMemoryStore();
+  store.heartbeatJob = async () => { throw new Error("database unavailable"); };
+  const job = await createClaimedJob(store);
+  const worker = new ContinuousIndexingWorker({
+    config: CONFIG,
+    jobStore: store,
+    stateStore: new HealthStore(),
+    logger,
+    executeNext: async ({ observer, signal }) => {
+      await observer?.onClaimed?.(job);
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }));
+      return IDLE;
+    },
+  });
+
+  await worker.pollOnce();
+  assert.equal(worker.isReady(), false);
+});
+
+test("worker readiness detects a stalled loop", async () => {
+  const store = new SupervisedMemoryStore();
+  let now = 1_000;
+  const worker = new ContinuousIndexingWorker({
+    config: CONFIG,
+    jobStore: store,
+    stateStore: new HealthStore(),
+    logger,
+    now: () => now,
+    executeNext: async () => IDLE,
+  });
+
+  await worker.pollOnce();
+  assert.equal(worker.isReady(), true);
+  now += CONFIG.stallTimeoutMs + 1;
+  assert.equal(worker.isReady(), false);
 });
