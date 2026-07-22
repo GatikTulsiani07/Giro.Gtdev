@@ -136,6 +136,8 @@ const EnvSchema = z
     INDEXING_WORKER_RETRY_MAX_MS: z.coerce.number().int().min(100).max(3_600_000).default(300_000),
     INDEXING_WORKER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     INDEXING_WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
+    INDEXING_WORKER_MAX_CONSECUTIVE_DATABASE_FAILURES: z.coerce.number().int().min(1).max(100).default(3),
+    INDEXING_WORKER_STALL_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
     RETRIEVAL_CACHE_TTL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
     RETRIEVAL_CACHE_MAX_ENTRIES: z.coerce.number().int().min(1).max(10_000).default(500),
     REPOSITORY_ARTIFACT_RETENTION_COUNT: z.coerce.number().int().min(1).max(100).default(3),
@@ -249,6 +251,9 @@ const EnvSchema = z
     }
     if (value.INDEXING_WORKER_RETRY_BASE_MS > value.INDEXING_WORKER_RETRY_MAX_MS) {
       context.addIssue({ code: "custom", path: ["INDEXING_WORKER_RETRY_MAX_MS"], message: "Maximum retry delay must be at least the base retry delay." });
+    }
+    if (value.INDEXING_WORKER_STALL_TIMEOUT_MS <= value.INDEXING_WORKER_MAX_POLL_INTERVAL_MS) {
+      context.addIssue({ code: "custom", path: ["INDEXING_WORKER_STALL_TIMEOUT_MS"], message: "Worker stall timeout must exceed the maximum poll interval." });
     }
     if (value.REPOSITORY_QUOTA_MAX_FILE_BYTES > value.REPOSITORY_QUOTA_MAX_BYTES) {
       context.addIssue({ code: "custom", path: ["REPOSITORY_QUOTA_MAX_FILE_BYTES"], message: "File quota cannot exceed repository quota." });

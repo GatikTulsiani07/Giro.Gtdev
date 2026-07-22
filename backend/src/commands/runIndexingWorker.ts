@@ -14,7 +14,10 @@ import { runtimeIndexingJobStore } from "../services/indexing/jobs/runtimeIndexi
 import { runtimeRetrievalCache } from "../services/retrieval/cache/runtimeRetrievalCache.js";
 import { ContinuousIndexingWorker } from "../services/indexing/worker/continuousIndexingWorker.js";
 import { SupabaseIndexingWorkerStateStore } from "../services/indexing/worker/indexingWorkerStateStore.js";
-import { validateIndexingWorkerStartup } from "../services/indexing/worker/indexingWorkerStartup.js";
+import {
+  SupabaseIndexingWorkerContractValidator,
+  validateIndexingWorkerStartup,
+} from "../services/indexing/worker/indexingWorkerStartup.js";
 import { isValidIndexingWorkerId } from "./processNextIndexingJob.js";
 import {
   createBackendShutdown,
@@ -39,6 +42,8 @@ export function buildContinuousWorkerConfig() {
     retryBaseMs: env.INDEXING_WORKER_RETRY_BASE_MS,
     retryMaxMs: env.INDEXING_WORKER_RETRY_MAX_MS,
     shutdownTimeoutMs: env.INDEXING_WORKER_SHUTDOWN_TIMEOUT_MS,
+    maxConsecutiveDatabaseFailures: env.INDEXING_WORKER_MAX_CONSECUTIVE_DATABASE_FAILURES,
+    stallTimeoutMs: env.INDEXING_WORKER_STALL_TIMEOUT_MS,
   };
 }
 
@@ -48,6 +53,7 @@ export async function runIndexingWorker(): Promise<0 | 1> {
   await validateIndexingWorkerStartup({
     config,
     stateStore,
+    contractValidator: new SupabaseIndexingWorkerContractValidator(supabase),
     logger: stderrLogger,
   });
   const worker = new ContinuousIndexingWorker({
@@ -55,6 +61,7 @@ export async function runIndexingWorker(): Promise<0 | 1> {
     jobStore: runtimeIndexingJobStore,
     stateStore,
     logger: stderrLogger,
+    metrics: runtimeMetrics,
     onShutdownTimeout: () => undefined,
     executeNext: ({ signal, observer }) => processNextIndexingJob({
       workerId: config.workerId,
