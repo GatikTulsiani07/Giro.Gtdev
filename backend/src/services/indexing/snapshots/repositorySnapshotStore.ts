@@ -3,6 +3,7 @@ import { supabase } from "../../../lib/supabase.js";
 import type { IndexedCounts, SetRepositoryIndexedOptions } from "../../repository/indexingService.js";
 import type { RepositorySummary } from "../../repositorySummary/summaryTypes.js";
 import { IndexingJobLeaseConflictError } from "../jobs/indexingJobStore.js";
+import { repositoryQuotaErrorFromMessage, runtimeRepositoryQuotas } from "../../repository/quotas/repositoryQuota.js";
 
 export interface RepositorySnapshotIdentity {
   repositoryId: string;
@@ -21,6 +22,10 @@ export interface BeginRepositorySnapshotResult {
 export interface PublishRepositorySnapshotInput extends RepositorySnapshotIdentity {
   counts: IndexedCounts;
   indexOptions?: SetRepositoryIndexedOptions;
+  ownerUserId?: string;
+  repositoryStorageBytes?: number;
+  maxIndexedRepositoriesPerUser?: number;
+  maxStorageBytesPerUser?: number;
 }
 
 export interface RepositorySnapshotStore {
@@ -42,6 +47,8 @@ function throwSnapshotError(
   fallbackMessage: string,
 ): void {
   if (!error) return;
+  const quotaError = repositoryQuotaErrorFromMessage(error.message);
+  if (quotaError) throw quotaError;
   if (error.code === "40001" || error.message === "indexing_job_lease_conflict") {
     throw new IndexingJobLeaseConflictError();
   }
@@ -103,6 +110,12 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
   }
 
   async publish(input: PublishRepositorySnapshotInput): Promise<void> {
+    const quotaParameters = input.ownerUserId ? {
+      input_owner_user_id: input.ownerUserId,
+      input_repository_storage_bytes: input.repositoryStorageBytes ?? 0,
+      input_max_indexed_repositories: input.maxIndexedRepositoriesPerUser ?? runtimeRepositoryQuotas.maxIndexedRepositoriesPerUser,
+      input_max_user_storage_bytes: input.maxStorageBytesPerUser ?? runtimeRepositoryQuotas.maxStorageBytesPerUser,
+    } : {};
     const { error } = await this.client.rpc("publish_repository_snapshot", {
       input_repository_id: input.repositoryId,
       input_revision: input.revision,
@@ -118,6 +131,7 @@ export class SupabaseRepositorySnapshotStore implements RepositorySnapshotStore 
       input_summary_available: input.counts.summaryAvailable,
       input_index_mode: input.indexOptions?.indexMode ?? "full",
       input_changed_file_count: input.indexOptions?.changedFileCount ?? input.counts.fileCount,
+      ...quotaParameters,
     });
     throwSnapshotError(error, "Repository snapshot publication failed.");
   }

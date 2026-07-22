@@ -32,7 +32,7 @@ import { INDEXING_JOB_LEASE_CONFLICT, indexingJobClaim } from "./indexingJobStor
 import type { IndexingMetricStatus, RetryMetricCategory, RetryMetricResult, TimeoutMetricCategory } from "../../../observability/metrics.js";
 import { env } from "../../../config/env.js";
 import { createDeadline } from "../../../runtime/deadline.js";
-import { isDeadlineExceeded } from "../../../runtime/deadline.js";
+import { isDeadlineExceeded, waitForDeadline } from "../../../runtime/deadline.js";
 import type { DependencyCircuitBreakers } from "../../../runtime/dependencyCircuitBreakers.js";
 import { runtimeMetrics } from "../../../observability/metrics.js";
 import { currentLogContext, logger, runWithLogContext } from "../../../lib/logger.js";
@@ -50,12 +50,19 @@ import type { RepositoryRecord, RepositoryStore } from "../../repository/store/r
 import {
   collectRepositoryCheckouts,
   refreshPreviousCheckoutReadLease,
+  removeUnpublishedRepositoryCheckout,
   sealRepositoryCheckout,
 } from "../../repository/revisionCheckouts.js";
 import { repositoryStore as runtimeRepositoryStore } from "../../repository/store/runtimeRepositoryStore.js";
 import { normalizeGitHubRepositoryReference, normalizeRepositoryId } from "../../security/repositoryIdentity.js";
 import type { TrustedRepositoryCheckoutPath } from "../../security/repositoryPaths.js";
 import { BranchNameSchema } from "../../../validation/repositorySchemas.js";
+import {
+  isRepositoryQuotaError,
+  RepositoryQuotaError,
+  runtimeRepositoryQuotas,
+  type RepositoryQuotas,
+} from "../../repository/quotas/repositoryQuota.js";
 
 export interface IndexingJobProgressPublisher {
   publish(job: IndexingJob): void | Promise<void>;
@@ -79,6 +86,7 @@ export interface IndexingPipelineInput {
   circuitBreakers?: DependencyCircuitBreakers;
   snapshotStore?: RepositorySnapshotStore;
   artifactStore?: RepositoryArtifactStore;
+  quotas?: RepositoryQuotas;
 }
 
 export interface IndexingPipelineResult {
@@ -114,6 +122,7 @@ export interface ProcessNextIndexingJobInput {
   progressPublisher?: IndexingJobProgressPublisher;
   retrievalCacheInvalidator?: RetrievalCacheInvalidator;
   signal?: AbortSignal;
+  quotas?: RepositoryQuotas;
   observer?: {
     onClaimed?(job: IndexingJob): void | Promise<void>;
     onStarted?(job: IndexingJob): void | Promise<void>;
@@ -271,6 +280,14 @@ export function normalizeIndexingJobFailure(
   error: unknown,
   input: { repositoryId: string; stage: IndexingJobStage | null },
 ): IndexingJobFailure {
+  if (isRepositoryQuotaError(error)) {
+    return {
+      code: "repository_quota_exceeded",
+      message: error.message,
+      retryable: false,
+      details: { reason: error.reason, limit: error.limit, observed: error.observed },
+    };
+  }
   if (input.stage === "clone") {
     const cloneError = buildRepositoryConnectFailureError(error, input.repositoryId);
     return failureFromCode(cloneError.code, cloneError.message, cloneError.retryable);
@@ -338,6 +355,7 @@ export async function executeRepositoryIndexingPipeline(
   const repoId = job.repositoryId;
   const snapshotStore = input.snapshotStore ?? runtimeRepositorySnapshotStore;
   const artifactStore = input.artifactStore ?? runtimeRepositoryArtifactStore;
+  const quotas = input.quotas ?? runtimeRepositoryQuotas;
 
   await reportStage({ stage: "clone", progress: 10 });
   const cloneDeadline = createDeadline(env.REPOSITORY_CLONE_TIMEOUT_MS, { parentSignal: input.signal });
@@ -351,6 +369,7 @@ export async function executeRepositoryIndexingPipeline(
       metrics: input.retryMetrics,
       circuitBreaker: input.circuitBreakers?.clone,
       branch: job.branch,
+      quotas,
     });
   } finally {
     cloneDeadline.dispose();
@@ -373,7 +392,14 @@ export async function executeRepositoryIndexingPipeline(
       changedFileCount: 0,
       indexedRevision: revision,
     };
-    await snapshotStore.publish({ ...identity, counts: staged.counts, indexOptions });
+    await snapshotStore.publish({
+      ...identity,
+      counts: staged.counts,
+      indexOptions,
+      ownerUserId: job.ownerUserId,
+      maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
+      maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
+    });
     return { counts: staged.counts, indexOptions, publicationHandled: true };
   }
 
@@ -397,6 +423,15 @@ export async function executeRepositoryIndexingPipeline(
         jobId: job.jobId,
       });
     }
+    try {
+      await removeUnpublishedRepositoryCheckout(repoId, revision);
+    } catch {
+      logger.error("repository_quota_checkout_cleanup_failed", {
+        repositoryId: repoId,
+        revision,
+        jobId: job.jobId,
+      });
+    }
     throw error;
   }
 }
@@ -412,9 +447,10 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
   const owner = job.repositoryOwner;
   const repo = job.repositoryName;
   const repoId = job.repositoryId;
+  const quotas = input.quotas ?? runtimeRepositoryQuotas;
 
   await reportStage({ stage: "scan", progress: 25 });
-  const stats = await scanRepo(clonePath);
+  const stats = await scanRepo(clonePath, quotas, input.signal);
   const previousSnapshot = (await artifactStore.loadCurrent(repoId))?.fileSnapshot ?? null;
   const indexingPlan = buildRepositoryIndexingPlan({
     previousSnapshot,
@@ -510,9 +546,17 @@ async function buildAndPublishRepositorySnapshot(input: IndexingPipelineInput & 
         lastSeenAt: snapshotTimestamp,
       })),
     },
-  });
+  }, quotas.maxArtifactBytes);
   await sealRepositoryCheckout(clonePath);
-  await snapshotStore.publish({ ...identity, counts, indexOptions });
+  await snapshotStore.publish({
+    ...identity,
+    counts,
+    indexOptions,
+    ownerUserId: job.ownerUserId,
+    repositoryStorageBytes: stats.repositoryBytes ?? stats.indexedTextBytes ?? 0,
+    maxIndexedRepositoriesPerUser: quotas.maxIndexedRepositoriesPerUser,
+    maxStorageBytesPerUser: quotas.maxStorageBytesPerUser,
+  });
   try {
     await refreshPreviousCheckoutReadLease(repoId);
   } catch (error: unknown) {
@@ -566,6 +610,7 @@ export async function processNextIndexingJob(
     retrievalCacheInvalidator,
     signal,
     observer,
+    quotas = runtimeRepositoryQuotas,
   } = input;
 
   const claimed = await jobStore.claimNextJob(workerId, leaseDurationMs);
@@ -638,16 +683,28 @@ export async function processNextIndexingJob(
       stagesCompleted.push(progress.stage);
     };
 
-    const result = await executeIndexingPipeline({
-      job: { ...claimed },
-      reportStage,
-      retryLogger: logger,
-      retryMetrics: metrics?.incrementRetry ? {
-        incrementRetry: (category, result, attempt) => metrics.incrementRetry!(category, result, attempt),
-      } : undefined,
-      circuitBreakers,
-      signal,
-    });
+    const indexingDeadline = createDeadline(quotas.maxIndexingDurationMs, { parentSignal: signal });
+    let result: IndexingPipelineResult;
+    try {
+      result = await waitForDeadline(executeIndexingPipeline({
+        job: { ...claimed },
+        reportStage,
+        retryLogger: logger,
+        retryMetrics: metrics?.incrementRetry ? {
+          incrementRetry: (category, result, attempt) => metrics.incrementRetry!(category, result, attempt),
+        } : undefined,
+        circuitBreakers,
+        signal: indexingDeadline.signal,
+        quotas,
+      }), indexingDeadline);
+    } catch (error) {
+      if (isDeadlineExceeded(error) && indexingDeadline.signal.aborted && !signal?.aborted) {
+        throw new RepositoryQuotaError("indexing_duration", quotas.maxIndexingDurationMs, quotas.maxIndexingDurationMs + 1);
+      }
+      throw error;
+    } finally {
+      indexingDeadline.dispose();
+    }
 
     currentStage = "finalize";
     if (!jobStore.repositoryStateHandledByJobStore) {
@@ -718,6 +775,11 @@ export async function processNextIndexingJob(
       failureCode: failure.code,
       retryable: failure.retryable,
       durationMs: Math.max(0, Math.round(performance.now() - jobStartedAtMs)),
+      ...(failure.details?.reason ? {
+        quotaReason: failure.details.reason,
+        quotaLimit: failure.details.limit,
+        quotaObserved: failure.details.observed,
+      } : {}),
     });
     metrics?.incrementIndexing("failed");
     if (failed) {

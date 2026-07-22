@@ -8,6 +8,7 @@ import {
   validateRepositoryCheckout,
   type TrustedRepositoryCheckoutPath,
 } from "../security/repositoryPaths.js";
+import type { IndexingJobStore } from "../indexing/jobs/indexingJobStore.js";
 import type { RepositoryStore } from "./store/repositoryStore.js";
 import { repositoryStore as runtimeRepositoryStore } from "./store/runtimeRepositoryStore.js";
 
@@ -56,6 +57,56 @@ export async function refreshPreviousCheckoutReadLease(
   });
   const timestamp = new Date();
   await utimes(checkout, timestamp, timestamp);
+}
+
+export async function removeUnpublishedRepositoryCheckout(
+  repositoryId: string,
+  revision: string,
+  store: RepositoryStore = runtimeRepositoryStore,
+): Promise<boolean> {
+  const metadata = await store.getRepository(repositoryId);
+  if (!metadata || [metadata.currentRevision, metadata.publishingRevision, metadata.previousRevision].includes(revision)) return false;
+  const checkout = await validateRepositoryCheckout(repositoryId, { revision, mustExist: true });
+  const confirmed = await store.getRepository(repositoryId);
+  if (!confirmed || [confirmed.currentRevision, confirmed.publishingRevision, confirmed.previousRevision].includes(revision)) return false;
+  await makeWritable(checkout);
+  return removeRepositoryCheckout(repositoryId, { revision });
+}
+
+export async function cleanupAbandonedRepositoryCheckouts(
+  repositoryId: string,
+  store: RepositoryStore = runtimeRepositoryStore,
+  olderThanMs = env.REPOSITORY_QUOTA_MAX_INDEXING_DURATION_MS,
+): Promise<number> {
+  let removed = 0;
+  for (const revision of await listRepositoryCheckoutRevisions(repositoryId)) {
+    const metadata = await store.getRepository(repositoryId);
+    if (!metadata) break;
+    if ([metadata.currentRevision, metadata.publishingRevision, metadata.previousRevision].includes(revision)) continue;
+    const checkout = await validateRepositoryCheckout(repositoryId, { revision, mustExist: true });
+    if (Date.now() - (await stat(checkout)).mtimeMs < olderThanMs) continue;
+    if (await removeUnpublishedRepositoryCheckout(repositoryId, revision, store)) removed += 1;
+  }
+  return removed;
+}
+
+export async function recoverAbandonedRepositoryCheckouts(
+  repositoryId: string,
+  store: RepositoryStore,
+  jobStore: IndexingJobStore,
+  olderThanMs = env.REPOSITORY_QUOTA_MAX_INDEXING_DURATION_MS,
+): Promise<number> {
+  const metadata = await store.getRepository(repositoryId);
+  if (metadata?.publishingRevision) {
+    const jobs = await jobStore.listRepositoryJobs(repositoryId);
+    const hasActiveJob = jobs.some((job) =>
+      job.status === "queued" || job.status === "claimed" || job.status === "running"
+    );
+    if (!hasActiveJob) {
+      await store.markFailed(repositoryId, { reason: "abandoned_publication_recovered" });
+    }
+  }
+  return cleanupAbandonedRepositoryCheckouts(repositoryId, store, olderThanMs);
 }
 
 /** Best-effort, concurrency-safe GC. Durable pointers are re-read before every deletion. */

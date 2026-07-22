@@ -22,6 +22,7 @@ export interface IndexingJobPersistenceRow {
   failure_code: string | null;
   failure_message: string | null;
   failure_retryable: boolean | null;
+  failure_details?: Record<string, unknown> | null;
   claimed_by: string | null;
   claim_token?: string | null;
   created_order: number;
@@ -57,6 +58,7 @@ export type IndexingJobUpdateRow = Pick<
   | "failure_code"
   | "failure_message"
   | "failure_retryable"
+  | "failure_details"
   | "claimed_by"
   | "claim_token"
   | "started_order"
@@ -67,17 +69,20 @@ function failureColumns(failure: IndexingJobFailure | null): {
   failure_code: string | null;
   failure_message: string | null;
   failure_retryable: boolean | null;
+  failure_details: Record<string, unknown> | null;
 } {
   return failure
     ? {
         failure_code: failure.code,
         failure_message: failure.message,
         failure_retryable: failure.retryable,
+        failure_details: failure.details ? { ...failure.details } : null,
       }
     : {
         failure_code: null,
         failure_message: null,
         failure_retryable: null,
+        failure_details: null,
       };
 }
 
@@ -143,6 +148,7 @@ export function indexingJobRowToDomain(row: IndexingJobPersistenceRow): Indexing
       code: row.failure_code,
       message: row.failure_message,
       retryable: row.failure_retryable,
+      ...(row.failure_details ? { details: { ...row.failure_details } } : {}),
     };
   }
 

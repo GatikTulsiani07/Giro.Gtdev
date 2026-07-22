@@ -19,6 +19,8 @@ import { runtimeIndexingJobStore } from "./services/indexing/jobs/runtimeIndexin
 import { recoverIndexingJobsOnStartup } from "./services/indexing/jobs/indexingJobStartupRecovery.js";
 import { runtimeRepositoryDeletionService } from "./services/repository/repositoryDeletionService.js";
 import { rateLimitBackend, runtimeRateLimitStore } from "./services/rateLimit/runtimeRateLimitStore.js";
+import { recoverAbandonedRepositoryCheckouts } from "./services/repository/revisionCheckouts.js";
+import { repositoryStore } from "./services/repository/store/runtimeRepositoryStore.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -71,6 +73,23 @@ try {
   logger.error("repository_deletion_recovery_failed", {
     source: "backend_startup",
     reasonCode: "durable_cleanup_recovery_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  for (const repository of await repositoryStore.listRepositories()) {
+    await recoverAbandonedRepositoryCheckouts(
+      repository.repositoryId,
+      repositoryStore,
+      runtimeIndexingJobStore,
+    );
+  }
+} catch {
+  logger.error("repository_quota_cleanup_recovery_failed", {
+    source: "backend_startup",
+    reasonCode: "abandoned_checkout_cleanup_unavailable",
   });
   await flushLogs();
   process.exit(1);

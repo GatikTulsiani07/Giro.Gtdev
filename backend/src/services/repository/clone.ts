@@ -24,6 +24,8 @@ import {
 } from "../security/repositoryPaths.js";
 import { normalizeRepositoryParts } from "../security/repositoryIdentity.js";
 import { repositoryStorageRoot } from "../../config/repositoryStorage.js";
+import { scanRepositoryQuota } from "./quotas/repositoryQuotaScanner.js";
+import { isRepositoryQuotaError, runtimeRepositoryQuotas, type RepositoryQuotas } from "./quotas/repositoryQuota.js";
 
 export type CloneExecutor = (repoUrl: string, clonePath: string, timeoutMs: number) => Promise<void>;
 export type RevisionResolver = (repoUrl: string, branch: string | null, timeoutMs: number) => Promise<string>;
@@ -175,6 +177,7 @@ export async function cloneRepo(
     branch?: string | null;
     checkoutSnapshot?: SnapshotCheckoutExecutor;
     resolveRevision?: RevisionResolver;
+    quotas?: RepositoryQuotas;
   } = {},
 ): Promise<{
   clonePath: TrustedRepositoryCheckoutPath;
@@ -213,6 +216,7 @@ export async function cloneRepo(
               if (resolvedRevision) {
                 const head = (await simpleGit(checkout).revparse(["HEAD"])).trim().toLowerCase();
                 if (head !== resolvedRevision) throw new Error("Repository checkout does not match its revision directory.");
+                await scanRepositoryQuota(checkout, options.quotas ?? runtimeRepositoryQuotas, deadline.signal);
                 return {
                   clonePath,
                   alreadyExisted: true,
@@ -271,6 +275,7 @@ export async function cloneRepo(
           if (resolvedRevision && snapshot.commitSha !== resolvedRevision) {
             throw new Error("Repository checkout does not match its revision directory.");
           }
+          await scanRepositoryQuota(clonePath, options.quotas ?? runtimeRepositoryQuotas, deadline.signal);
           return {
             clonePath,
             alreadyExisted,
@@ -290,6 +295,7 @@ export async function cloneRepo(
               reasonCode: "unsafe_cleanup_rejection",
             });
           }
+          if (isRepositoryQuotaError(err)) throw err;
           const message = err instanceof Error ? err.message : "unknown error";
           throw new Error(`Clone failed: ${message}`);
         }

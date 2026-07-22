@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { runtimeRepositoryQuotas, RepositoryQuotaError } from "../../repository/quotas/repositoryQuota.js";
 import {
   cloneIndexingJob,
   isActiveIndexingJobStatus,
@@ -42,16 +43,23 @@ export class MemoryIndexingJobStore implements SupervisedIndexingJobStore {
   private readonly generateClaimToken: () => string;
   private nextSequence = 1;
   private nextOrder = 1;
+  private readonly maxConcurrentPerUser: number;
 
-  constructor(options: { now?: () => Date; generateClaimToken?: () => string } = {}) {
+  constructor(options: { now?: () => Date; generateClaimToken?: () => string; maxConcurrentPerUser?: number } = {}) {
     this.now = options.now ?? (() => new Date());
     this.generateClaimToken = options.generateClaimToken ?? randomUUID;
+    this.maxConcurrentPerUser = options.maxConcurrentPerUser ?? runtimeRepositoryQuotas.maxConcurrentIndexingPerUser;
   }
 
   async createJob(input: CreateIndexingJobInput): Promise<IndexingJob> {
     if (this.deletedRepositories.has(input.repositoryId)) throw new Error("repository_deleting_or_deleted");
     const active = this.findActiveRepositoryJob(input.repositoryId);
     if (active) return cloneIndexingJob(active);
+    const activeForUser = [...this.jobs.values()].filter((job) =>
+      job.ownerUserId === input.ownerUserId && isActiveIndexingJobStatus(job.status)).length;
+    if (activeForUser >= this.maxConcurrentPerUser) {
+      throw new RepositoryQuotaError("concurrent_indexing", this.maxConcurrentPerUser, activeForUser + 1);
+    }
 
     const sequence = this.nextSequence;
     this.nextSequence += 1;

@@ -56,6 +56,7 @@ import { authorizeRepositoryRequest } from "../services/security/repositoryReque
 import { isRepositoryPathSecurityError } from "../services/security/repositoryPaths.js";
 import { repositoryStore } from "../services/repository/store/runtimeRepositoryStore.js";
 import { currentTraceContext, formatTraceparent } from "../observability/tracing.js";
+import { isRepositoryQuotaError } from "../services/repository/quotas/repositoryQuota.js";
 
 type Variables = {
   requestId: string;
@@ -133,16 +134,31 @@ repositoriesRoute.post("/connect", async (c) => {
   await setRepositoryOwner(repoId, user.userId);
   const indexingJobStore = c.get("indexingJobStore");
   const trace = currentTraceContext();
-  const job = await indexingJobStore.createJob({
-    repositoryId: repoId,
-    ownerUserId: user.userId,
-    repositoryOwner: owner,
-    repositoryName: repo,
-    repositoryUrl: parsed.data.repoUrl,
-    branch: parsed.data.cloneOptions?.branch ?? null,
-    createdByRequestId: c.get("requestId"),
-    ...(trace ? { createdByTraceparent: formatTraceparent(trace) } : {}),
-  });
+  let job;
+  try {
+    job = await indexingJobStore.createJob({
+      repositoryId: repoId,
+      ownerUserId: user.userId,
+      repositoryOwner: owner,
+      repositoryName: repo,
+      repositoryUrl: parsed.data.repoUrl,
+      branch: parsed.data.cloneOptions?.branch ?? null,
+      createdByRequestId: c.get("requestId"),
+      ...(trace ? { createdByTraceparent: formatTraceparent(trace) } : {}),
+    });
+  } catch (error) {
+    const quota = isRepositoryQuotaError(error) ? error : null;
+    const persistenceQuota = error && typeof error === "object" &&
+      (error as { code?: unknown }).code === "repository_quota_exceeded";
+    if (!quota && !persistenceQuota) throw error;
+    return fail(c, {
+      code: "repository_quota_exceeded",
+      message: quota?.message ?? "Repository quota exceeded: concurrent_indexing.",
+      details: quota ? { reason: quota.reason, limit: quota.limit, observed: quota.observed } : {
+        reason: "concurrent_indexing",
+      },
+    }, 422);
+  }
   await c.get("indexingProgressPublisher").publish(job);
   setRequestLogContext(c, { repositoryId: repoId, jobId: job.jobId });
   await setRepositoryIndexing(owner, repo);

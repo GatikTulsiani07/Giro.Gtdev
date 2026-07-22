@@ -1,11 +1,9 @@
 // Walks a cloned repository and produces aggregate stats + a top-level tree.
 
-import { readdir, stat } from "node:fs/promises";
-import path from "node:path";
-import { shouldIgnoreFile, shouldIgnorePath, IGNORED_DIRS } from "./ignore.js";
-import { resolveRepositoryPath, type TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
-
-const MAX_FILE_SIZE = 512 * 1024;
+import { readdir } from "node:fs/promises";
+import type { TrustedRepositoryCheckoutPath } from "../security/repositoryPaths.js";
+import { scanRepositoryQuota } from "./quotas/repositoryQuotaScanner.js";
+import { runtimeRepositoryQuotas, type RepositoryQuotas } from "./quotas/repositoryQuota.js";
 
 export interface ScannedFile {
   filePath: string;
@@ -19,48 +17,30 @@ export interface ScanStats {
   languages: Record<string, number>;
   tree: string[];
   files: ScannedFile[];
+  repositoryBytes?: number;
+  indexedTextBytes?: number;
+  symlinkCount?: number;
+  binaryFileCount?: number;
 }
 
-export async function scanRepo(clonePath: TrustedRepositoryCheckoutPath): Promise<ScanStats> {
-  const languages: Record<string, number> = {};
-  const files: ScannedFile[] = [];
-  let totalFiles = 0;
-  let totalDirectories = 0;
-
-  async function walk(dir: string): Promise<void> {
-    const entries = await readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      const rel = path.relative(clonePath, full);
-
-      if (entry.isDirectory()) {
-        if (IGNORED_DIRS.has(entry.name)) continue;
-        totalDirectories += 1;
-        try {
-          await walk(await resolveRepositoryPath(clonePath, rel, { mustExist: true, requireDirectory: true }));
-        } catch { /* skip unsafe or raced directories */ }
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      if (shouldIgnorePath(rel) || shouldIgnoreFile(entry.name)) continue;
-
-      const safeFile = await resolveRepositoryPath(clonePath, rel, { mustExist: true, requireFile: true });
-      const info = await stat(safeFile);
-      if (info.size > MAX_FILE_SIZE) continue;
-
-      totalFiles += 1;
-      const ext = path.extname(entry.name).toLowerCase() || "none";
-      languages[ext] = (languages[ext] ?? 0) + 1;
-      files.push({ filePath: rel, size: info.size, language: ext });
-    }
-  }
-
-  await walk(clonePath);
+export async function scanRepo(
+  clonePath: TrustedRepositoryCheckoutPath,
+  quotas: RepositoryQuotas = runtimeRepositoryQuotas,
+  signal?: AbortSignal,
+): Promise<ScanStats> {
+  const quotaScan = await scanRepositoryQuota(clonePath, quotas, signal);
   const tree = await buildTree(clonePath);
-
-  files.sort((a, b) => a.filePath.localeCompare(b.filePath));
-
-  return { totalFiles, totalDirectories, languages, tree, files };
+  return {
+    totalFiles: quotaScan.files.length,
+    totalDirectories: quotaScan.directoryCount,
+    languages: quotaScan.languages,
+    tree,
+    files: quotaScan.files,
+    repositoryBytes: quotaScan.repositoryBytes,
+    indexedTextBytes: quotaScan.indexedTextBytes,
+    symlinkCount: quotaScan.symlinkCount,
+    binaryFileCount: quotaScan.binaryFileCount,
+  };
 }
 
 async function buildTree(clonePath: string): Promise<string[]> {

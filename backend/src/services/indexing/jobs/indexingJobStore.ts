@@ -22,6 +22,7 @@ export interface IndexingJobFailure {
   code: string;
   message: string;
   retryable: boolean;
+  details?: Readonly<Record<string, unknown>>;
 }
 
 export interface IndexingJob {

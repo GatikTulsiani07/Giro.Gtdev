@@ -21,6 +21,7 @@ import type {
   StaleIndexingJobRecoveryInput,
   SupervisedIndexingJobStore,
 } from "./indexingJobStore.js";
+import { runtimeRepositoryQuotas } from "../../repository/quotas/repositoryQuota.js";
 
 const TABLE = "indexing_jobs";
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -31,6 +32,7 @@ export type IndexingJobPersistenceErrorCode =
   | "job_not_found"
   | "invalid_transition"
   | "indexing_job_lease_conflict"
+  | "repository_quota_exceeded"
   | "supabase_unavailable"
   | "database_failure";
 
@@ -93,6 +95,7 @@ function persistenceError(
     job_not_found: "Indexing job was not found.",
     invalid_transition: "Indexing job update is invalid.",
     indexing_job_lease_conflict: "Indexing job lease authority was lost.",
+    repository_quota_exceeded: "Repository quota exceeded: concurrent_indexing.",
     supabase_unavailable: "Indexing job persistence is unavailable.",
     database_failure: "Indexing job persistence failed.",
   };
@@ -121,6 +124,9 @@ export function normalizeIndexingJobPersistenceError(
   const message = errorText(error);
   if (code === "40001" && message.includes("indexing_job_lease_conflict")) {
     return persistenceError("indexing_job_lease_conflict", error);
+  }
+  if (message.includes("repository_quota_exceeded")) {
+    return persistenceError("repository_quota_exceeded", error);
   }
   if (code === "23505") return persistenceError("duplicate_active_job", error);
   if (code === "PGRST116") return persistenceError("job_not_found", error);
@@ -189,6 +195,7 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
         input_max_attempts: input.maxAttempts ?? this.defaultMaxAttempts,
         input_request_id: input.createdByRequestId ?? null,
         input_traceparent: input.createdByTraceparent ?? null,
+        input_max_concurrent_per_user: runtimeRepositoryQuotas.maxConcurrentIndexingPerUser,
       });
       throwIfError(error);
       const row = rowFromData(data);
@@ -425,6 +432,7 @@ export class SupabaseIndexingJobStore implements SupervisedIndexingJobStore {
       input_failure_code: failure.code,
       input_failure_message: failure.message,
       input_failure_retryable: failure.retryable,
+      ...(failure.details ? { input_failure_details: failure.details } : {}),
     });
     return this.transition(jobId, "failed", { failure });
   }

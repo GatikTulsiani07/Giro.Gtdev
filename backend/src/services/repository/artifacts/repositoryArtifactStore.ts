@@ -7,6 +7,7 @@ import type { RepositorySymbolRecord } from "../symbolIndexStore.js";
 import type { RepositorySymbolGraph } from "../../repositoryGraph/graphTypes.js";
 import type { RepositorySummary } from "../../repositorySummary/summaryTypes.js";
 import type { RepositorySnapshotIdentity } from "../../indexing/snapshots/repositorySnapshotStore.js";
+import { assertRepositoryQuota, repositoryQuotaErrorFromMessage, runtimeRepositoryQuotas, serializedArtifactBytes } from "../quotas/repositoryQuota.js";
 
 export interface RepositoryArtifacts {
   graph: RepositorySymbolGraph;
@@ -22,7 +23,7 @@ export interface PublishedRepositoryArtifacts extends RepositoryArtifacts {
 }
 
 export interface RepositoryArtifactStore {
-  stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts): Promise<void>;
+  stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes?: number): Promise<void>;
   load(repositoryId: string, repositoryRevision: string): Promise<PublishedRepositoryArtifacts | null>;
   loadCurrent(repositoryId: string): Promise<PublishedRepositoryArtifacts | null>;
   collect(repositoryId: string, retentionCount?: number): Promise<number>;
@@ -66,7 +67,8 @@ export class MemoryRepositoryArtifactStore implements RepositoryArtifactStore {
     this.revisions.set(identity.repositoryId, revisions);
   }
 
-  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts): Promise<void> {
+  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes = runtimeRepositoryQuotas.maxArtifactBytes): Promise<void> {
+    assertRepositoryQuota("artifact_size", serializedArtifactBytes(artifacts), maxArtifactBytes);
     const revision = this.revisions.get(identity.repositoryId)?.get(identity.revision);
     if (!revision || revision.state !== "building" ||
       revision.identity.jobId !== identity.jobId ||
@@ -157,7 +159,8 @@ function rowToArtifacts(row: Record<string, unknown>): PublishedRepositoryArtifa
 export class SupabaseRepositoryArtifactStore implements RepositoryArtifactStore {
   constructor(private readonly client: DatabaseClient | SupabaseClient) {}
 
-  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts): Promise<void> {
+  async stage(identity: RepositorySnapshotIdentity, artifacts: RepositoryArtifacts, maxArtifactBytes = runtimeRepositoryQuotas.maxArtifactBytes): Promise<void> {
+    assertRepositoryQuota("artifact_size", serializedArtifactBytes(artifacts), maxArtifactBytes);
     const { error } = await (this.client as DatabaseClient).rpc("stage_repository_artifacts", {
       input_repository_id: identity.repositoryId,
       input_repository_revision: identity.revision,
@@ -169,8 +172,9 @@ export class SupabaseRepositoryArtifactStore implements RepositoryArtifactStore 
       input_file_snapshot: artifacts.fileSnapshot,
       input_symbol_index: artifacts.symbolIndex,
       input_graph_source: artifacts.graphSource,
+      input_max_artifact_bytes: maxArtifactBytes,
     });
-    if (error) throw new Error(error.message ?? "Repository artifact staging failed.");
+    if (error) throw repositoryQuotaErrorFromMessage(error.message) ?? new Error(error.message ?? "Repository artifact staging failed.");
   }
 
   async load(repositoryId: string, repositoryRevision: string): Promise<PublishedRepositoryArtifacts | null> {
