@@ -82,7 +82,7 @@ test("CORS exposes request correlation, rate limit, and additive confidence head
 
   assert.equal(
     response.headers.get("access-control-expose-headers"),
-    "X-Request-ID,traceparent,X-RateLimit-Limit,X-RateLimit-Remaining,Retry-After,X-Retrieval-Confidence",
+    "X-Request-ID,traceparent,X-RateLimit-Limit,X-RateLimit-Remaining,Retry-After,X-Retrieval-Confidence,X-Next-Cursor",
   );
 });
 

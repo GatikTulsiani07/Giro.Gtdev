@@ -59,7 +59,25 @@ test("valid configuration is parsed and normalized", () => {
   assert.equal(result.RETRIEVAL_CONFIDENCE_LOW_THRESHOLD, 0.35);
   assert.equal(result.RETRIEVAL_MIN_CITATION_COVERAGE, 0.5);
   assert.equal(result.RETRIEVAL_MIN_ANSWERABLE_SCORE, 0.35);
+  assert.equal(result.SESSION_LIST_DEFAULT_PAGE_SIZE, 50);
+  assert.equal(result.SESSION_LIST_MAX_PAGE_SIZE, 200);
+  assert.equal(result.SESSION_TURN_IDEMPOTENCY_RETENTION_MS, 86_400_000);
   assert.equal(Object.isFrozen(result), true);
+});
+
+test("session pagination configuration requires a default within the maximum", () => {
+  assert.throws(
+    () => validateEnv({
+      ...REQUIRED,
+      SESSION_LIST_DEFAULT_PAGE_SIZE: "101",
+      SESSION_LIST_MAX_PAGE_SIZE: "100",
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof EnvironmentValidationError);
+      assert.deepEqual(Object.keys(error.issues), ["SESSION_LIST_DEFAULT_PAGE_SIZE"]);
+      return true;
+    },
+  );
 });
 
 test("production has no relative, empty, or filesystem-root repository storage fallback", () => {
