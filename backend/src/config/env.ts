@@ -206,6 +206,9 @@ const EnvSchema = z
     DATABASE_REQUEST_TIMEOUT_MS: durationEnvironmentValue(10_000, 500, 60_000),
     DATABASE_STATEMENT_TIMEOUT_MS: durationEnvironmentValue(15_000, 500, 120_000),
     REPOSITORY_CONNECTION_IDEMPOTENCY_RETENTION_MS: durationEnvironmentValue(86_400_000, 60_000, 2_592_000_000),
+    SESSION_LIST_DEFAULT_PAGE_SIZE: integerEnvironmentValue(50, 1, 500),
+    SESSION_LIST_MAX_PAGE_SIZE: integerEnvironmentValue(200, 1, 1_000),
+    SESSION_TURN_IDEMPOTENCY_RETENTION_MS: durationEnvironmentValue(86_400_000, 60_000, 2_592_000_000),
     REPOSITORY_CLONE_TIMEOUT_MS: durationEnvironmentValue(120_000, 5_000, 600_000),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     EMBEDDING_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
@@ -248,6 +251,9 @@ const EnvSchema = z
     }
     if (value.REPOSITORY_QUOTA_MAX_INDEXED_TEXT_BYTES > value.REPOSITORY_QUOTA_MAX_BYTES) {
       context.addIssue({ code: "custom", path: ["REPOSITORY_QUOTA_MAX_INDEXED_TEXT_BYTES"], message: "Indexed text quota cannot exceed repository quota." });
+    }
+    if (value.SESSION_LIST_DEFAULT_PAGE_SIZE > value.SESSION_LIST_MAX_PAGE_SIZE) {
+      context.addIssue({ code: "custom", path: ["SESSION_LIST_DEFAULT_PAGE_SIZE"], message: "Default session page size cannot exceed the maximum." });
     }
     if (!value.SUPABASE_SERVICE_ROLE_KEY && !value.SUPABASE_ANON_KEY) {
       context.addIssue({

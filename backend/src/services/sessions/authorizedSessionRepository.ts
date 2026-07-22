@@ -1,7 +1,7 @@
 import { logger } from "../../lib/logger.js";
 import { authorizeRepository, type AuthorizedRepositoryContext } from "../repository/ownershipGuard.js";
 import { normalizeRepositoryId } from "../security/repositoryIdentity.js";
-import { getSessionById } from "./sessionService.js";
+import { getSessionByIdForOwner, getSessionSummaryById } from "./sessionService.js";
 import type { Session } from "./types.js";
 
 export type AuthorizedSessionRepositoryResult =
@@ -15,11 +15,11 @@ export async function authorizeSessionRepository(input: {
   requestId?: string;
   operation: string;
 }): Promise<AuthorizedSessionRepositoryResult> {
-  const session = await getSessionById(input.sessionId);
-  if (!session) {
+  const summary = await getSessionSummaryById(input.sessionId);
+  if (!summary) {
     return { ok: false, status: 404, code: "session_not_found", message: "Session not found" };
   }
-  if (session.userId !== input.userId) {
+  if (summary.userId !== input.userId) {
     logger.warn("session_authorization_denied", {
       requestId: input.requestId,
       userId: input.userId,
@@ -28,6 +28,8 @@ export async function authorizeSessionRepository(input: {
     });
     return { ok: false, status: 403, code: "session_not_owned", message: "Session does not belong to authenticated user" };
   }
+  const session = await getSessionByIdForOwner(input.sessionId, input.userId);
+  if (!session) return { ok: false, status: 404, code: "session_not_found", message: "Session not found" };
 
   const sessionRepositoryId = normalizeRepositoryId(`${session.owner}/${session.repo}`).repositoryId;
   if (input.requestedRepositoryId && normalizeRepositoryId(input.requestedRepositoryId).repositoryId !== sessionRepositoryId) {

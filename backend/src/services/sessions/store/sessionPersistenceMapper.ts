@@ -1,4 +1,5 @@
 import type { Message, Session } from "../types.js";
+import type { SessionSummary } from "../types.js";
 
 export interface SessionRow {
   session_id: string;
@@ -10,6 +11,21 @@ export interface SessionRow {
   selected_context: Session["selectedContext"];
   created_at: string;
   updated_at: string;
+  message_count?: number;
+  session_version?: number;
+}
+
+export function sessionSummaryFromRow(row: SessionRow): SessionSummary {
+  return {
+    id: row.session_id,
+    userId: row.owner_user_id,
+    owner: row.repository_owner,
+    repo: row.repository_name,
+    title: row.title,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    messageCount: Number(row.message_count ?? 0),
+  };
 }
 
 export interface SessionMessageRow {

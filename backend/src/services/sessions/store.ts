@@ -8,7 +8,7 @@ import { env } from "../../config/env.js";
 import { supabase } from "../../lib/supabase.js";
 import type { MaybePromise } from "../../lib/maybePromise.js";
 import type { SessionStore } from "./store/sessionStore.js";
-import type { Message, Session } from "./types.js";
+import type { Message, Session, SessionListCursor } from "./types.js";
 
 export const sessionStore: SessionStore = env.NODE_ENV === "test"
   ? new MemorySessionStore()
@@ -20,6 +20,14 @@ export function createSession(session: Session): MaybePromise<Session> {
 
 export function getSession(id: string): MaybePromise<Session | null> {
   return sessionStore.getSession(id);
+}
+
+export function getSessionForOwner(id: string, ownerUserId: string) {
+  return sessionStore.getSessionForOwner(id, ownerUserId);
+}
+
+export function listSessionSummaries(input: { ownerUserId: string; cursor?: SessionListCursor; limit: number }) {
+  return sessionStore.listSessionSummaries(input);
 }
 
 export function listSessions(): MaybePromise<Session[]> {
