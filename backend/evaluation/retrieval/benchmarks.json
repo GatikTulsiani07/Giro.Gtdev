@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "benchmarkVersion": "hybrid-v2-fixtures-1",
+  "cases": [
+    {
+      "benchmarkId": "exact-calculate-total",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "Where is calculateTotal implemented?",
+      "expectedRelevantFiles": ["src/domain/pricing.ts"],
+      "expectedRelevantSymbols": ["calculateTotal"],
+      "expectedRelevantChunks": ["pricing-calculate-total"],
+      "category": "exact symbol lookup",
+      "difficulty": "easy"
+    },
+    {
+      "benchmarkId": "discover-order-total",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "How is the final order amount computed?",
+      "expectedRelevantFiles": ["src/domain/pricing.ts", "src/services/checkoutService.ts"],
+      "expectedRelevantSymbols": ["calculateTotal", "placeOrder"],
+      "category": "implementation discovery",
+      "difficulty": "medium"
+    },
+    {
+      "benchmarkId": "trace-checkout-payment",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "Trace a checkout request from the HTTP entrypoint to the payment provider",
+      "expectedRelevantFiles": ["src/api/checkoutHandler.ts", "src/services/checkoutService.ts", "src/payments/stripeGateway.ts"],
+      "expectedRelevantSymbols": ["checkoutHandler", "placeOrder", "chargePayment"],
+      "category": "cross-file dependency tracing",
+      "difficulty": "hard"
+    },
+    {
+      "benchmarkId": "checkout-architecture",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "Which components coordinate checkout, payment, and order persistence?",
+      "expectedRelevantFiles": ["src/services/checkoutService.ts", "src/payments/stripeGateway.ts", "src/repositories/orderRepository.ts"],
+      "expectedRelevantSymbols": ["placeOrder", "chargePayment", "orderRepository"],
+      "category": "architecture questions",
+      "difficulty": "hard"
+    },
+    {
+      "benchmarkId": "payment-timeout-config",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "Where are payment timeout and retry settings configured?",
+      "expectedRelevantFiles": ["src/config/paymentConfig.ts"],
+      "expectedRelevantSymbols": ["paymentConfig"],
+      "expectedRelevantChunks": ["payment-config"],
+      "category": "configuration discovery",
+      "difficulty": "easy"
+    },
+    {
+      "benchmarkId": "expired-cart-debug",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "Why does checkout throw ExpiredCartError?",
+      "expectedRelevantFiles": ["src/domain/cartValidation.ts"],
+      "expectedRelevantSymbols": ["ExpiredCartError", "validateCart"],
+      "expectedRelevantChunks": ["cart-validation"],
+      "category": "error/debugging lookup",
+      "difficulty": "medium"
+    },
+    {
+      "benchmarkId": "payment-retry-tests",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "Find tests covering retries after payment gateway failures",
+      "expectedRelevantFiles": ["src/payments/paymentRetry.test.ts"],
+      "expectedRelevantChunks": ["payment-retry-test"],
+      "category": "test discovery",
+      "difficulty": "easy"
+    },
+    {
+      "benchmarkId": "semantic-stale-basket",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "Where do we prevent purchasing stale baskets?",
+      "expectedRelevantFiles": ["src/domain/cartValidation.ts"],
+      "expectedRelevantSymbols": ["validateCart"],
+      "expectedRelevantChunks": ["cart-validation"],
+      "category": "semantic intent without exact keywords",
+      "difficulty": "hard",
+      "notes": "The query intentionally avoids the source terms cart and expired."
+    },
+    {
+      "benchmarkId": "ambiguous-payment-flow",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v1",
+      "query": "payment flow",
+      "expectedRelevantFiles": ["src/services/checkoutService.ts", "src/payments/stripeGateway.ts", "src/config/paymentConfig.ts"],
+      "expectedRelevantSymbols": ["placeOrder", "chargePayment", "paymentConfig"],
+      "category": "ambiguous queries",
+      "difficulty": "medium"
+    },
+    {
+      "benchmarkId": "large-noisy-routing",
+      "repositoryFixture": "noisy-typescript",
+      "repositoryRevision": "noise-v1",
+      "query": "How does the platform dispatch an incoming request to a registered service?",
+      "expectedRelevantFiles": ["src/core/requestResolver.ts", "src/core/serviceRegistry.ts"],
+      "expectedRelevantSymbols": ["resolveRequest", "ServiceRegistry"],
+      "excludedFiles": ["generated/client.generated.ts", "vendor/framework/router.ts", "dist/bundle.min.js"],
+      "category": "large-repository retrieval",
+      "difficulty": "hard",
+      "notes": "Exercises duplicate, generated, vendor, and minified noise penalties."
+    },
+    {
+      "benchmarkId": "revision-fraud-check",
+      "repositoryFixture": "checkout-typescript",
+      "repositoryRevision": "checkout-v2",
+      "query": "Where does the latest checkout revision block a high-risk order?",
+      "expectedRelevantFiles": ["src/risk/fraudAssessment.ts"],
+      "expectedRelevantSymbols": ["assessFraudRisk", "HighRiskOrderError"],
+      "expectedRelevantChunks": ["fraud-assessment-v2"],
+      "category": "implementation discovery",
+      "difficulty": "medium",
+      "notes": "This file exists only in checkout-v2."
+    }
+  ]
+}

@@ -4,6 +4,7 @@ dist
 .env
 .env.local
 *.log
+.reports/
 .DS_Store
 # Local AI/editor notes
 .kiro-analysis.md

@@ -1,0 +1,8 @@
+{
+  "configurationId": "hybrid-deterministic",
+  "minimumRecallAtK": 0.45,
+  "minimumMrr": 0.7,
+  "minimumNdcgAtK": 0.5,
+  "minimumFileDiversity": 0.45,
+  "maximumDuplicateRate": 0.1
+}

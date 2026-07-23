@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "fixtureId": "checkout-typescript",
+      "repositoryId": "fixtures/checkout-service",
+      "repositoryRevision": "checkout-v1",
+      "publicationStatus": "published",
+      "embedding": {
+        "provider": "fixture",
+        "model": "deterministic-concepts-v1",
+        "dimension": 16,
+        "embeddingVersion": "checkout-v1-embeddings",
+        "chunkingStrategyVersion": "fixture-lines-v1"
+      },
+      "files": [
+        {
+          "filePath": "src/api/checkoutHandler.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "checkout-handler",
+              "content": "export async function checkoutHandler(request: CheckoutRequest) {\n  const order = await checkoutService.placeOrder(request.cartId);\n  return { orderId: order.id };\n}",
+              "startLine": 1,
+              "endLine": 4,
+              "symbols": ["checkoutHandler"],
+              "semanticTerms": ["checkout", "http", "handler", "order", "entrypoint"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/services/checkoutService.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "checkout-place-order",
+              "content": "export async function placeOrder(cartId: string) {\n  validateCart(cartId);\n  const total = calculateTotal(cartId);\n  const payment = await chargePayment(total);\n  return orderRepository.save({ cartId, total, payment });\n}",
+              "startLine": 1,
+              "endLine": 6,
+              "symbols": ["placeOrder"],
+              "semanticTerms": ["checkout", "orchestration", "purchase", "payment", "persistence"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/domain/pricing.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "pricing-calculate-total",
+              "content": "export function calculateTotal(cartId: string): number {\n  return cartItems(cartId).reduce((sum, item) => sum + item.price * item.quantity, 0);\n}",
+              "startLine": 1,
+              "endLine": 3,
+              "symbols": ["calculateTotal"],
+              "semanticTerms": ["price", "total", "cart", "calculation", "order amount"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/domain/cartValidation.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "cart-validation",
+              "content": "export function validateCart(cartId: string) {\n  const cart = loadCart(cartId);\n  if (cart.expiresAt < Date.now()) throw new ExpiredCartError(cartId);\n}",
+              "startLine": 1,
+              "endLine": 4,
+              "symbols": ["validateCart", "ExpiredCartError"],
+              "semanticTerms": ["stale basket", "expired cart", "prevent purchase", "validation", "debug error"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/payments/stripeGateway.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "stripe-charge",
+              "content": "export async function chargePayment(amount: number) {\n  return stripe.paymentIntents.create({ amount, timeout: paymentConfig.timeoutMs });\n}",
+              "startLine": 1,
+              "endLine": 3,
+              "symbols": ["chargePayment"],
+              "semanticTerms": ["payment", "stripe", "provider", "charge", "gateway"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/repositories/orderRepository.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "order-save",
+              "content": "export const orderRepository = {\n  save: (order: OrderInput) => database.orders.insert(order)\n};",
+              "startLine": 1,
+              "endLine": 3,
+              "symbols": ["orderRepository"],
+              "semanticTerms": ["order", "database", "persistence", "save"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/config/paymentConfig.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "payment-config",
+              "content": "export const paymentConfig = {\n  timeoutMs: 5000,\n  retries: 3\n};",
+              "startLine": 1,
+              "endLine": 4,
+              "symbols": ["paymentConfig"],
+              "semanticTerms": ["payment", "timeout", "retry", "configuration", "settings"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/payments/paymentRetry.test.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "payment-retry-test",
+              "content": "describe('payment retry', () => {\n  it('retries transient gateway failures three times', async () => expectRetryCount(3));\n});",
+              "startLine": 1,
+              "endLine": 3,
+              "symbols": ["describe", "it"],
+              "semanticTerms": ["payment", "retry", "test", "gateway failure"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixtureId": "checkout-typescript",
+      "repositoryId": "fixtures/checkout-service",
+      "repositoryRevision": "checkout-v2",
+      "publicationStatus": "published",
+      "embedding": {
+        "provider": "fixture",
+        "model": "deterministic-concepts-v1",
+        "dimension": 16,
+        "embeddingVersion": "checkout-v2-embeddings",
+        "chunkingStrategyVersion": "fixture-lines-v1"
+      },
+      "files": [
+        {
+          "filePath": "src/services/checkoutService.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "checkout-place-order-v2",
+              "content": "export async function placeOrder(cartId: string) {\n  validateCart(cartId);\n  await assessFraudRisk(cartId);\n  return persistPaidOrder(cartId);\n}",
+              "startLine": 1,
+              "endLine": 5,
+              "symbols": ["placeOrder"],
+              "semanticTerms": ["checkout", "purchase", "fraud", "orchestration"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/risk/fraudAssessment.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "fraud-assessment-v2",
+              "content": "export async function assessFraudRisk(cartId: string) {\n  const score = await riskProvider.score(cartId);\n  if (score > 0.8) throw new HighRiskOrderError(cartId);\n}",
+              "startLine": 1,
+              "endLine": 4,
+              "symbols": ["assessFraudRisk", "HighRiskOrderError"],
+              "semanticTerms": ["fraud", "risk", "block order", "purchase safety", "revision change"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/domain/cartValidation.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "cart-validation-v2",
+              "content": "export function validateCart(cartId: string) {\n  if (loadCart(cartId).expiresAt < Date.now()) throw new ExpiredCartError(cartId);\n}",
+              "startLine": 1,
+              "endLine": 3,
+              "symbols": ["validateCart", "ExpiredCartError"],
+              "semanticTerms": ["stale basket", "expired cart", "validation"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixtureId": "checkout-typescript",
+      "repositoryId": "fixtures/checkout-service",
+      "repositoryRevision": "checkout-working",
+      "publicationStatus": "building",
+      "embedding": {
+        "provider": "fixture",
+        "model": "deterministic-concepts-v1",
+        "dimension": 16,
+        "embeddingVersion": "checkout-working-embeddings",
+        "chunkingStrategyVersion": "fixture-lines-v1"
+      },
+      "files": [
+        {
+          "filePath": "src/unfinished.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "unfinished",
+              "content": "export const unfinished = true;",
+              "startLine": 1,
+              "endLine": 1,
+              "symbols": ["unfinished"],
+              "semanticTerms": ["unfinished"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixtureId": "noisy-typescript",
+      "repositoryId": "fixtures/noisy-platform",
+      "repositoryRevision": "noise-v1",
+      "publicationStatus": "published",
+      "embedding": {
+        "provider": "fixture",
+        "model": "deterministic-concepts-v1",
+        "dimension": 16,
+        "embeddingVersion": "noise-v1-embeddings",
+        "chunkingStrategyVersion": "fixture-lines-v1"
+      },
+      "files": [
+        {
+          "filePath": "src/core/requestResolver.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "request-resolver",
+              "content": "export function resolveRequest(route: Route, registry: Registry) {\n  return registry.lookup(route.service).handle(route.payload);\n}",
+              "startLine": 1,
+              "endLine": 3,
+              "symbols": ["resolveRequest"],
+              "semanticTerms": ["request routing", "service dispatch", "core resolver", "architecture"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/core/serviceRegistry.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "service-registry",
+              "content": "export class ServiceRegistry {\n  lookup(name: string) { return this.services.get(name); }\n}",
+              "startLine": 1,
+              "endLine": 3,
+              "symbols": ["ServiceRegistry"],
+              "semanticTerms": ["service registry", "request routing", "dependency lookup", "architecture"]
+            }
+          ]
+        },
+        {
+          "filePath": "src/features/profile/profileService.ts",
+          "language": "typescript",
+          "chunks": [
+            {
+              "chunkId": "profile-service",
+              "content": "export const profileService = { handle: loadUserProfile };",
+              "startLine": 1,
+              "endLine": 1,
+              "symbols": ["profileService"],
+              "semanticTerms": ["profile", "feature", "service"]
+            }
+          ]
+        },
+        {
+          "filePath": "generated/client.generated.ts",
+          "language": "typescript",
+          "generated": true,
+          "chunks": [
+            {
+              "chunkId": "generated-resolver-copy",
+              "content": "export function resolveRequest(route: Route, registry: Registry) { return registry.lookup(route.service).handle(route.payload); }",
+              "startLine": 1,
+              "endLine": 1,
+              "symbols": ["resolveRequest"],
+              "semanticTerms": ["request routing", "service dispatch", "core resolver"]
+            }
+          ]
+        },
+        {
+          "filePath": "vendor/framework/router.ts",
+          "language": "typescript",
+          "vendor": true,
+          "chunks": [
+            {
+              "chunkId": "vendor-router-copy",
+              "content": "export function resolveRequest(route: Route, registry: Registry) { return registry.lookup(route.service).handle(route.payload); }",
+              "startLine": 1,
+              "endLine": 1,
+              "symbols": ["resolveRequest"],
+              "semanticTerms": ["request routing", "service dispatch", "core resolver"]
+            }
+          ]
+        },
+        {
+          "filePath": "dist/bundle.min.js",
+          "language": "javascript",
+          "generated": true,
+          "chunks": [
+            {
+              "chunkId": "minified-noise",
+              "content": "function resolveRequest(e,r){return r.lookup(e.service).handle(e.payload)}",
+              "startLine": 1,
+              "endLine": 1,
+              "symbols": ["resolveRequest"],
+              "semanticTerms": ["request routing"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
