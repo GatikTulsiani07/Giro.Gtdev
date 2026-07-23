@@ -23,6 +23,10 @@
     "test:vitest": "NODE_ENV=test node scripts/run-test-suite.mjs vitest",
     "test:ci": "pnpm test:node && pnpm test:vitest",
     "test:postgres": "node --test tests/postgres/*.test.mjs",
+    "eval:retrieval": "tsx src/commands/evaluateRetrieval.ts evaluate",
+    "eval:retrieval:regression": "tsx src/commands/evaluateRetrieval.ts regression",
+    "eval:retrieval:baseline": "tsx src/commands/evaluateRetrieval.ts baseline",
+    "eval:retrieval:external": "tsx src/commands/evaluateRetrieval.ts external",
     "verify:migrations": "node scripts/verify-postgres-migrations.mjs",
     "validate:local": "pnpm build && pnpm typecheck && pnpm test && pnpm test:postgres && pnpm verify:migrations",
     "validate:production": "node scripts/require-postgres-validation.mjs && GIRO_POSTGRES_INTEGRATION_REQUIRED=1 pnpm test:postgres && GIRO_POSTGRES_INTEGRATION_REQUIRED=1 pnpm verify:migrations && pnpm build && pnpm typecheck && pnpm test"
