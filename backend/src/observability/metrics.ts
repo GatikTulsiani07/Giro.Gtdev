@@ -169,6 +169,16 @@ export class MetricsRegistry {
   private executionReviewLatencyMs = 0;
   private executionRunDurationMs = 0;
   private executionCriticalPathDurationMs = 0;
+  private agentRuntimeActiveAgents = 0;
+  private agentRuntimeRunningAgents = 0;
+  private agentRuntimeLeases = 0;
+  private agentRuntimeRetries = 0;
+  private agentRuntimeFailures = 0;
+  private agentRuntimeDurationMs = 0;
+  private agentRuntimeHeartbeatLatencyMs = 0;
+  private agentRuntimeCapabilityUsage = 0;
+  private agentRuntimeOutputBytes = 0;
+  private agentRuntimeRecoveryCount = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -555,6 +565,30 @@ export class MetricsRegistry {
     this.executionCriticalPathDurationMs += Math.max(0, input.criticalPathDurationMs ?? 0);
   }
 
+  recordAgentRuntime(input: {
+    activeAgents: number;
+    runningAgents: number;
+    leases: number;
+    retries: number;
+    failures: number;
+    runtimeDurationMs: number;
+    heartbeatLatencyMs: number;
+    capabilityUsage: number;
+    outputBytes: number;
+    recoveryCount: number;
+  }): void {
+    this.agentRuntimeActiveAgents = Math.max(0, Math.trunc(input.activeAgents));
+    this.agentRuntimeRunningAgents = Math.max(0, Math.trunc(input.runningAgents));
+    this.agentRuntimeLeases = Math.max(0, Math.trunc(input.leases));
+    this.agentRuntimeRetries = Math.max(0, Math.trunc(input.retries));
+    this.agentRuntimeFailures = Math.max(0, Math.trunc(input.failures));
+    this.agentRuntimeDurationMs = Math.max(0, input.runtimeDurationMs);
+    this.agentRuntimeHeartbeatLatencyMs = Math.max(0, input.heartbeatLatencyMs);
+    this.agentRuntimeCapabilityUsage = Math.max(0, Math.trunc(input.capabilityUsage));
+    this.agentRuntimeOutputBytes = Math.max(0, Math.trunc(input.outputBytes));
+    this.agentRuntimeRecoveryCount = Math.max(0, Math.trunc(input.recoveryCount));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -871,6 +905,16 @@ export class MetricsRegistry {
       `giro_repository_execution_review_latency_ms_total ${this.executionReviewLatencyMs}`,
       `giro_repository_execution_run_duration_ms_total ${this.executionRunDurationMs}`,
       `giro_repository_execution_critical_path_duration_ms_total ${this.executionCriticalPathDurationMs}`,
+      `giro_agent_runtime_active_agents ${this.agentRuntimeActiveAgents}`,
+      `giro_agent_runtime_running_agents ${this.agentRuntimeRunningAgents}`,
+      `giro_agent_runtime_leases ${this.agentRuntimeLeases}`,
+      `giro_agent_runtime_retries_total ${this.agentRuntimeRetries}`,
+      `giro_agent_runtime_failures_total ${this.agentRuntimeFailures}`,
+      `giro_agent_runtime_duration_ms_total ${this.agentRuntimeDurationMs}`,
+      `giro_agent_runtime_heartbeat_latency_ms_total ${this.agentRuntimeHeartbeatLatencyMs}`,
+      `giro_agent_runtime_capability_usage_total ${this.agentRuntimeCapabilityUsage}`,
+      `giro_agent_runtime_output_bytes_total ${this.agentRuntimeOutputBytes}`,
+      `giro_agent_runtime_recovery_total ${this.agentRuntimeRecoveryCount}`,
     );
     return `${lines.join("\n")}\n`;
   }

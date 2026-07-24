@@ -34,6 +34,8 @@ import { runtimeRepositoryGraphStore } from "./services/repositoryGraph/graphSto
 import { runtimeRepositoryIntelligenceStore } from "./services/repositoryIntelligence/store.js";
 import { runtimeRepositoryPlanningStore } from "./services/repositoryPlanning/store.js";
 import { runtimeRepositoryExecutionStore } from "./services/repositoryExecution/store.js";
+import { runtimeAgentRuntimeStore } from "./services/agentRuntime/store.js";
+import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -211,6 +213,23 @@ try {
   logger.error("repository_execution_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_execution_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeAgentRuntimeStore.verify();
+  const recoveredRuntimeCount = await runtimeAgentRuntimeStore.recover(undefined, runtimeAgentQuotas);
+  logger.info("agent_runtime_contract_verified", {
+    source: "backend_startup",
+    runtimeVersion: "agent-runtime-v1",
+    recoveredRuntimeCount,
+  });
+} catch {
+  logger.error("agent_runtime_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "agent_runtime_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
