@@ -37,6 +37,7 @@ import { runtimeRepositoryExecutionStore } from "./services/repositoryExecution/
 import { runtimeAgentRuntimeStore } from "./services/agentRuntime/store.js";
 import { runtimeToolInvocationService } from "./services/toolInvocation/service.js";
 import { runtimeMultiAgentCollaborationEngine } from "./services/multiAgentCollaboration/service.js";
+import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWorkspace/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -266,6 +267,23 @@ try {
   logger.error("multi_agent_collaboration_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "collaboration_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryWorkspacePatchEngine.verify();
+  const recoveredWorkspaceCount = await runtimeRepositoryWorkspacePatchEngine.recover();
+  logger.info("repository_workspace_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-workspace-patch-v1",
+    recoveredWorkspaceCount,
+  });
+} catch {
+  logger.error("repository_workspace_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_workspace_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

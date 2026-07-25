@@ -187,6 +187,14 @@ export class MetricsRegistry {
   private collaborationReassignments = 0;
   private collaborationRecoveries = 0;
   private collaborationCompletionLatencyMs = 0;
+  private repositoryWorkspaceCreation = 0;
+  private repositoryWorkspaceActive = 0;
+  private repositoryPatchGeneration = 0;
+  private repositoryWorkspaceValidationFailures = 0;
+  private repositoryWorkspaceConflicts = 0;
+  private repositoryWorkspaceArchives = 0;
+  private repositoryWorkspaceRecoveries = 0;
+  private repositoryWorkspaceDurationMs = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -617,6 +625,27 @@ export class MetricsRegistry {
     this.collaborationCompletionLatencyMs = Math.max(0, input.completionLatencyMs);
   }
 
+  recordRepositoryWorkspace(input: {
+    workspaceCreation: number;
+    activeWorkspaces: number;
+    patchGeneration: number;
+    validationFailures: number;
+    conflicts: number;
+    archiveCount: number;
+    recoveryCount: number;
+    workspaceDurationMs: number;
+  }): void {
+    this.repositoryWorkspaceCreation = Math.max(0, Math.trunc(input.workspaceCreation));
+    this.repositoryWorkspaceActive = Math.max(0, Math.trunc(input.activeWorkspaces));
+    this.repositoryPatchGeneration = Math.max(0, Math.trunc(input.patchGeneration));
+    this.repositoryWorkspaceValidationFailures =
+      Math.max(0, Math.trunc(input.validationFailures));
+    this.repositoryWorkspaceConflicts = Math.max(0, Math.trunc(input.conflicts));
+    this.repositoryWorkspaceArchives = Math.max(0, Math.trunc(input.archiveCount));
+    this.repositoryWorkspaceRecoveries = Math.max(0, Math.trunc(input.recoveryCount));
+    this.repositoryWorkspaceDurationMs = Math.max(0, input.workspaceDurationMs);
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -967,6 +996,30 @@ export class MetricsRegistry {
       "# HELP giro_collaboration_completion_latency_ms_total Collaboration completion latency.",
       "# TYPE giro_collaboration_completion_latency_ms_total counter",
       `giro_collaboration_completion_latency_ms_total ${this.collaborationCompletionLatencyMs}`,
+      "# HELP giro_repository_workspace_creation_total Repository workspaces created.",
+      "# TYPE giro_repository_workspace_creation_total counter",
+      `giro_repository_workspace_creation_total ${this.repositoryWorkspaceCreation}`,
+      "# HELP giro_repository_workspace_active Active repository workspaces.",
+      "# TYPE giro_repository_workspace_active gauge",
+      `giro_repository_workspace_active ${this.repositoryWorkspaceActive}`,
+      "# HELP giro_repository_patch_generation_total Structured patches generated.",
+      "# TYPE giro_repository_patch_generation_total counter",
+      `giro_repository_patch_generation_total ${this.repositoryPatchGeneration}`,
+      "# HELP giro_repository_workspace_validation_failures_total Workspace validation failures.",
+      "# TYPE giro_repository_workspace_validation_failures_total counter",
+      `giro_repository_workspace_validation_failures_total ${this.repositoryWorkspaceValidationFailures}`,
+      "# HELP giro_repository_workspace_conflicts_total Workspace and patch conflicts.",
+      "# TYPE giro_repository_workspace_conflicts_total counter",
+      `giro_repository_workspace_conflicts_total ${this.repositoryWorkspaceConflicts}`,
+      "# HELP giro_repository_workspace_archives_total Repository workspaces archived.",
+      "# TYPE giro_repository_workspace_archives_total counter",
+      `giro_repository_workspace_archives_total ${this.repositoryWorkspaceArchives}`,
+      "# HELP giro_repository_workspace_recoveries_total Repository workspace recoveries.",
+      "# TYPE giro_repository_workspace_recoveries_total counter",
+      `giro_repository_workspace_recoveries_total ${this.repositoryWorkspaceRecoveries}`,
+      "# HELP giro_repository_workspace_duration_ms_total Repository workspace duration.",
+      "# TYPE giro_repository_workspace_duration_ms_total counter",
+      `giro_repository_workspace_duration_ms_total ${this.repositoryWorkspaceDurationMs}`,
     );
     return `${lines.join("\n")}\n`;
   }
