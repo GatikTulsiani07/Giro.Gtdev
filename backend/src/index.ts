@@ -36,6 +36,7 @@ import { runtimeRepositoryPlanningStore } from "./services/repositoryPlanning/st
 import { runtimeRepositoryExecutionStore } from "./services/repositoryExecution/store.js";
 import { runtimeAgentRuntimeStore } from "./services/agentRuntime/store.js";
 import { runtimeToolInvocationService } from "./services/toolInvocation/service.js";
+import { runtimeMultiAgentCollaborationEngine } from "./services/multiAgentCollaboration/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -248,6 +249,23 @@ try {
   logger.error("tool_invocation_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "tool_invocation_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeMultiAgentCollaborationEngine.verify();
+  const recoveredCollaborationCount = await runtimeMultiAgentCollaborationEngine.recover();
+  logger.info("multi_agent_collaboration_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "multi-agent-collaboration-v1",
+    recoveredCollaborationCount,
+  });
+} catch {
+  logger.error("multi_agent_collaboration_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "collaboration_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

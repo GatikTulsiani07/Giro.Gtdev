@@ -179,6 +179,14 @@ export class MetricsRegistry {
   private agentRuntimeCapabilityUsage = 0;
   private agentRuntimeOutputBytes = 0;
   private agentRuntimeRecoveryCount = 0;
+  private collaborationActive = 0;
+  private collaborationParticipants = 0;
+  private collaborationMessages = 0;
+  private collaborationReviews = 0;
+  private collaborationConflicts = 0;
+  private collaborationReassignments = 0;
+  private collaborationRecoveries = 0;
+  private collaborationCompletionLatencyMs = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -589,6 +597,26 @@ export class MetricsRegistry {
     this.agentRuntimeRecoveryCount = Math.max(0, Math.trunc(input.recoveryCount));
   }
 
+  recordCollaboration(input: {
+    activeCollaborations: number;
+    participants: number;
+    messages: number;
+    reviews: number;
+    conflicts: number;
+    reassignmentCount: number;
+    recoveryCount: number;
+    completionLatencyMs: number;
+  }): void {
+    this.collaborationActive = Math.max(0, Math.trunc(input.activeCollaborations));
+    this.collaborationParticipants = Math.max(0, Math.trunc(input.participants));
+    this.collaborationMessages = Math.max(0, Math.trunc(input.messages));
+    this.collaborationReviews = Math.max(0, Math.trunc(input.reviews));
+    this.collaborationConflicts = Math.max(0, Math.trunc(input.conflicts));
+    this.collaborationReassignments = Math.max(0, Math.trunc(input.reassignmentCount));
+    this.collaborationRecoveries = Math.max(0, Math.trunc(input.recoveryCount));
+    this.collaborationCompletionLatencyMs = Math.max(0, input.completionLatencyMs);
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -915,6 +943,30 @@ export class MetricsRegistry {
       `giro_agent_runtime_capability_usage_total ${this.agentRuntimeCapabilityUsage}`,
       `giro_agent_runtime_output_bytes_total ${this.agentRuntimeOutputBytes}`,
       `giro_agent_runtime_recovery_total ${this.agentRuntimeRecoveryCount}`,
+      "# HELP giro_collaboration_active Active multi-agent collaborations.",
+      "# TYPE giro_collaboration_active gauge",
+      `giro_collaboration_active ${this.collaborationActive}`,
+      "# HELP giro_collaboration_participants Collaboration participants.",
+      "# TYPE giro_collaboration_participants gauge",
+      `giro_collaboration_participants ${this.collaborationParticipants}`,
+      "# HELP giro_collaboration_messages_total Durable collaboration messages.",
+      "# TYPE giro_collaboration_messages_total counter",
+      `giro_collaboration_messages_total ${this.collaborationMessages}`,
+      "# HELP giro_collaboration_reviews_total Collaboration peer reviews.",
+      "# TYPE giro_collaboration_reviews_total counter",
+      `giro_collaboration_reviews_total ${this.collaborationReviews}`,
+      "# HELP giro_collaboration_conflicts_total Rejected collaboration conflicts.",
+      "# TYPE giro_collaboration_conflicts_total counter",
+      `giro_collaboration_conflicts_total ${this.collaborationConflicts}`,
+      "# HELP giro_collaboration_reassignments_total Collaboration work reassignments.",
+      "# TYPE giro_collaboration_reassignments_total counter",
+      `giro_collaboration_reassignments_total ${this.collaborationReassignments}`,
+      "# HELP giro_collaboration_recoveries_total Collaboration recovery actions.",
+      "# TYPE giro_collaboration_recoveries_total counter",
+      `giro_collaboration_recoveries_total ${this.collaborationRecoveries}`,
+      "# HELP giro_collaboration_completion_latency_ms_total Collaboration completion latency.",
+      "# TYPE giro_collaboration_completion_latency_ms_total counter",
+      `giro_collaboration_completion_latency_ms_total ${this.collaborationCompletionLatencyMs}`,
     );
     return `${lines.join("\n")}\n`;
   }
