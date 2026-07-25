@@ -35,6 +35,7 @@ import { runtimeRepositoryIntelligenceStore } from "./services/repositoryIntelli
 import { runtimeRepositoryPlanningStore } from "./services/repositoryPlanning/store.js";
 import { runtimeRepositoryExecutionStore } from "./services/repositoryExecution/store.js";
 import { runtimeAgentRuntimeStore } from "./services/agentRuntime/store.js";
+import { runtimeToolInvocationService } from "./services/toolInvocation/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -230,6 +231,23 @@ try {
   logger.error("agent_runtime_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "agent_runtime_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeToolInvocationService.verify();
+  const recoveredToolInvocationCount = await runtimeToolInvocationService.recover();
+  logger.info("tool_invocation_contract_verified", {
+    source: "backend_startup",
+    frameworkVersion: "tool-invocation-v1",
+    recoveredToolInvocationCount,
+  });
+} catch {
+  logger.error("tool_invocation_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "tool_invocation_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
