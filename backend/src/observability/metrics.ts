@@ -195,6 +195,12 @@ export class MetricsRegistry {
   private repositoryWorkspaceArchives = 0;
   private repositoryWorkspaceRecoveries = 0;
   private repositoryWorkspaceDurationMs = 0;
+  private repositoryArtifactsGenerated = 0;
+  private repositoryArtifactGenerationLatencyMs = 0;
+  private repositoryArtifactValidationFailures = 0;
+  private repositoryArtifactRecoveries = 0;
+  private repositoryArtifactRetention = 0;
+  private repositoryArtifactApprovalWaitTimeMs = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -646,6 +652,28 @@ export class MetricsRegistry {
     this.repositoryWorkspaceDurationMs = Math.max(0, input.workspaceDurationMs);
   }
 
+  recordRepositoryArtifact(input: {
+    artifactsGenerated: number;
+    generationLatencyMs: number;
+    validationFailures: number;
+    recoveryCount: number;
+    retentionCount: number;
+    approvalWaitTimeMs: number;
+  }): void {
+    this.repositoryArtifactsGenerated =
+      Math.max(0, Math.trunc(input.artifactsGenerated));
+    this.repositoryArtifactGenerationLatencyMs =
+      Math.max(0, input.generationLatencyMs);
+    this.repositoryArtifactValidationFailures =
+      Math.max(0, Math.trunc(input.validationFailures));
+    this.repositoryArtifactRecoveries =
+      Math.max(0, Math.trunc(input.recoveryCount));
+    this.repositoryArtifactRetention =
+      Math.max(0, Math.trunc(input.retentionCount));
+    this.repositoryArtifactApprovalWaitTimeMs =
+      Math.max(0, input.approvalWaitTimeMs);
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1020,6 +1048,24 @@ export class MetricsRegistry {
       "# HELP giro_repository_workspace_duration_ms_total Repository workspace duration.",
       "# TYPE giro_repository_workspace_duration_ms_total counter",
       `giro_repository_workspace_duration_ms_total ${this.repositoryWorkspaceDurationMs}`,
+      "# HELP giro_repository_artifacts_generated_total Repository artifact versions generated.",
+      "# TYPE giro_repository_artifacts_generated_total counter",
+      `giro_repository_artifacts_generated_total ${this.repositoryArtifactsGenerated}`,
+      "# HELP giro_repository_artifact_generation_latency_ms_total Artifact generation latency.",
+      "# TYPE giro_repository_artifact_generation_latency_ms_total counter",
+      `giro_repository_artifact_generation_latency_ms_total ${this.repositoryArtifactGenerationLatencyMs}`,
+      "# HELP giro_repository_artifact_validation_failures_total Artifact validation failures.",
+      "# TYPE giro_repository_artifact_validation_failures_total counter",
+      `giro_repository_artifact_validation_failures_total ${this.repositoryArtifactValidationFailures}`,
+      "# HELP giro_repository_artifact_recoveries_total Artifact recovery actions.",
+      "# TYPE giro_repository_artifact_recoveries_total counter",
+      `giro_repository_artifact_recoveries_total ${this.repositoryArtifactRecoveries}`,
+      "# HELP giro_repository_artifact_retention_total Artifact records removed by retention.",
+      "# TYPE giro_repository_artifact_retention_total counter",
+      `giro_repository_artifact_retention_total ${this.repositoryArtifactRetention}`,
+      "# HELP giro_repository_artifact_approval_wait_time_ms_total Artifact approval wait time.",
+      "# TYPE giro_repository_artifact_approval_wait_time_ms_total counter",
+      `giro_repository_artifact_approval_wait_time_ms_total ${this.repositoryArtifactApprovalWaitTimeMs}`,
     );
     return `${lines.join("\n")}\n`;
   }

@@ -38,6 +38,7 @@ import { runtimeAgentRuntimeStore } from "./services/agentRuntime/store.js";
 import { runtimeToolInvocationService } from "./services/toolInvocation/service.js";
 import { runtimeMultiAgentCollaborationEngine } from "./services/multiAgentCollaboration/service.js";
 import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWorkspace/service.js";
+import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -284,6 +285,23 @@ try {
   logger.error("repository_workspace_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_workspace_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryArtifactEngine.verify();
+  const recoveredArtifactCount = await runtimeRepositoryArtifactEngine.recover();
+  logger.info("repository_artifact_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-artifact-engine-v1",
+    recoveredArtifactCount,
+  });
+} catch {
+  logger.error("repository_artifact_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_artifact_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
