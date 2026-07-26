@@ -39,6 +39,7 @@ import { runtimeToolInvocationService } from "./services/toolInvocation/service.
 import { runtimeMultiAgentCollaborationEngine } from "./services/multiAgentCollaboration/service.js";
 import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWorkspace/service.js";
 import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/service.js";
+import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -302,6 +303,23 @@ try {
   logger.error("repository_artifact_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_artifact_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryReviewEngine.verify();
+  const recoveredReviewCount = await runtimeRepositoryReviewEngine.recover();
+  logger.info("repository_review_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-review-engine-v1",
+    recoveredReviewCount,
+  });
+} catch {
+  logger.error("repository_review_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_review_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

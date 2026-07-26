@@ -201,6 +201,14 @@ export class MetricsRegistry {
   private repositoryArtifactRecoveries = 0;
   private repositoryArtifactRetention = 0;
   private repositoryArtifactApprovalWaitTimeMs = 0;
+  private repositoryReviewsCreated = 0;
+  private repositoryReviewApprovals = 0;
+  private repositoryReviewRejections = 0;
+  private repositoryReviewValidationFailures = 0;
+  private repositoryReviewBlockers = 0;
+  private repositoryReviewWarnings = 0;
+  private repositoryReviewLatencyMs = 0;
+  private repositoryReviewRecoveries = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -674,6 +682,28 @@ export class MetricsRegistry {
       Math.max(0, input.approvalWaitTimeMs);
   }
 
+  recordRepositoryReview(input: {
+    reviewsCreated: number;
+    approvals: number;
+    rejections: number;
+    validationFailures: number;
+    blockerCount: number;
+    warningCount: number;
+    reviewLatencyMs: number;
+    recoveryCount: number;
+  }): void {
+    this.repositoryReviewsCreated = Math.max(0, Math.trunc(input.reviewsCreated));
+    this.repositoryReviewApprovals = Math.max(0, Math.trunc(input.approvals));
+    this.repositoryReviewRejections = Math.max(0, Math.trunc(input.rejections));
+    this.repositoryReviewValidationFailures =
+      Math.max(0, Math.trunc(input.validationFailures));
+    this.repositoryReviewBlockers = Math.max(0, Math.trunc(input.blockerCount));
+    this.repositoryReviewWarnings = Math.max(0, Math.trunc(input.warningCount));
+    this.repositoryReviewLatencyMs = Math.max(0, input.reviewLatencyMs);
+    this.repositoryReviewRecoveries =
+      Math.max(0, Math.trunc(input.recoveryCount));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1066,6 +1096,30 @@ export class MetricsRegistry {
       "# HELP giro_repository_artifact_approval_wait_time_ms_total Artifact approval wait time.",
       "# TYPE giro_repository_artifact_approval_wait_time_ms_total counter",
       `giro_repository_artifact_approval_wait_time_ms_total ${this.repositoryArtifactApprovalWaitTimeMs}`,
+      "# HELP giro_repository_reviews_created_total Quality review versions created.",
+      "# TYPE giro_repository_reviews_created_total counter",
+      `giro_repository_reviews_created_total ${this.repositoryReviewsCreated}`,
+      "# HELP giro_repository_review_approvals_total Quality reviews approved.",
+      "# TYPE giro_repository_review_approvals_total counter",
+      `giro_repository_review_approvals_total ${this.repositoryReviewApprovals}`,
+      "# HELP giro_repository_review_rejections_total Quality reviews rejected.",
+      "# TYPE giro_repository_review_rejections_total counter",
+      `giro_repository_review_rejections_total ${this.repositoryReviewRejections}`,
+      "# HELP giro_repository_review_validation_failures_total Quality validation failures.",
+      "# TYPE giro_repository_review_validation_failures_total counter",
+      `giro_repository_review_validation_failures_total ${this.repositoryReviewValidationFailures}`,
+      "# HELP giro_repository_review_blockers_total Quality gate blockers.",
+      "# TYPE giro_repository_review_blockers_total counter",
+      `giro_repository_review_blockers_total ${this.repositoryReviewBlockers}`,
+      "# HELP giro_repository_review_warnings_total Quality gate warnings.",
+      "# TYPE giro_repository_review_warnings_total counter",
+      `giro_repository_review_warnings_total ${this.repositoryReviewWarnings}`,
+      "# HELP giro_repository_review_latency_ms_total Quality review latency.",
+      "# TYPE giro_repository_review_latency_ms_total counter",
+      `giro_repository_review_latency_ms_total ${this.repositoryReviewLatencyMs}`,
+      "# HELP giro_repository_review_recoveries_total Quality review recoveries.",
+      "# TYPE giro_repository_review_recoveries_total counter",
+      `giro_repository_review_recoveries_total ${this.repositoryReviewRecoveries}`,
     );
     return `${lines.join("\n")}\n`;
   }
