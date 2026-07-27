@@ -231,6 +231,13 @@ export class MetricsRegistry {
   private readonly repositoryKnowledgeConfidence =
     new Map<string, number>();
   private repositoryKnowledgeRecoveries = 0;
+  private autonomousWorkflowActive = 0;
+  private readonly autonomousWorkflowStageDurations =
+    new Map<string, number>();
+  private autonomousWorkflowRetries = 0;
+  private autonomousWorkflowFailures = 0;
+  private autonomousWorkflowRecoveries = 0;
+  private autonomousWorkflowCompletionLatencyMs = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -805,6 +812,30 @@ export class MetricsRegistry {
       Math.max(0, Math.trunc(input.recoveryCount));
   }
 
+  recordAutonomousWorkflows(input: {
+    activeWorkflows: number;
+    stageDurationsMs: Readonly<Record<string, number>>;
+    retries: number;
+    failures: number;
+    recoveryCount: number;
+    completionLatencyMs: number;
+  }): void {
+    this.autonomousWorkflowActive =
+      Math.max(0, Math.trunc(input.activeWorkflows));
+    this.autonomousWorkflowStageDurations.clear();
+    for (const [stage, value] of Object.entries(input.stageDurationsMs)) {
+      this.autonomousWorkflowStageDurations.set(stage, Math.max(0, value));
+    }
+    this.autonomousWorkflowRetries =
+      Math.max(0, Math.trunc(input.retries));
+    this.autonomousWorkflowFailures =
+      Math.max(0, Math.trunc(input.failures));
+    this.autonomousWorkflowRecoveries =
+      Math.max(0, Math.trunc(input.recoveryCount));
+    this.autonomousWorkflowCompletionLatencyMs =
+      Math.max(0, input.completionLatencyMs);
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1287,6 +1318,27 @@ export class MetricsRegistry {
       "# HELP giro_repository_knowledge_recoveries_total Knowledge and memory recoveries.",
       "# TYPE giro_repository_knowledge_recoveries_total counter",
       `giro_repository_knowledge_recoveries_total ${this.repositoryKnowledgeRecoveries}`,
+      "# HELP giro_autonomous_workflow_active Active autonomous workflows.",
+      "# TYPE giro_autonomous_workflow_active gauge",
+      `giro_autonomous_workflow_active ${this.autonomousWorkflowActive}`,
+      "# HELP giro_autonomous_workflow_stage_duration_ms_total Workflow stage duration by stage.",
+      "# TYPE giro_autonomous_workflow_stage_duration_ms_total counter",
+      ...[...this.autonomousWorkflowStageDurations.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([stage, value]) =>
+          `giro_autonomous_workflow_stage_duration_ms_total{stage="${escapeLabel(stage)}"} ${value}`),
+      "# HELP giro_autonomous_workflow_retries_total Workflow stage retries.",
+      "# TYPE giro_autonomous_workflow_retries_total counter",
+      `giro_autonomous_workflow_retries_total ${this.autonomousWorkflowRetries}`,
+      "# HELP giro_autonomous_workflow_failures_total Workflow stage failures.",
+      "# TYPE giro_autonomous_workflow_failures_total counter",
+      `giro_autonomous_workflow_failures_total ${this.autonomousWorkflowFailures}`,
+      "# HELP giro_autonomous_workflow_recoveries_total Workflow recoveries.",
+      "# TYPE giro_autonomous_workflow_recoveries_total counter",
+      `giro_autonomous_workflow_recoveries_total ${this.autonomousWorkflowRecoveries}`,
+      "# HELP giro_autonomous_workflow_completion_latency_ms_total Workflow completion latency.",
+      "# TYPE giro_autonomous_workflow_completion_latency_ms_total counter",
+      `giro_autonomous_workflow_completion_latency_ms_total ${this.autonomousWorkflowCompletionLatencyMs}`,
     );
     return `${lines.join("\n")}\n`;
   }

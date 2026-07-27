@@ -43,6 +43,7 @@ import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/servi
 import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/service.js";
 import { runtimeRepositoryApplyEngine } from "./services/repositoryApply/service.js";
 import { runtimeRepositoryKnowledgeEngine } from "./services/repositoryKnowledge/service.js";
+import { runtimeAutonomousWorkflowOrchestrator } from "./services/autonomousWorkflow/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -375,6 +376,24 @@ try {
   logger.error("repository_knowledge_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_knowledge_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeAutonomousWorkflowOrchestrator.verify();
+  const workflowRecovery =
+    await runtimeAutonomousWorkflowOrchestrator.recover();
+  logger.info("autonomous_workflow_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "autonomous-workflow-orchestrator-v1",
+    workflowRecovery,
+  });
+} catch {
+  logger.error("autonomous_workflow_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "autonomous_workflow_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
