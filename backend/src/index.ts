@@ -42,6 +42,7 @@ import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/s
 import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/service.js";
 import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/service.js";
 import { runtimeRepositoryApplyEngine } from "./services/repositoryApply/service.js";
+import { runtimeRepositoryKnowledgeEngine } from "./services/repositoryKnowledge/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -356,6 +357,24 @@ try {
   logger.error("repository_apply_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_apply_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryKnowledgeEngine.verify();
+  const recoveredKnowledgeCount =
+    await runtimeRepositoryKnowledgeEngine.recover();
+  logger.info("repository_knowledge_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-knowledge-engine-v1",
+    recoveredKnowledgeCount,
+  });
+} catch {
+  logger.error("repository_knowledge_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_knowledge_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

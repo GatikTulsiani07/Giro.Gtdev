@@ -222,6 +222,15 @@ export class MetricsRegistry {
   private repositoryApplyConflicts = 0;
   private repositoryApplyPreparationLatencyMs = 0;
   private repositoryApplyRecoveries = 0;
+  private repositoryKnowledgeEntries = 0;
+  private repositoryKnowledgeRetrievalLatencyMs = 0;
+  private repositoryKnowledgeSupersessions = 0;
+  private readonly repositoryKnowledgeNamespaceUsage =
+    new Map<string, number>();
+  private repositoryAgentMemoryGrowth = 0;
+  private readonly repositoryKnowledgeConfidence =
+    new Map<string, number>();
+  private repositoryKnowledgeRecoveries = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -764,6 +773,38 @@ export class MetricsRegistry {
       Math.max(0, Math.trunc(input.recoveryCount));
   }
 
+  recordRepositoryKnowledge(input: {
+    knowledgeEntries: number;
+    retrievalLatencyMs: number;
+    supersessions: number;
+    namespaceUsage: Readonly<Record<string, number>>;
+    memoryGrowth: number;
+    confidenceDistribution: Readonly<Record<string, number>>;
+    recoveryCount: number;
+  }): void {
+    this.repositoryKnowledgeEntries =
+      Math.max(0, Math.trunc(input.knowledgeEntries));
+    this.repositoryKnowledgeRetrievalLatencyMs =
+      Math.max(0, input.retrievalLatencyMs);
+    this.repositoryKnowledgeSupersessions =
+      Math.max(0, Math.trunc(input.supersessions));
+    this.repositoryKnowledgeNamespaceUsage.clear();
+    for (const [namespace, value] of Object.entries(input.namespaceUsage)) {
+      this.repositoryKnowledgeNamespaceUsage.set(
+        namespace, Math.max(0, Math.trunc(value)));
+    }
+    this.repositoryAgentMemoryGrowth =
+      Math.max(0, Math.trunc(input.memoryGrowth));
+    this.repositoryKnowledgeConfidence.clear();
+    for (const [band, value] of
+      Object.entries(input.confidenceDistribution)) {
+      this.repositoryKnowledgeConfidence.set(
+        band, Math.max(0, Math.trunc(value)));
+    }
+    this.repositoryKnowledgeRecoveries =
+      Math.max(0, Math.trunc(input.recoveryCount));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1219,6 +1260,33 @@ export class MetricsRegistry {
       "# HELP giro_repository_apply_recoveries_total Apply transaction recoveries.",
       "# TYPE giro_repository_apply_recoveries_total counter",
       `giro_repository_apply_recoveries_total ${this.repositoryApplyRecoveries}`,
+      "# HELP giro_repository_knowledge_entries Repository knowledge entries.",
+      "# TYPE giro_repository_knowledge_entries gauge",
+      `giro_repository_knowledge_entries ${this.repositoryKnowledgeEntries}`,
+      "# HELP giro_repository_knowledge_retrieval_latency_ms_total Knowledge retrieval latency.",
+      "# TYPE giro_repository_knowledge_retrieval_latency_ms_total counter",
+      `giro_repository_knowledge_retrieval_latency_ms_total ${this.repositoryKnowledgeRetrievalLatencyMs}`,
+      "# HELP giro_repository_knowledge_supersessions_total Knowledge supersessions.",
+      "# TYPE giro_repository_knowledge_supersessions_total counter",
+      `giro_repository_knowledge_supersessions_total ${this.repositoryKnowledgeSupersessions}`,
+      "# HELP giro_repository_knowledge_namespace_usage Knowledge entries by namespace.",
+      "# TYPE giro_repository_knowledge_namespace_usage gauge",
+      ...[...this.repositoryKnowledgeNamespaceUsage.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([namespace, value]) =>
+          `giro_repository_knowledge_namespace_usage{namespace="${escapeLabel(namespace)}"} ${value}`),
+      "# HELP giro_repository_agent_memory_growth Agent memory records.",
+      "# TYPE giro_repository_agent_memory_growth gauge",
+      `giro_repository_agent_memory_growth ${this.repositoryAgentMemoryGrowth}`,
+      "# HELP giro_repository_knowledge_confidence Knowledge entries by confidence band.",
+      "# TYPE giro_repository_knowledge_confidence gauge",
+      ...[...this.repositoryKnowledgeConfidence.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([band, value]) =>
+          `giro_repository_knowledge_confidence{band="${escapeLabel(band)}"} ${value}`),
+      "# HELP giro_repository_knowledge_recoveries_total Knowledge and memory recoveries.",
+      "# TYPE giro_repository_knowledge_recoveries_total counter",
+      `giro_repository_knowledge_recoveries_total ${this.repositoryKnowledgeRecoveries}`,
     );
     return `${lines.join("\n")}\n`;
   }
