@@ -40,6 +40,7 @@ import { runtimeMultiAgentCollaborationEngine } from "./services/multiAgentColla
 import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWorkspace/service.js";
 import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/service.js";
 import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/service.js";
+import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -320,6 +321,23 @@ try {
   logger.error("repository_review_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_review_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryProposalEngine.verify();
+  const recoveredProposalCount = await runtimeRepositoryProposalEngine.recover();
+  logger.info("repository_proposal_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-proposal-engine-v1",
+    recoveredProposalCount,
+  });
+} catch {
+  logger.error("repository_proposal_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_proposal_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

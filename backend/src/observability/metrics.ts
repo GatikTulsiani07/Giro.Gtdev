@@ -209,6 +209,13 @@ export class MetricsRegistry {
   private repositoryReviewWarnings = 0;
   private repositoryReviewLatencyMs = 0;
   private repositoryReviewRecoveries = 0;
+  private repositoryProposalsAssembled = 0;
+  private repositoryProposalValidationFailures = 0;
+  private repositoryProposalRejections = 0;
+  private repositoryProposalManifestSize = 0;
+  private repositoryProposalDiagnostics = 0;
+  private repositoryProposalAssemblyLatencyMs = 0;
+  private repositoryProposalRecoveries = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -704,6 +711,31 @@ export class MetricsRegistry {
       Math.max(0, Math.trunc(input.recoveryCount));
   }
 
+  recordRepositoryProposal(input: {
+    proposalsAssembled: number;
+    validationFailures: number;
+    rejectedProposals: number;
+    manifestSize: number;
+    diagnosticsCount: number;
+    assemblyLatencyMs: number;
+    recoveryCount: number;
+  }): void {
+    this.repositoryProposalsAssembled =
+      Math.max(0, Math.trunc(input.proposalsAssembled));
+    this.repositoryProposalValidationFailures =
+      Math.max(0, Math.trunc(input.validationFailures));
+    this.repositoryProposalRejections =
+      Math.max(0, Math.trunc(input.rejectedProposals));
+    this.repositoryProposalManifestSize =
+      Math.max(0, Math.trunc(input.manifestSize));
+    this.repositoryProposalDiagnostics =
+      Math.max(0, Math.trunc(input.diagnosticsCount));
+    this.repositoryProposalAssemblyLatencyMs =
+      Math.max(0, input.assemblyLatencyMs);
+    this.repositoryProposalRecoveries =
+      Math.max(0, Math.trunc(input.recoveryCount));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1120,6 +1152,27 @@ export class MetricsRegistry {
       "# HELP giro_repository_review_recoveries_total Quality review recoveries.",
       "# TYPE giro_repository_review_recoveries_total counter",
       `giro_repository_review_recoveries_total ${this.repositoryReviewRecoveries}`,
+      "# HELP giro_repository_proposals_assembled_total Proposal packages assembled.",
+      "# TYPE giro_repository_proposals_assembled_total counter",
+      `giro_repository_proposals_assembled_total ${this.repositoryProposalsAssembled}`,
+      "# HELP giro_repository_proposal_validation_failures_total Proposal validation failures.",
+      "# TYPE giro_repository_proposal_validation_failures_total counter",
+      `giro_repository_proposal_validation_failures_total ${this.repositoryProposalValidationFailures}`,
+      "# HELP giro_repository_proposal_rejections_total Proposal packages rejected.",
+      "# TYPE giro_repository_proposal_rejections_total counter",
+      `giro_repository_proposal_rejections_total ${this.repositoryProposalRejections}`,
+      "# HELP giro_repository_proposal_manifest_bytes_total Assembled manifest bytes.",
+      "# TYPE giro_repository_proposal_manifest_bytes_total counter",
+      `giro_repository_proposal_manifest_bytes_total ${this.repositoryProposalManifestSize}`,
+      "# HELP giro_repository_proposal_diagnostics_total Proposal diagnostics.",
+      "# TYPE giro_repository_proposal_diagnostics_total counter",
+      `giro_repository_proposal_diagnostics_total ${this.repositoryProposalDiagnostics}`,
+      "# HELP giro_repository_proposal_assembly_latency_ms_total Proposal assembly latency.",
+      "# TYPE giro_repository_proposal_assembly_latency_ms_total counter",
+      `giro_repository_proposal_assembly_latency_ms_total ${this.repositoryProposalAssemblyLatencyMs}`,
+      "# HELP giro_repository_proposal_recoveries_total Proposal recoveries.",
+      "# TYPE giro_repository_proposal_recoveries_total counter",
+      `giro_repository_proposal_recoveries_total ${this.repositoryProposalRecoveries}`,
     );
     return `${lines.join("\n")}\n`;
   }
