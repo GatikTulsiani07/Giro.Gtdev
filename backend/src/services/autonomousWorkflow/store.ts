@@ -62,6 +62,10 @@ export interface AutonomousWorkflowStore {
     workflowId: string,
     ownerId: string,
   ): Promise<AutonomousWorkflow | null>;
+  list?(
+    tenantId: string,
+    ownerId: string,
+  ): Promise<readonly AutonomousWorkflow[]>;
   beginStage(
     input: AdvanceWorkflowInput,
     quotas: WorkflowQuotas,
@@ -328,6 +332,16 @@ implements AutonomousWorkflowStore {
         "Workflow belongs to another owner.");
     }
     return workflow ? clone(workflow) : null;
+  }
+
+  async list(tenantId: string, ownerId: string) {
+    return [...this.workflows.values()]
+      .filter((workflow) =>
+        workflow.tenantId === tenantId && workflow.ownerId === ownerId)
+      .sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) ||
+        left.workflowId.localeCompare(right.workflowId))
+      .map(clone);
   }
 
   async beginStage(
@@ -853,6 +867,16 @@ implements AutonomousWorkflowStore {
         "Workflow belongs to another owner.");
     }
     return workflow;
+  }
+
+  async list(tenantId: string, ownerId: string) {
+    const data = await this.call("list_autonomous_workflows", {
+      input_tenant_id: tenantId,
+      input_owner_id: ownerId,
+    });
+    const workflows = (first(data)?.workflows ?? data ?? []) as
+      AutonomousWorkflow[];
+    return workflows.map((workflow) => structuredClone(workflow));
   }
 
   beginStage(input: AdvanceWorkflowInput, quotas: WorkflowQuotas, now?: Date) {

@@ -27,6 +27,11 @@ import { createMetricsRoute } from "./metrics.js";
 import repositoryIndexingEventsRouter from "./repositoryIndexingEvents.js";
 import type { RateLimitStore } from "../services/rateLimit/rateLimitStore.js";
 import { runtimeRateLimitStore } from "../services/rateLimit/runtimeRateLimitStore.js";
+import { createEngineeringPlatformApiRoute } from "./engineeringPlatformApi.js";
+import {
+  runtimeEngineeringPlatformApiService,
+  type EngineeringPlatformApiService,
+} from "../services/engineeringPlatformApi/service.js";
 
 export function createRoutes(
   readinessCheck: ReadinessCheck,
@@ -66,6 +71,8 @@ export function createRoutes(
   },
   rateLimitStore: RateLimitStore = runtimeRateLimitStore,
   trustedProxyCidrs: readonly string[] = env.TRUSTED_PROXY_CIDRS,
+  engineeringPlatformApiService: EngineeringPlatformApiService =
+    runtimeEngineeringPlatformApiService,
 ) {
   const routes = new Hono();
 
@@ -85,6 +92,7 @@ export function createRoutes(
   routes.use("/architecture/*", authMiddleware());
   routes.use("/indexing/*", authMiddleware());
   routes.use("/repositories/*", authMiddleware());
+  routes.use("/api/v1/*", authMiddleware());
 
   const apiRateLimiter = createRateLimitMiddleware({
     policy: rateLimitPolicy,
@@ -106,6 +114,13 @@ export function createRoutes(
   routes.use("/architecture/*", apiRateLimiter);
   routes.use("/indexing/*", apiRateLimiter);
   routes.use("/repositories/*", apiRateLimiter);
+  routes.use("/api/v1/*", createRateLimitMiddleware({
+    policy: rateLimitPolicy,
+    store: rateLimitStore,
+    trustedProxyCidrs,
+    errorCode: "rate_limited",
+    onRejected: () => metrics.incrementRateLimitRejections(),
+  }));
 
   // Protected routes.
   routes.route("/repos", repositoriesRoute);
@@ -118,6 +133,13 @@ export function createRoutes(
   routes.route("/architecture", architectureRouter);
   routes.route("/indexing", indexingRouter);
   routes.route("/repositories", repositoryIndexingEventsRouter);
+  routes.route(
+    "/api/v1",
+    createEngineeringPlatformApiRoute({
+      service: engineeringPlatformApiService,
+      metrics,
+    }),
+  );
 
   return routes;
 }

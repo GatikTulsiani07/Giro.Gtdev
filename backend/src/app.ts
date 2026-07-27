@@ -40,6 +40,9 @@ import type { RepositoryConnectionStore } from "./services/repository/connection
 import { MemoryRepositoryConnectionStore } from "./services/repository/connection/memoryRepositoryConnectionStore.js";
 import { runtimeRepositoryConnectionStore } from "./services/repository/connection/runtimeRepositoryConnectionStore.js";
 import { repositoryStore } from "./services/repository/store/runtimeRepositoryStore.js";
+import type {
+  EngineeringPlatformApiService,
+} from "./services/engineeringPlatformApi/service.js";
 
 type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
@@ -65,6 +68,7 @@ export interface CreateAppOptions {
   rateLimitStore?: RateLimitStore;
   trustedProxyCidrs?: readonly string[];
   repositoryConnectionStore?: RepositoryConnectionStore;
+  engineeringPlatformApiService?: EngineeringPlatformApiService;
   requestTimeout?: Omit<RequestTimeoutOptions, "timeoutMs"> & {
     timeoutMs?: number;
   };
@@ -145,7 +149,14 @@ export function createApp(options: CreateAppOptions = {}) {
     cors({
       origin: env.CORS_ORIGINS,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "Idempotency-Key", TRACEPARENT_HEADER],
+      allowHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Request-ID",
+        "Idempotency-Key",
+        "If-Match",
+        TRACEPARENT_HEADER,
+      ],
       exposeHeaders: [
         "X-Request-ID",
         TRACEPARENT_HEADER,
@@ -154,6 +165,8 @@ export function createApp(options: CreateAppOptions = {}) {
         "Retry-After",
         "X-Retrieval-Confidence",
         "X-Next-Cursor",
+        "ETag",
+        "Idempotency-Replayed",
       ],
       credentials: true,
     }),
@@ -166,6 +179,7 @@ export function createApp(options: CreateAppOptions = {}) {
     options.rateLimitPolicy,
     rateLimitStore,
     options.trustedProxyCidrs,
+    options.engineeringPlatformApiService,
   ));
 
   app.notFound(onNotFound);

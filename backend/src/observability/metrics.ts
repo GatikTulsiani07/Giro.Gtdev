@@ -22,6 +22,16 @@ export type IndexingMetricStatus = "started" | "completed" | "failed";
 export type TimeoutMetricCategory = "request" | "ai" | "embedding" | "database" | "clone" | "indexing";
 export type RetryMetricCategory = "ai" | "embedding" | "database" | "clone";
 export type RetryMetricResult = "scheduled" | "succeeded" | "exhausted";
+export type EngineeringApiAction =
+  | "workflow_creation"
+  | "approval"
+  | "retry"
+  | "resume"
+  | "cancellation"
+  | "replay"
+  | "idempotency_hit"
+  | "stale_version_failure"
+  | "pagination";
 
 export interface MetricsRegistryOptions {
   durationBucketsSeconds?: readonly number[];
@@ -238,6 +248,8 @@ export class MetricsRegistry {
   private autonomousWorkflowFailures = 0;
   private autonomousWorkflowRecoveries = 0;
   private autonomousWorkflowCompletionLatencyMs = 0;
+  private readonly engineeringApiActions =
+    new Map<EngineeringApiAction, number>();
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -836,6 +848,11 @@ export class MetricsRegistry {
       Math.max(0, input.completionLatencyMs);
   }
 
+  incrementEngineeringApi(action: EngineeringApiAction): void {
+    this.engineeringApiActions.set(
+      action, (this.engineeringApiActions.get(action) ?? 0) + 1);
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1339,6 +1356,12 @@ export class MetricsRegistry {
       "# HELP giro_autonomous_workflow_completion_latency_ms_total Workflow completion latency.",
       "# TYPE giro_autonomous_workflow_completion_latency_ms_total counter",
       `giro_autonomous_workflow_completion_latency_ms_total ${this.autonomousWorkflowCompletionLatencyMs}`,
+      "# HELP giro_engineering_api_actions_total Engineering platform API actions.",
+      "# TYPE giro_engineering_api_actions_total counter",
+      ...[...this.engineeringApiActions.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([action, value]) =>
+          `giro_engineering_api_actions_total{action="${escapeLabel(action)}"} ${value}`),
     );
     return `${lines.join("\n")}\n`;
   }

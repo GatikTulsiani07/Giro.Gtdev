@@ -32,6 +32,7 @@ export interface CentralRateLimiterOptions {
   keyGenerator?: RateLimitCallback;
   skip?: RateLimitSkipCallback;
   message?: string;
+  errorCode?: string;
   now?: () => number;
   store?: RateLimitStore;
   trustedProxyCidrs?: readonly string[];
@@ -43,6 +44,7 @@ export interface RateLimiterOptions extends RateLimitRule {
   keyGenerator?: RateLimitCallback;
   skip?: RateLimitSkipCallback;
   message?: string;
+  errorCode?: string;
   now?: () => number;
   store?: RateLimitStore;
   trustedProxyCidrs?: readonly string[];
@@ -166,7 +168,10 @@ export function createRateLimitMiddleware(
         limit: effectiveLimit,
         windowMs: rule.windowMs,
       });
-      return fail(c, { code: "rate_limit_exceeded", message }, 429);
+      return fail(c, {
+        code: options.errorCode ?? "rate_limit_exceeded",
+        message,
+      }, 429);
     }
 
     await next();
@@ -193,6 +198,7 @@ export function rateLimiter(options: RateLimiterOptions): MiddlewareHandler {
     keyGenerator: options.keyGenerator,
     skip: options.skip,
     message: options.message,
+    errorCode: options.errorCode,
     now: options.now,
     onRejected: options.onRejected,
     logger: options.logger,

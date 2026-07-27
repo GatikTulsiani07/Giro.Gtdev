@@ -44,6 +44,8 @@ import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/s
 import { runtimeRepositoryApplyEngine } from "./services/repositoryApply/service.js";
 import { runtimeRepositoryKnowledgeEngine } from "./services/repositoryKnowledge/service.js";
 import { runtimeAutonomousWorkflowOrchestrator } from "./services/autonomousWorkflow/service.js";
+import { runtimeEngineeringPlatformApiService } from "./services/engineeringPlatformApi/service.js";
+import { verifyEngineeringPlatformApiContracts } from "./services/engineeringPlatformApi/openapi.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -394,6 +396,22 @@ try {
   logger.error("autonomous_workflow_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "autonomous_workflow_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  verifyEngineeringPlatformApiContracts();
+  await runtimeEngineeringPlatformApiService.verify();
+  logger.info("engineering_platform_api_contract_verified", {
+    source: "backend_startup",
+    apiVersion: "v1",
+  });
+} catch {
+  logger.error("engineering_platform_api_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "engineering_platform_api_dependencies_unavailable",
   });
   await flushLogs();
   process.exit(1);

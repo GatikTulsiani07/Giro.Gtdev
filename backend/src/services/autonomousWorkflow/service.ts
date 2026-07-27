@@ -76,6 +76,16 @@ export class AutonomousWorkflowOrchestrator {
     return this.store.get(tenantId, workflowId, ownerId);
   }
 
+  list(tenantId: string, ownerId: string) {
+    if (!this.store.list) {
+      throw new AutonomousWorkflowError(
+        "autonomous_workflow_query_unavailable",
+        "Workflow listing is unavailable.",
+      );
+    }
+    return this.store.list(tenantId, ownerId);
+  }
+
   async advance(input: AdvanceWorkflowInput) {
     return runWithChildSpan(async () => {
       const begun = await this.store.beginStage(
@@ -167,6 +177,24 @@ export class AutonomousWorkflowOrchestrator {
     const workflow = await this.store.resume(
       input, this.quotas, this.clock());
     await this.recordMetrics();
+    return workflow;
+  }
+
+  retry(input: ResumeWorkflowInput) {
+    return this.resume(input);
+  }
+
+  async replay(tenantId: string, workflowId: string, ownerId: string) {
+    const workflow = await this.store.get(tenantId, workflowId, ownerId);
+    if (!workflow) {
+      throw new AutonomousWorkflowError(
+        "autonomous_workflow_not_found", "Workflow was not found.");
+    }
+    if (workflow.lifecycle !== "completed") {
+      throw new AutonomousWorkflowError(
+        "autonomous_workflow_replay_conflict",
+        "Only completed workflows can be replayed.");
+    }
     return workflow;
   }
 

@@ -20,7 +20,7 @@ export function ok<T>(c: Context, data: T, status: 200 | 201 | 503 = 200) {
 export function fail(
   c: Context,
   error: ApiError,
-  status: 400 | 401 | 403 | 404 | 409 | 410 | 422 | 429 | 500 | 503 | 504 = 500,
+  status: 400 | 401 | 403 | 404 | 409 | 410 | 412 | 422 | 429 | 500 | 503 | 504 = 500,
 ) {
   if (status === 401 || status === 403) {
     logger.warn("authorization_failure", {
