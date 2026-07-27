@@ -144,6 +144,45 @@ export interface WorkflowServiceComposition {
   recoverDependencies(): Promise<WorkflowDependencyRecovery>;
 }
 
+export interface WorkflowServiceDependencies {
+  readonly intelligenceService: typeof runtimeRepositoryIntelligenceService;
+  readonly intelligenceStore: typeof runtimeRepositoryIntelligenceStore;
+  readonly planningService: typeof runtimeRepositoryPlanningService;
+  readonly planningStore: typeof runtimeRepositoryPlanningStore;
+  readonly executionOrchestrator: typeof runtimeRepositoryExecutionOrchestrator;
+  readonly executionStore: typeof runtimeRepositoryExecutionStore;
+  readonly agentRuntimeScheduler: typeof runtimeAgentRuntimeScheduler;
+  readonly agentRuntimeStore: typeof runtimeAgentRuntimeStore;
+  readonly toolInvocationService: typeof runtimeToolInvocationService;
+  readonly collaborationEngine: typeof runtimeMultiAgentCollaborationEngine;
+  readonly workspaceEngine: typeof runtimeRepositoryWorkspacePatchEngine;
+  readonly artifactEngine: typeof runtimeRepositoryArtifactEngine;
+  readonly reviewEngine: typeof runtimeRepositoryReviewEngine;
+  readonly proposalEngine: typeof runtimeRepositoryProposalEngine;
+  readonly applyEngine: typeof runtimeRepositoryApplyEngine;
+  readonly knowledgeEngine: typeof runtimeRepositoryKnowledgeEngine;
+}
+
+export const runtimeWorkflowServiceDependencies:
+WorkflowServiceDependencies = Object.freeze({
+  intelligenceService: runtimeRepositoryIntelligenceService,
+  intelligenceStore: runtimeRepositoryIntelligenceStore,
+  planningService: runtimeRepositoryPlanningService,
+  planningStore: runtimeRepositoryPlanningStore,
+  executionOrchestrator: runtimeRepositoryExecutionOrchestrator,
+  executionStore: runtimeRepositoryExecutionStore,
+  agentRuntimeScheduler: runtimeAgentRuntimeScheduler,
+  agentRuntimeStore: runtimeAgentRuntimeStore,
+  toolInvocationService: runtimeToolInvocationService,
+  collaborationEngine: runtimeMultiAgentCollaborationEngine,
+  workspaceEngine: runtimeRepositoryWorkspacePatchEngine,
+  artifactEngine: runtimeRepositoryArtifactEngine,
+  reviewEngine: runtimeRepositoryReviewEngine,
+  proposalEngine: runtimeRepositoryProposalEngine,
+  applyEngine: runtimeRepositoryApplyEngine,
+  knowledgeEngine: runtimeRepositoryKnowledgeEngine,
+});
+
 function objectPayload(payload: unknown, stage: WorkflowStage): JsonObject {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AutonomousWorkflowError(
@@ -248,6 +287,11 @@ function execution(
 
 export class ExistingServicesWorkflowComposition
 implements WorkflowServiceComposition {
+  constructor(
+    private readonly services: WorkflowServiceDependencies =
+      runtimeWorkflowServiceDependencies,
+  ) {}
+
   async execute(
     stage: WorkflowStage,
     payload: unknown,
@@ -258,7 +302,7 @@ implements WorkflowServiceComposition {
         const repositoryId = String(request.repositoryId ?? "");
         const repositoryRevision = String(request.repositoryRevision ?? "");
         const output =
-          await runtimeRepositoryIntelligenceService.getRepositoryOverview(
+          await this.services.intelligenceService.getPublishedSnapshot(
             repositoryId, repositoryRevision);
         if (!output) {
           throw new AutonomousWorkflowError(
@@ -276,23 +320,23 @@ implements WorkflowServiceComposition {
         });
       }
       case "planning": {
-        const output = await runtimeRepositoryPlanningService.createPlan(
+        const output = await this.services.planningService.createPlan(
           payload as RepositoryPlanningInput);
         return execution(stage, output);
       }
       case "execution": {
-        const output = await runtimeRepositoryExecutionOrchestrator.create(
+        const output = await this.services.executionOrchestrator.create(
           payload as ExecutionCreationInput);
         return execution(stage, output);
       }
       case "agent_runtime": {
-        const output = await runtimeAgentRuntimeScheduler.create(
+        const output = await this.services.agentRuntimeScheduler.create(
           payload as CreateAgentRuntimeInput);
         return execution(stage, output);
       }
       case "tool_invocation": {
         const command = payload as unknown as WorkflowToolCommand;
-        const output = await runtimeToolInvocationService.invoke(
+        const output = await this.services.toolInvocationService.invoke(
           command.request, command.context);
         if (output.invocation.status !== "succeeded") {
           throw new AutonomousWorkflowError(
@@ -311,45 +355,52 @@ implements WorkflowServiceComposition {
         });
       }
       case "collaboration": {
-        const output = await runtimeMultiAgentCollaborationEngine.create(
+        const output = await this.services.collaborationEngine.create(
           payload as CreateCollaborationInput);
         return execution(stage, output);
       }
       case "workspace": {
         const command = payload as unknown as WorkflowWorkspaceCommand;
         let workspace =
-          await runtimeRepositoryWorkspacePatchEngine.create(command.create);
-        workspace = await runtimeRepositoryWorkspacePatchEngine.prepare(
+          await this.services.workspaceEngine.create(command.create);
+        workspace = await this.services.workspaceEngine.prepare(
           workspace.tenantId, workspace.workspaceId, workspace.ownerId);
-        workspace = await runtimeRepositoryWorkspacePatchEngine.markReady(
+        workspace = await this.services.workspaceEngine.markReady(
           workspace.tenantId, workspace.workspaceId, workspace.ownerId);
-        const claim = await runtimeRepositoryWorkspacePatchEngine.claim(
+        const claim = await this.services.workspaceEngine.claim(
           workspace.tenantId, workspace.workspaceId, workspace.ownerId);
         workspace =
-          await runtimeRepositoryWorkspacePatchEngine.activate(claim);
+          await this.services.workspaceEngine.activate(claim);
         return execution(stage, workspace, { workspace, claim });
       }
       case "patch": {
+        const input = payload as GeneratePatchInput;
         const patch =
-          await runtimeRepositoryWorkspacePatchEngine.generatePatch(
-            payload as GeneratePatchInput);
-        return execution(stage, patch);
+          await this.services.workspaceEngine.generatePatch(input);
+        const workspace = await this.services.workspaceEngine.get(
+          input.claim.tenantId, patch.workspaceId);
+        if (!workspace) {
+          throw new AutonomousWorkflowError(
+            "autonomous_workflow_workspace_unavailable",
+            "Patched workspace is unavailable.");
+        }
+        return execution(stage, patch, { patch, workspace });
       }
       case "artifact": {
-        const output = await runtimeRepositoryArtifactEngine.generate(
+        const output = await this.services.artifactEngine.generate(
           payload as GenerateArtifactInput);
         return execution(stage, output);
       }
       case "review": {
         const command = payload as unknown as WorkflowReviewCommand;
-        const pending = await runtimeRepositoryReviewEngine.create(
+        const pending = await this.services.reviewEngine.create(
           command.create);
-        const review = await runtimeRepositoryReviewEngine.decide({
+        const review = await this.services.reviewEngine.decide({
           ...command.decision,
           reviewId: pending.reviewId,
           reviewVersion: pending.reviewVersion,
         });
-        const artifact = await runtimeRepositoryArtifactEngine.review({
+        const artifact = await this.services.artifactEngine.review({
           ...command.artifactDecision,
           artifactId: command.create.artifact.artifactId,
           artifactVersion: command.create.artifact.artifactVersion,
@@ -364,9 +415,9 @@ implements WorkflowServiceComposition {
       }
       case "proposal": {
         const command = payload as unknown as WorkflowProposalCommand;
-        const pending = await runtimeRepositoryProposalEngine.assemble(
+        const pending = await this.services.proposalEngine.assemble(
           command.assemble);
-        const proposal = await runtimeRepositoryProposalEngine.decide({
+        const proposal = await this.services.proposalEngine.decide({
           ...command.decision,
           proposalId: pending.proposalId,
           proposalVersion: pending.proposalVersion,
@@ -380,9 +431,9 @@ implements WorkflowServiceComposition {
       }
       case "apply": {
         const command = payload as unknown as WorkflowApplyCommand;
-        const pending = await runtimeRepositoryApplyEngine.prepare(
+        const pending = await this.services.applyEngine.prepare(
           command.prepare);
-        const transaction = await runtimeRepositoryApplyEngine.confirm({
+        const transaction = await this.services.applyEngine.confirm({
           ...command.confirmation,
           transactionId: pending.transactionId,
           transactionVersion: pending.transactionVersion,
@@ -395,7 +446,7 @@ implements WorkflowServiceComposition {
         return execution(stage, transaction);
       }
       case "knowledge": {
-        const output = await runtimeRepositoryKnowledgeEngine.create(
+        const output = await this.services.knowledgeEngine.create(
           payload as CreateKnowledgeInput);
         return execution(stage, output);
       }
@@ -409,13 +460,13 @@ implements WorkflowServiceComposition {
         "autonomous_workflow_approval_invalid",
         "Execution approval command is malformed.");
     }
-    await runtimeRepositoryExecutionOrchestrator.approve(command.input);
+    await this.services.executionOrchestrator.approve(command.input);
   }
 
   async cancel(payload?: unknown): Promise<void> {
     if (payload === undefined) return;
     const command = payload as WorkflowExecutionCancellationCommand;
-    await runtimeRepositoryExecutionOrchestrator.cancel(
+    await this.services.executionOrchestrator.cancel(
       command.ownerId,
       command.repositoryId,
       command.executionId,
@@ -428,18 +479,18 @@ implements WorkflowServiceComposition {
       intelligence, planning, executionCount, agentRuntime, toolInvocation,
       collaboration, workspace, artifact, review, proposal, apply, knowledge,
     ] = await Promise.all([
-      runtimeRepositoryIntelligenceStore.recover(),
-      runtimeRepositoryPlanningStore.recover(),
-      runtimeRepositoryExecutionStore.recover(),
-      runtimeAgentRuntimeStore.recover(undefined, runtimeAgentQuotas),
-      runtimeToolInvocationService.recover(),
-      runtimeMultiAgentCollaborationEngine.recover(),
-      runtimeRepositoryWorkspacePatchEngine.recover(),
-      runtimeRepositoryArtifactEngine.recover(),
-      runtimeRepositoryReviewEngine.recover(),
-      runtimeRepositoryProposalEngine.recover(),
-      runtimeRepositoryApplyEngine.recover(),
-      runtimeRepositoryKnowledgeEngine.recover(),
+      this.services.intelligenceStore.recover(),
+      this.services.planningStore.recover(),
+      this.services.executionStore.recover(),
+      this.services.agentRuntimeStore.recover(undefined, runtimeAgentQuotas),
+      this.services.toolInvocationService.recover(),
+      this.services.collaborationEngine.recover(),
+      this.services.workspaceEngine.recover(),
+      this.services.artifactEngine.recover(),
+      this.services.reviewEngine.recover(),
+      this.services.proposalEngine.recover(),
+      this.services.applyEngine.recover(),
+      this.services.knowledgeEngine.recover(),
     ]);
     return {
       intelligence,

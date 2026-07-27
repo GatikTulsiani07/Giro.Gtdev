@@ -8,6 +8,10 @@ export class RepositoryIntelligenceService {
     return this.store.loadPublished(repositoryId, repositoryRevision);
   }
 
+  getPublishedSnapshot(repositoryId: string, repositoryRevision?: string) {
+    return this.snapshot(repositoryId, repositoryRevision);
+  }
+
   async getArchitectureSummary(repositoryId: string, repositoryRevision?: string) {
     return (await this.snapshot(repositoryId, repositoryRevision))?.architecture ?? null;
   }
