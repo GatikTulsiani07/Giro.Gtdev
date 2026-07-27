@@ -216,6 +216,12 @@ export class MetricsRegistry {
   private repositoryProposalDiagnostics = 0;
   private repositoryProposalAssemblyLatencyMs = 0;
   private repositoryProposalRecoveries = 0;
+  private repositoryApplyTransactionsCreated = 0;
+  private repositoryApplyValidationFailures = 0;
+  private repositoryApplyRollbackPlans = 0;
+  private repositoryApplyConflicts = 0;
+  private repositoryApplyPreparationLatencyMs = 0;
+  private repositoryApplyRecoveries = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -736,6 +742,28 @@ export class MetricsRegistry {
       Math.max(0, Math.trunc(input.recoveryCount));
   }
 
+  recordRepositoryApply(input: {
+    transactionsCreated: number;
+    validationFailures: number;
+    rollbackPlans: number;
+    conflicts: number;
+    preparationLatencyMs: number;
+    recoveryCount: number;
+  }): void {
+    this.repositoryApplyTransactionsCreated =
+      Math.max(0, Math.trunc(input.transactionsCreated));
+    this.repositoryApplyValidationFailures =
+      Math.max(0, Math.trunc(input.validationFailures));
+    this.repositoryApplyRollbackPlans =
+      Math.max(0, Math.trunc(input.rollbackPlans));
+    this.repositoryApplyConflicts =
+      Math.max(0, Math.trunc(input.conflicts));
+    this.repositoryApplyPreparationLatencyMs =
+      Math.max(0, input.preparationLatencyMs);
+    this.repositoryApplyRecoveries =
+      Math.max(0, Math.trunc(input.recoveryCount));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1173,6 +1201,24 @@ export class MetricsRegistry {
       "# HELP giro_repository_proposal_recoveries_total Proposal recoveries.",
       "# TYPE giro_repository_proposal_recoveries_total counter",
       `giro_repository_proposal_recoveries_total ${this.repositoryProposalRecoveries}`,
+      "# HELP giro_repository_apply_transactions_created_total Apply transaction versions created.",
+      "# TYPE giro_repository_apply_transactions_created_total counter",
+      `giro_repository_apply_transactions_created_total ${this.repositoryApplyTransactionsCreated}`,
+      "# HELP giro_repository_apply_validation_failures_total Apply validation failures.",
+      "# TYPE giro_repository_apply_validation_failures_total counter",
+      `giro_repository_apply_validation_failures_total ${this.repositoryApplyValidationFailures}`,
+      "# HELP giro_repository_apply_rollback_plans_total Rollback plans prepared.",
+      "# TYPE giro_repository_apply_rollback_plans_total counter",
+      `giro_repository_apply_rollback_plans_total ${this.repositoryApplyRollbackPlans}`,
+      "# HELP giro_repository_apply_conflicts_total Apply plan conflicts.",
+      "# TYPE giro_repository_apply_conflicts_total counter",
+      `giro_repository_apply_conflicts_total ${this.repositoryApplyConflicts}`,
+      "# HELP giro_repository_apply_preparation_latency_ms_total Apply preparation latency.",
+      "# TYPE giro_repository_apply_preparation_latency_ms_total counter",
+      `giro_repository_apply_preparation_latency_ms_total ${this.repositoryApplyPreparationLatencyMs}`,
+      "# HELP giro_repository_apply_recoveries_total Apply transaction recoveries.",
+      "# TYPE giro_repository_apply_recoveries_total counter",
+      `giro_repository_apply_recoveries_total ${this.repositoryApplyRecoveries}`,
     );
     return `${lines.join("\n")}\n`;
   }

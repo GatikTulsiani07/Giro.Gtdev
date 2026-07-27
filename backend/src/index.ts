@@ -41,6 +41,7 @@ import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWork
 import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/service.js";
 import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/service.js";
 import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/service.js";
+import { runtimeRepositoryApplyEngine } from "./services/repositoryApply/service.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 
 let server: ServerType;
@@ -338,6 +339,23 @@ try {
   logger.error("repository_proposal_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_proposal_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryApplyEngine.verify();
+  const recoveredApplyCount = await runtimeRepositoryApplyEngine.recover();
+  logger.info("repository_apply_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-apply-engine-v1",
+    recoveredApplyCount,
+  });
+} catch {
+  logger.error("repository_apply_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_apply_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
