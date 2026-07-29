@@ -41,6 +41,7 @@ import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWork
 import { runtimeRepositorySandboxService } from "./services/repositorySandbox/service.js";
 import { runtimeSemanticCodeIntelligenceService } from "./services/semanticCodeIntelligence/service.js";
 import { runtimeFeatureIntelligenceService } from "./services/featureIntelligence/service.js";
+import { runtimeChangeIntelligenceService } from "./services/changeIntelligence/service.js";
 import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/service.js";
 import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/service.js";
 import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/service.js";
@@ -348,6 +349,24 @@ try {
   logger.error("feature_intelligence_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "feature_intelligence_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeChangeIntelligenceService.verify();
+  const recoveredChangeAnalysisCount =
+    await runtimeChangeIntelligenceService.recover();
+  logger.info("change_intelligence_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "change-intelligence-v1",
+    recoveredChangeAnalysisCount,
+  });
+} catch {
+  logger.error("change_intelligence_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "change_intelligence_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);

@@ -223,6 +223,12 @@ export class MetricsRegistry {
   private featureRebuildDurationMs = 0;
   private featureIncrementalRebuilds = 0;
   private featureRecoveries = 0;
+  private changeAnalyses = 0;
+  private changeAverageImpactSize = 0;
+  private changeAverageDependencyDepth = 0;
+  private readonly changeRiskDistribution = new Map<string, number>();
+  private changeReuseRate = 0;
+  private changeRecoveries = 0;
   private repositoryArtifactsGenerated = 0;
   private repositoryArtifactGenerationLatencyMs = 0;
   private repositoryArtifactValidationFailures = 0;
@@ -770,6 +776,26 @@ export class MetricsRegistry {
     this.featureIncrementalRebuilds =
       Math.max(0, Math.trunc(input.incrementalRebuildCount));
     this.featureRecoveries = Math.max(0, Math.trunc(input.recoveryCount));
+  }
+
+  recordChangeIntelligence(input: {
+    analyses: number;
+    averageImpactSize: number;
+    averageDependencyDepth: number;
+    riskDistribution: Readonly<Record<"low" | "medium" | "high" | "critical", number>>;
+    reuseRate: number;
+    recoveryCount: number;
+  }): void {
+    this.changeAnalyses = Math.max(0, Math.trunc(input.analyses));
+    this.changeAverageImpactSize = Math.max(0, input.averageImpactSize);
+    this.changeAverageDependencyDepth =
+      Math.max(0, input.averageDependencyDepth);
+    for (const level of ["low", "medium", "high", "critical"] as const) {
+      this.changeRiskDistribution.set(level,
+        Math.max(0, Math.trunc(input.riskDistribution[level])));
+    }
+    this.changeReuseRate = Math.min(1, Math.max(0, input.reuseRate));
+    this.changeRecoveries = Math.max(0, Math.trunc(input.recoveryCount));
   }
 
   recordRepositoryArtifact(input: {
@@ -1352,6 +1378,25 @@ export class MetricsRegistry {
       "# HELP giro_feature_intelligence_recoveries_total Feature graph recoveries.",
       "# TYPE giro_feature_intelligence_recoveries_total counter",
       `giro_feature_intelligence_recoveries_total ${this.featureRecoveries}`,
+      "# HELP giro_change_intelligence_analyses Change analyses in durable storage.",
+      "# TYPE giro_change_intelligence_analyses gauge",
+      `giro_change_intelligence_analyses ${this.changeAnalyses}`,
+      "# HELP giro_change_intelligence_average_impact_size Average impacted graph nodes.",
+      "# TYPE giro_change_intelligence_average_impact_size gauge",
+      `giro_change_intelligence_average_impact_size ${this.changeAverageImpactSize}`,
+      "# HELP giro_change_intelligence_average_dependency_depth Average maximum dependency depth.",
+      "# TYPE giro_change_intelligence_average_dependency_depth gauge",
+      `giro_change_intelligence_average_dependency_depth ${this.changeAverageDependencyDepth}`,
+      "# HELP giro_change_intelligence_risk_distribution Change analyses by risk level.",
+      "# TYPE giro_change_intelligence_risk_distribution gauge",
+      ...[...this.changeRiskDistribution.entries()].sort().map(([level, value]) =>
+        `giro_change_intelligence_risk_distribution{level="${level}"} ${value}`),
+      "# HELP giro_change_intelligence_reuse_rate Fraction of requests served from unchanged analyses.",
+      "# TYPE giro_change_intelligence_reuse_rate gauge",
+      `giro_change_intelligence_reuse_rate ${this.changeReuseRate}`,
+      "# HELP giro_change_intelligence_recoveries_total Change analysis recoveries.",
+      "# TYPE giro_change_intelligence_recoveries_total counter",
+      `giro_change_intelligence_recoveries_total ${this.changeRecoveries}`,
       "# HELP giro_repository_artifacts_generated_total Repository artifact versions generated.",
       "# TYPE giro_repository_artifacts_generated_total counter",
       `giro_repository_artifacts_generated_total ${this.repositoryArtifactsGenerated}`,
