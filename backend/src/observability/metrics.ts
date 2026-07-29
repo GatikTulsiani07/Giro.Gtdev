@@ -205,6 +205,12 @@ export class MetricsRegistry {
   private repositoryWorkspaceArchives = 0;
   private repositoryWorkspaceRecoveries = 0;
   private repositoryWorkspaceDurationMs = 0;
+  private repositorySandboxCreation = 0;
+  private repositorySandboxActiveLeases = 0;
+  private repositorySandboxLeaseRenewals = 0;
+  private repositorySandboxRecoveries = 0;
+  private repositorySandboxPreparationLatencyMs = 0;
+  private repositorySandboxArchives = 0;
   private repositoryArtifactsGenerated = 0;
   private repositoryArtifactGenerationLatencyMs = 0;
   private repositoryArtifactValidationFailures = 0;
@@ -699,6 +705,23 @@ export class MetricsRegistry {
     this.repositoryWorkspaceArchives = Math.max(0, Math.trunc(input.archiveCount));
     this.repositoryWorkspaceRecoveries = Math.max(0, Math.trunc(input.recoveryCount));
     this.repositoryWorkspaceDurationMs = Math.max(0, input.workspaceDurationMs);
+  }
+
+  recordRepositorySandbox(input: {
+    sandboxCreation: number;
+    activeLeases: number;
+    leaseRenewals: number;
+    recoveryCount: number;
+    preparationLatencyMs: number;
+    archiveCount: number;
+  }): void {
+    this.repositorySandboxCreation = Math.max(0, Math.trunc(input.sandboxCreation));
+    this.repositorySandboxActiveLeases = Math.max(0, Math.trunc(input.activeLeases));
+    this.repositorySandboxLeaseRenewals = Math.max(0, Math.trunc(input.leaseRenewals));
+    this.repositorySandboxRecoveries = Math.max(0, Math.trunc(input.recoveryCount));
+    this.repositorySandboxPreparationLatencyMs =
+      Math.max(0, input.preparationLatencyMs);
+    this.repositorySandboxArchives = Math.max(0, Math.trunc(input.archiveCount));
   }
 
   recordRepositoryArtifact(input: {
@@ -1227,6 +1250,24 @@ export class MetricsRegistry {
       "# HELP giro_repository_workspace_duration_ms_total Repository workspace duration.",
       "# TYPE giro_repository_workspace_duration_ms_total counter",
       `giro_repository_workspace_duration_ms_total ${this.repositoryWorkspaceDurationMs}`,
+      "# HELP giro_repository_sandbox_creation_total Repository sandboxes created.",
+      "# TYPE giro_repository_sandbox_creation_total counter",
+      `giro_repository_sandbox_creation_total ${this.repositorySandboxCreation}`,
+      "# HELP giro_repository_sandbox_active_leases Active repository sandbox leases.",
+      "# TYPE giro_repository_sandbox_active_leases gauge",
+      `giro_repository_sandbox_active_leases ${this.repositorySandboxActiveLeases}`,
+      "# HELP giro_repository_sandbox_lease_renewals_total Sandbox lease renewals.",
+      "# TYPE giro_repository_sandbox_lease_renewals_total counter",
+      `giro_repository_sandbox_lease_renewals_total ${this.repositorySandboxLeaseRenewals}`,
+      "# HELP giro_repository_sandbox_recoveries_total Sandbox recovery actions.",
+      "# TYPE giro_repository_sandbox_recoveries_total counter",
+      `giro_repository_sandbox_recoveries_total ${this.repositorySandboxRecoveries}`,
+      "# HELP giro_repository_sandbox_preparation_latency_ms_total Sandbox preparation latency.",
+      "# TYPE giro_repository_sandbox_preparation_latency_ms_total counter",
+      `giro_repository_sandbox_preparation_latency_ms_total ${this.repositorySandboxPreparationLatencyMs}`,
+      "# HELP giro_repository_sandbox_archives_total Repository sandboxes archived.",
+      "# TYPE giro_repository_sandbox_archives_total counter",
+      `giro_repository_sandbox_archives_total ${this.repositorySandboxArchives}`,
       "# HELP giro_repository_artifacts_generated_total Repository artifact versions generated.",
       "# TYPE giro_repository_artifacts_generated_total counter",
       `giro_repository_artifacts_generated_total ${this.repositoryArtifactsGenerated}`,

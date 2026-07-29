@@ -38,6 +38,7 @@ import { runtimeAgentRuntimeStore } from "./services/agentRuntime/store.js";
 import { runtimeToolInvocationService } from "./services/toolInvocation/service.js";
 import { runtimeMultiAgentCollaborationEngine } from "./services/multiAgentCollaboration/service.js";
 import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWorkspace/service.js";
+import { runtimeRepositorySandboxService } from "./services/repositorySandbox/service.js";
 import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/service.js";
 import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/service.js";
 import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/service.js";
@@ -292,6 +293,23 @@ try {
   logger.error("repository_workspace_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_workspace_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositorySandboxService.verify();
+  const recoveredSandboxCount = await runtimeRepositorySandboxService.recover();
+  logger.info("repository_sandbox_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-sandbox-v1",
+    recoveredSandboxCount,
+  });
+} catch {
+  logger.error("repository_sandbox_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_sandbox_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
