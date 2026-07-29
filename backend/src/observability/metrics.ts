@@ -211,6 +211,12 @@ export class MetricsRegistry {
   private repositorySandboxRecoveries = 0;
   private repositorySandboxPreparationLatencyMs = 0;
   private repositorySandboxArchives = 0;
+  private semanticIndexedSymbols = 0;
+  private semanticIndexedRelationships = 0;
+  private semanticIndexingDurationMs = 0;
+  private semanticGraphRebuilds = 0;
+  private semanticIncrementalUpdates = 0;
+  private semanticRecoveryOperations = 0;
   private repositoryArtifactsGenerated = 0;
   private repositoryArtifactGenerationLatencyMs = 0;
   private repositoryArtifactValidationFailures = 0;
@@ -722,6 +728,25 @@ export class MetricsRegistry {
     this.repositorySandboxPreparationLatencyMs =
       Math.max(0, input.preparationLatencyMs);
     this.repositorySandboxArchives = Math.max(0, Math.trunc(input.archiveCount));
+  }
+
+  recordSemanticCodeIntelligence(input: {
+    indexedSymbols: number;
+    indexedRelationships: number;
+    indexingDurationMs: number;
+    graphRebuilds: number;
+    incrementalUpdates: number;
+    recoveryOperations: number;
+  }): void {
+    this.semanticIndexedSymbols = Math.max(0, Math.trunc(input.indexedSymbols));
+    this.semanticIndexedRelationships =
+      Math.max(0, Math.trunc(input.indexedRelationships));
+    this.semanticIndexingDurationMs = Math.max(0, input.indexingDurationMs);
+    this.semanticGraphRebuilds = Math.max(0, Math.trunc(input.graphRebuilds));
+    this.semanticIncrementalUpdates =
+      Math.max(0, Math.trunc(input.incrementalUpdates));
+    this.semanticRecoveryOperations =
+      Math.max(0, Math.trunc(input.recoveryOperations));
   }
 
   recordRepositoryArtifact(input: {
@@ -1268,6 +1293,24 @@ export class MetricsRegistry {
       "# HELP giro_repository_sandbox_archives_total Repository sandboxes archived.",
       "# TYPE giro_repository_sandbox_archives_total counter",
       `giro_repository_sandbox_archives_total ${this.repositorySandboxArchives}`,
+      "# HELP giro_semantic_indexed_symbols Semantic symbols in durable graphs.",
+      "# TYPE giro_semantic_indexed_symbols gauge",
+      `giro_semantic_indexed_symbols ${this.semanticIndexedSymbols}`,
+      "# HELP giro_semantic_indexed_relationships Semantic relationships in durable graphs.",
+      "# TYPE giro_semantic_indexed_relationships gauge",
+      `giro_semantic_indexed_relationships ${this.semanticIndexedRelationships}`,
+      "# HELP giro_semantic_indexing_duration_ms_total Semantic indexing duration.",
+      "# TYPE giro_semantic_indexing_duration_ms_total counter",
+      `giro_semantic_indexing_duration_ms_total ${this.semanticIndexingDurationMs}`,
+      "# HELP giro_semantic_graph_rebuilds_total Full semantic graph rebuilds.",
+      "# TYPE giro_semantic_graph_rebuilds_total counter",
+      `giro_semantic_graph_rebuilds_total ${this.semanticGraphRebuilds}`,
+      "# HELP giro_semantic_incremental_updates_total Incrementally analyzed files.",
+      "# TYPE giro_semantic_incremental_updates_total counter",
+      `giro_semantic_incremental_updates_total ${this.semanticIncrementalUpdates}`,
+      "# HELP giro_semantic_recovery_operations_total Semantic graph recoveries.",
+      "# TYPE giro_semantic_recovery_operations_total counter",
+      `giro_semantic_recovery_operations_total ${this.semanticRecoveryOperations}`,
       "# HELP giro_repository_artifacts_generated_total Repository artifact versions generated.",
       "# TYPE giro_repository_artifacts_generated_total counter",
       `giro_repository_artifacts_generated_total ${this.repositoryArtifactsGenerated}`,
