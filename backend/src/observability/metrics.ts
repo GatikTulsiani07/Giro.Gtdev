@@ -217,6 +217,12 @@ export class MetricsRegistry {
   private semanticGraphRebuilds = 0;
   private semanticIncrementalUpdates = 0;
   private semanticRecoveryOperations = 0;
+  private featureDiscovered = 0;
+  private featureAverageSize = 0;
+  private featureDependencyDensity = 0;
+  private featureRebuildDurationMs = 0;
+  private featureIncrementalRebuilds = 0;
+  private featureRecoveries = 0;
   private repositoryArtifactsGenerated = 0;
   private repositoryArtifactGenerationLatencyMs = 0;
   private repositoryArtifactValidationFailures = 0;
@@ -747,6 +753,23 @@ export class MetricsRegistry {
       Math.max(0, Math.trunc(input.incrementalUpdates));
     this.semanticRecoveryOperations =
       Math.max(0, Math.trunc(input.recoveryOperations));
+  }
+
+  recordFeatureIntelligence(input: {
+    featuresDiscovered: number;
+    averageFeatureSize: number;
+    dependencyDensity: number;
+    rebuildDurationMs: number;
+    incrementalRebuildCount: number;
+    recoveryCount: number;
+  }): void {
+    this.featureDiscovered = Math.max(0, Math.trunc(input.featuresDiscovered));
+    this.featureAverageSize = Math.max(0, input.averageFeatureSize);
+    this.featureDependencyDensity = Math.max(0, input.dependencyDensity);
+    this.featureRebuildDurationMs = Math.max(0, input.rebuildDurationMs);
+    this.featureIncrementalRebuilds =
+      Math.max(0, Math.trunc(input.incrementalRebuildCount));
+    this.featureRecoveries = Math.max(0, Math.trunc(input.recoveryCount));
   }
 
   recordRepositoryArtifact(input: {
@@ -1311,6 +1334,24 @@ export class MetricsRegistry {
       "# HELP giro_semantic_recovery_operations_total Semantic graph recoveries.",
       "# TYPE giro_semantic_recovery_operations_total counter",
       `giro_semantic_recovery_operations_total ${this.semanticRecoveryOperations}`,
+      "# HELP giro_feature_intelligence_discovered Features in durable graphs.",
+      "# TYPE giro_feature_intelligence_discovered gauge",
+      `giro_feature_intelligence_discovered ${this.featureDiscovered}`,
+      "# HELP giro_feature_intelligence_average_size Average semantic symbols per feature.",
+      "# TYPE giro_feature_intelligence_average_size gauge",
+      `giro_feature_intelligence_average_size ${this.featureAverageSize}`,
+      "# HELP giro_feature_intelligence_dependency_density Feature dependency density.",
+      "# TYPE giro_feature_intelligence_dependency_density gauge",
+      `giro_feature_intelligence_dependency_density ${this.featureDependencyDensity}`,
+      "# HELP giro_feature_intelligence_rebuild_duration_ms_total Feature rebuild duration.",
+      "# TYPE giro_feature_intelligence_rebuild_duration_ms_total counter",
+      `giro_feature_intelligence_rebuild_duration_ms_total ${this.featureRebuildDurationMs}`,
+      "# HELP giro_feature_intelligence_incremental_rebuilds_total Incrementally rebuilt features.",
+      "# TYPE giro_feature_intelligence_incremental_rebuilds_total counter",
+      `giro_feature_intelligence_incremental_rebuilds_total ${this.featureIncrementalRebuilds}`,
+      "# HELP giro_feature_intelligence_recoveries_total Feature graph recoveries.",
+      "# TYPE giro_feature_intelligence_recoveries_total counter",
+      `giro_feature_intelligence_recoveries_total ${this.featureRecoveries}`,
       "# HELP giro_repository_artifacts_generated_total Repository artifact versions generated.",
       "# TYPE giro_repository_artifacts_generated_total counter",
       `giro_repository_artifacts_generated_total ${this.repositoryArtifactsGenerated}`,

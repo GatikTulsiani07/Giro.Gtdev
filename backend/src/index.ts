@@ -40,6 +40,7 @@ import { runtimeMultiAgentCollaborationEngine } from "./services/multiAgentColla
 import { runtimeRepositoryWorkspacePatchEngine } from "./services/repositoryWorkspace/service.js";
 import { runtimeRepositorySandboxService } from "./services/repositorySandbox/service.js";
 import { runtimeSemanticCodeIntelligenceService } from "./services/semanticCodeIntelligence/service.js";
+import { runtimeFeatureIntelligenceService } from "./services/featureIntelligence/service.js";
 import { runtimeRepositoryArtifactEngine } from "./services/repositoryArtifact/service.js";
 import { runtimeRepositoryReviewEngine } from "./services/repositoryReview/service.js";
 import { runtimeRepositoryProposalEngine } from "./services/repositoryProposal/service.js";
@@ -329,6 +330,24 @@ try {
   logger.error("semantic_code_intelligence_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "semantic_code_graph_database_objects_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeFeatureIntelligenceService.verify();
+  const recoveredFeatureGraphCount =
+    await runtimeFeatureIntelligenceService.recover();
+  logger.info("feature_intelligence_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "feature-intelligence-v1",
+    recoveredFeatureGraphCount,
+  });
+} catch {
+  logger.error("feature_intelligence_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "feature_intelligence_database_objects_unavailable",
   });
   await flushLogs();
   process.exit(1);
