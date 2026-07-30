@@ -50,6 +50,7 @@ import { runtimeRepositoryKnowledgeEngine } from "./services/repositoryKnowledge
 import { runtimeAutonomousWorkflowOrchestrator } from "./services/autonomousWorkflow/service.js";
 import { runtimeRepositoryQueryEngine } from "./services/repositoryQuery/service.js";
 import { runtimeRepositoryInsightEngine } from "./services/repositoryInsight/service.js";
+import { runtimeRepositoryEvolutionIntelligenceEngine } from "./services/repositoryEvolution/service.js";
 import { runtimeEngineeringPlatformApiService } from "./services/engineeringPlatformApi/service.js";
 import { verifyEngineeringPlatformApiContracts } from "./services/engineeringPlatformApi/openapi.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
@@ -509,6 +510,24 @@ try {
   logger.error("repository_insight_engine_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_insight_or_source_engines_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryEvolutionIntelligenceEngine.verify();
+  const recoveredRepositoryEvolutionCount =
+    await runtimeRepositoryEvolutionIntelligenceEngine.recover();
+  logger.info("repository_evolution_engine_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-evolution-intelligence-v1",
+    recoveredRepositoryEvolutionCount,
+  });
+} catch {
+  logger.error("repository_evolution_engine_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_evolution_or_source_engines_unavailable",
   });
   await flushLogs();
   process.exit(1);
