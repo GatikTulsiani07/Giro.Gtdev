@@ -51,6 +51,7 @@ import { runtimeAutonomousWorkflowOrchestrator } from "./services/autonomousWork
 import { runtimeRepositoryQueryEngine } from "./services/repositoryQuery/service.js";
 import { runtimeRepositoryInsightEngine } from "./services/repositoryInsight/service.js";
 import { runtimeRepositoryEvolutionIntelligenceEngine } from "./services/repositoryEvolution/service.js";
+import { runtimeRepositoryTaskPlanner } from "./services/repositoryTaskPlanner/service.js";
 import { runtimeEngineeringPlatformApiService } from "./services/engineeringPlatformApi/service.js";
 import { verifyEngineeringPlatformApiContracts } from "./services/engineeringPlatformApi/openapi.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
@@ -528,6 +529,24 @@ try {
   logger.error("repository_evolution_engine_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_evolution_or_source_engines_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryTaskPlanner.verify();
+  const recoveredRepositoryTaskPlanCount =
+    await runtimeRepositoryTaskPlanner.recover();
+  logger.info("repository_task_planner_contract_verified", {
+    source: "backend_startup",
+    plannerVersion: "repository-task-planner-v1",
+    recoveredRepositoryTaskPlanCount,
+  });
+} catch {
+  logger.error("repository_task_planner_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_task_planner_or_intelligence_engines_unavailable",
   });
   await flushLogs();
   process.exit(1);
