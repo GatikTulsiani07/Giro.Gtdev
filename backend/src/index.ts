@@ -49,6 +49,7 @@ import { runtimeRepositoryApplyEngine } from "./services/repositoryApply/service
 import { runtimeRepositoryKnowledgeEngine } from "./services/repositoryKnowledge/service.js";
 import { runtimeAutonomousWorkflowOrchestrator } from "./services/autonomousWorkflow/service.js";
 import { runtimeRepositoryQueryEngine } from "./services/repositoryQuery/service.js";
+import { runtimeRepositoryInsightEngine } from "./services/repositoryInsight/service.js";
 import { runtimeEngineeringPlatformApiService } from "./services/engineeringPlatformApi/service.js";
 import { verifyEngineeringPlatformApiContracts } from "./services/engineeringPlatformApi/openapi.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
@@ -490,6 +491,24 @@ try {
   logger.error("repository_query_engine_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_query_or_intelligence_engines_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryInsightEngine.verify();
+  const recoveredRepositoryInsightCount =
+    await runtimeRepositoryInsightEngine.recover();
+  logger.info("repository_insight_engine_contract_verified", {
+    source: "backend_startup",
+    engineVersion: "repository-insight-engine-v1",
+    recoveredRepositoryInsightCount,
+  });
+} catch {
+  logger.error("repository_insight_engine_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_insight_or_source_engines_unavailable",
   });
   await flushLogs();
   process.exit(1);
