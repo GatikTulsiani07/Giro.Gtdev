@@ -53,6 +53,7 @@ import { runtimeRepositoryInsightEngine } from "./services/repositoryInsight/ser
 import { runtimeRepositoryEvolutionIntelligenceEngine } from "./services/repositoryEvolution/service.js";
 import { runtimeRepositoryTaskPlanner } from "./services/repositoryTaskPlanner/service.js";
 import { runtimeRepositorySpecificationEngine } from "./services/repositorySpecification/service.js";
+import { runtimeRepositoryExecutionCoordinator } from "./services/repositoryExecutionCoordinator/service.js";
 import { runtimeEngineeringPlatformApiService } from "./services/engineeringPlatformApi/service.js";
 import { verifyEngineeringPlatformApiContracts } from "./services/engineeringPlatformApi/openapi.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
@@ -566,6 +567,24 @@ try {
   logger.error("repository_specification_engine_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_specification_or_task_planner_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryExecutionCoordinator.verify();
+  const recoveredRepositoryExecutionCoordinationCount =
+    await runtimeRepositoryExecutionCoordinator.recover();
+  logger.info("repository_execution_coordinator_contract_verified", {
+    source: "backend_startup",
+    coordinatorVersion: "repository-execution-coordinator-v1",
+    recoveredRepositoryExecutionCoordinationCount,
+  });
+} catch {
+  logger.error("repository_execution_coordinator_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_execution_coordinator_dependencies_unavailable",
   });
   await flushLogs();
   process.exit(1);
