@@ -34,6 +34,7 @@ import {
 } from "../services/engineeringPlatformApi/service.js";
 import {
   createRepositoryApiGatewayRoute,
+  repositoryApiGatewayRateLimitFailure,
   repositoryApiGatewayAuthMiddleware,
 } from "./repositoryApiGateway.js";
 import {
@@ -175,13 +176,23 @@ export function createRoutes(
     }),
   });
   routes.use("/api/v1/sessions/*", repositorySessionRateLimiter);
+  routes.use("/api/v1/repository-gateway/*", createRateLimitMiddleware({
+    policy: rateLimitPolicy,
+    store: rateLimitStore,
+    trustedProxyCidrs,
+    errorCode: "gateway_rate_limited",
+    onRejected: () => metrics.incrementRateLimitRejections(),
+    onRateLimited: (c, { retryAfter }) =>
+      repositoryApiGatewayRateLimitFailure(c, retryAfter),
+  }));
   routes.use("/api/v1/*", createRateLimitMiddleware({
     policy: rateLimitPolicy,
     store: rateLimitStore,
     trustedProxyCidrs,
     errorCode: "rate_limited",
     skip: (c) => c.req.path === "/api/v1/sessions" ||
-      c.req.path.startsWith("/api/v1/sessions/"),
+      c.req.path.startsWith("/api/v1/sessions/") ||
+      c.req.path.startsWith("/api/v1/repository-gateway/"),
     onRejected: () => metrics.incrementRateLimitRejections(),
   }));
 

@@ -97,6 +97,48 @@ const serviceByPath: Readonly<Record<string, RepositoryGatewayService>> = {
   evolution: "repository-evolution",
 };
 
+function gatewayRequestCoordinates(c: any) {
+  const parts = new URL(c.req.url).pathname.split("/").filter(Boolean);
+  const gatewayIndex = parts.indexOf("repository-gateway");
+  const owner = parts[gatewayIndex + 1] ?? "";
+  const repo = parts[gatewayIndex + 2] ?? "";
+  const operation = parts[gatewayIndex + 3] ?? "";
+  return {
+    repositoryId: owner && repo ? `${owner}/${repo}` : "",
+    service: serviceByPath[operation] ?? "repository-overview",
+  } as const;
+}
+
+export async function repositoryApiGatewayRateLimitFailure(
+  c: any,
+  retryAfter: number,
+) {
+  const receivedAt = new Date().toISOString();
+  const coordinates = gatewayRequestCoordinates(c);
+  let requestedRevision = c.req.query("revision") ?? "";
+  if (!requestedRevision && c.req.method !== "GET") {
+    const value = await c.req.raw.clone().json().catch(() => null) as
+      { revision?: unknown } | null;
+    if (typeof value?.revision === "string") requestedRevision = value.revision;
+  }
+  return c.json({
+    requestId: requestId(c),
+    repositoryId: coordinates.repositoryId,
+    revision: requestedRevision,
+    service: coordinates.service,
+    status: "error",
+    payload: null,
+    diagnostics: [{
+      code: "gateway_rate_limited",
+      message: "Too many repository gateway requests. Please try again later.",
+      severity: "error",
+      service: coordinates.service,
+      details: { retryAfterSeconds: retryAfter },
+    }],
+    timestamps: { receivedAt, completedAt: new Date().toISOString() },
+  }, 429);
+}
+
 export function repositoryApiGatewayAuthMiddleware() {
   return async (c: any, next: () => Promise<void>) => {
     const token = parseBearerToken(c.req.header("Authorization"));
@@ -110,12 +152,7 @@ export function repositoryApiGatewayAuthMiddleware() {
       return;
     }
     const receivedAt = new Date().toISOString();
-    const parts = new URL(c.req.url).pathname.split("/").filter(Boolean);
-    const gatewayIndex = parts.indexOf("repository-gateway");
-    const owner = parts[gatewayIndex + 1] ?? "";
-    const repo = parts[gatewayIndex + 2] ?? "";
-    const operation = parts[gatewayIndex + 3] ?? "";
-    const service = serviceByPath[operation] ?? "repository-overview";
+    const coordinates = gatewayRequestCoordinates(c);
     let requestedRevision = c.req.query("revision") ?? "";
     if (!requestedRevision && c.req.method !== "GET") {
       const body = await c.req.raw.clone().json().catch(() => null) as
@@ -126,9 +163,9 @@ export function repositoryApiGatewayAuthMiddleware() {
     }
     return c.json({
       requestId: requestId(c),
-      repositoryId: owner && repo ? `${owner}/${repo}` : "",
+      repositoryId: coordinates.repositoryId,
       revision: requestedRevision,
-      service,
+      service: coordinates.service,
       status: "error",
       payload: null,
       diagnostics: [{
@@ -137,7 +174,7 @@ export function repositoryApiGatewayAuthMiddleware() {
           ? "The authorization token is invalid."
           : "Authorization is required.",
         severity: "error",
-        service,
+        service: coordinates.service,
       }],
       timestamps: {
         receivedAt,
@@ -262,7 +299,7 @@ export function createRepositoryApiGatewayRoute(options: {
         repositoryId,
         operation: "repository_gateway.repository-overview",
       });
-      return c.json(await gateway.execute({
+      const response = await gateway.execute({
         requestId: requestId(c),
         ownerId: user.userId,
         repositoryId,
@@ -270,7 +307,8 @@ export function createRepositoryApiGatewayRoute(options: {
         service,
         input: {},
         receivedAt,
-      }));
+      });
+      return c.json(response, response.status === "partial" ? 207 : 200);
     } catch (error) {
       if (error instanceof z.ZodError) {
         const user = requireAuthenticatedUser(c);

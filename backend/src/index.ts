@@ -600,7 +600,7 @@ try {
 }
 
 try {
-  verifyEngineeringPlatformApiContracts();
+  verifyEngineeringPlatformApiContracts(app.routes);
   await runtimeEngineeringPlatformApiService.verify();
   logger.info("engineering_platform_api_contract_verified", {
     source: "backend_startup",
