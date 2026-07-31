@@ -11,6 +11,7 @@ import type {
   RepositorySessionDiagnostic,
   RepositorySessionRecord,
 } from "../repositorySession/types.js";
+import type { AutonomousWorkflow } from "../autonomousWorkflow/types.js";
 import type { RepositorySessionEngine } from "../repositorySession/service.js";
 
 export const REPOSITORY_SESSION_API_VERSION = "repository-session-api-v1";
@@ -31,6 +32,7 @@ export const RepositorySessionApiSchemas = Object.freeze({
   query: z.object({ query: QuestionTextSchema }).strict(),
   objective: z.object({ objective: ObjectiveTextSchema }).strict(),
   insights: z.object({}).strict(),
+  workflow: z.object({ workflowId: WorkflowIdSchema }).strict(),
 });
 
 export const REPOSITORY_SESSION_API_ROUTES = Object.freeze([
@@ -44,6 +46,7 @@ export const REPOSITORY_SESSION_API_ROUTES = Object.freeze([
   ["POST", "/api/v1/sessions/:sessionId/insights"],
   ["POST", "/api/v1/sessions/:sessionId/execution"],
   ["POST", "/api/v1/sessions/:sessionId/archive"],
+  ["POST", "/api/v1/sessions/:sessionId/workflow"],
 ] as const);
 
 export interface PublicRepositorySessionDiagnostic {
@@ -61,6 +64,10 @@ export interface PublicRepositorySession {
   readonly repositoryName: string;
   readonly revision: string;
   readonly workflowId: string | null;
+  readonly attachedWorkflowId: string | null;
+  readonly workflowState: AutonomousWorkflow["lifecycle"] | null;
+  readonly workflowStage: AutonomousWorkflow["currentStage"] | null;
+  readonly attachedAt: string | null;
   readonly lifecycle: RepositorySessionRecord["session"]["lifecycle"];
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -151,13 +158,22 @@ function repositoryParts(repositoryId: string) {
 
 export function publicRepositorySession(
   record: RepositorySessionRecord,
+  workflow: AutonomousWorkflow | null = null,
 ): PublicRepositorySession {
+  const attachedWorkflowId = record.session.workflowId ??
+    record.context.activeWorkflow;
   return Object.freeze({
     sessionId: record.session.sessionId,
     repositoryId: record.session.repositoryId,
     ...repositoryParts(record.session.repositoryId),
     revision: record.session.repositoryRevision,
     workflowId: record.session.workflowId,
+    attachedWorkflowId,
+    workflowState: workflow?.lifecycle ?? null,
+    workflowStage: workflow?.currentStage ?? null,
+    attachedAt: attachedWorkflowId
+      ? record.session.workflowAttachedAt ?? record.session.createdAt
+      : null,
     lifecycle: record.session.lifecycle,
     createdAt: record.session.createdAt,
     updatedAt: record.session.updatedAt,
@@ -168,9 +184,10 @@ export function publicRepositorySession(
 
 export function publicRepositorySessionSummary(
   record: RepositorySessionRecord,
+  workflow: AutonomousWorkflow | null = null,
 ): PublicRepositorySessionSummary {
   return Object.freeze({
-    ...publicRepositorySession(record),
+    ...publicRepositorySession(record, workflow),
     eventCount: record.events.length,
     lastEventKind: record.events.at(-1)?.kind ?? null,
     activeFeature: record.context.activeFeature,
@@ -191,10 +208,11 @@ export function publicRepositorySessionDiagnostic(
 
 export function publicRepositorySessionRecord(
   record: RepositorySessionRecord,
+  workflow: AutonomousWorkflow | null = null,
 ): PublicRepositorySessionRecord {
   const { sessionId: _sessionId, ...context } = record.context;
   return Object.freeze({
-    session: publicRepositorySession(record),
+    session: publicRepositorySession(record, workflow),
     events: Object.freeze(record.events.map((event) => Object.freeze({
       eventId: event.eventId,
       sequence: event.sequence,
@@ -250,7 +268,7 @@ export function repositorySessionApiSuccess<T>(
 export function repositorySessionApiFailure(
   c: Context,
   input: {
-    status: 400 | 401 | 403 | 404 | 409 | 424 | 429 | 500 | 503;
+    status: 400 | 401 | 403 | 404 | 409 | 422 | 424 | 429 | 500 | 503;
     code: string;
     message: string;
     retryable?: boolean;
@@ -277,7 +295,8 @@ export function repositorySessionApiFailure(
 type VerifiableRepositorySessionEngine = Pick<
   RepositorySessionEngine,
   "create" | "list" | "get" | "archive" | "query" | "plan" |
-  "specification" | "insights" | "coordinate" | "verify"
+  "specification" | "insights" | "coordinate" | "attachWorkflow" |
+  "workflowMetadata" | "findByWorkflow" | "verify"
 >;
 
 export function verifyRepositorySessionApiContracts(
@@ -286,7 +305,7 @@ export function verifyRepositorySessionApiContracts(
   const contracts = REPOSITORY_SESSION_API_ROUTES.map(
     ([method, path]) => `${method}:${path}`,
   );
-  if (contracts.length !== 10 || new Set(contracts).size !== contracts.length) {
+  if (contracts.length !== 11 || new Set(contracts).size !== contracts.length) {
     throw new Error("repository_session_api_route_contract_invalid");
   }
   const validCreate = RepositorySessionApiSchemas.create.safeParse({
@@ -303,12 +322,20 @@ export function verifyRepositorySessionApiContracts(
   const validParams = RepositorySessionApiSchemas.params.safeParse({
     sessionId: "repository_session_0123456789abcdef01234567",
   });
-  if (!validCreate.success || invalidCreate.success || !validParams.success) {
+  const validWorkflow = RepositorySessionApiSchemas.workflow.safeParse({
+    workflowId: "workflow_1",
+  });
+  const invalidWorkflow = RepositorySessionApiSchemas.workflow.safeParse({
+    workflowId: "../workflow",
+  });
+  if (!validCreate.success || invalidCreate.success || !validParams.success ||
+      !validWorkflow.success || invalidWorkflow.success) {
     throw new Error("repository_session_api_validator_contract_invalid");
   }
   for (const method of [
     "create", "list", "get", "archive", "query", "plan",
-    "specification", "insights", "coordinate", "verify",
+    "specification", "insights", "coordinate", "attachWorkflow",
+    "workflowMetadata", "findByWorkflow", "verify",
   ] as const) {
     if (typeof engine[method] !== "function") {
       throw new Error(`repository_session_api_dependency_missing:${method}`);

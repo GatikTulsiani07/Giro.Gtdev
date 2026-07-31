@@ -25,6 +25,7 @@ import {
   type RepositorySessionRecord,
   type RepositorySessionViewInput,
 } from "./types.js";
+import type { AutonomousWorkflow } from "../autonomousWorkflow/types.js";
 
 export const DEFAULT_REPOSITORY_SESSION_LIMITS:
 RepositorySessionLimits = Object.freeze({
@@ -168,6 +169,7 @@ export class RepositorySessionEngine {
         ownerId: input.ownerId,
         userId: input.userId,
         workflowId: input.workflowId ?? null,
+        workflowAttachedAt: input.workflowId ? createdAt : null,
         lifecycle: "active",
         createdAt,
         updatedAt: createdAt,
@@ -397,6 +399,120 @@ export class RepositorySessionEngine {
     return archived;
   }
 
+  async attachWorkflow(input: {
+    tenantId: string;
+    ownerId: string;
+    sessionId: string;
+    workflowId: string;
+  }): Promise<{
+    record: RepositorySessionRecord;
+    workflow: AutonomousWorkflow;
+    duplicate: boolean;
+  }> {
+    const record = await this.requireSession(
+      input.tenantId, input.ownerId, input.sessionId);
+    const workflow = await this.dependencies.workflows.get(
+      input.tenantId, input.workflowId, input.ownerId);
+    if (!workflow) {
+      throw new RepositorySessionError(
+        "repository_session_workflow_not_found",
+        "Workflow was not found.",
+      );
+    }
+    if (workflow.ownerId !== input.ownerId) {
+      throw new RepositorySessionError(
+        "repository_session_workflow_access_denied",
+        "Workflow is not owned by the session user.",
+      );
+    }
+    if (workflow.repositoryId !== record.session.repositoryId) {
+      throw new RepositorySessionError(
+        "repository_session_workflow_repository_conflict",
+        "Workflow and session repositories do not match.",
+      );
+    }
+    if (workflow.repositoryRevision !== record.session.repositoryRevision) {
+      throw new RepositorySessionError(
+        "repository_session_workflow_revision_conflict",
+        "Workflow and session revisions do not match.",
+      );
+    }
+    if (["completed", "cancelled", "failed"].includes(workflow.lifecycle)) {
+      throw new RepositorySessionError(
+        "repository_session_workflow_lifecycle_incompatible",
+        "Workflow lifecycle is not compatible with an active session.",
+        { lifecycle: workflow.lifecycle },
+      );
+    }
+    if (record.session.workflowId === input.workflowId &&
+        record.context.activeWorkflow === input.workflowId) {
+      return { record, workflow, duplicate: true };
+    }
+    if (record.session.workflowId || record.context.activeWorkflow) {
+      throw new RepositorySessionError(
+        "repository_session_workflow_attachment_conflict",
+        "Repository session already has an attached workflow.",
+      );
+    }
+    const attached = (await this.store.list(input.tenantId, input.ownerId))
+      .find((candidate) =>
+        candidate.session.sessionId !== input.sessionId &&
+        (candidate.session.workflowId === input.workflowId ||
+          candidate.context.activeWorkflow === input.workflowId));
+    if (attached) {
+      throw new RepositorySessionError(
+        "repository_session_workflow_attachment_conflict",
+        "Workflow is already attached to another repository session.",
+      );
+    }
+    const at = this.clock().toISOString();
+    const saved = await this.store.save({
+      ...record,
+      session: {
+        ...record.session,
+        workflowId: input.workflowId,
+        workflowAttachedAt: at,
+        updatedAt: at,
+      },
+      context: {
+        ...record.context,
+        contextVersion: record.context.contextVersion + 1,
+        activeWorkflow: input.workflowId,
+        updatedAt: at,
+      },
+    }, record.session.persistenceVersion);
+    await this.recordMetrics(input.tenantId);
+    return { record: saved, workflow, duplicate: false };
+  }
+
+  async workflowMetadata(
+    tenantId: string,
+    ownerId: string,
+    record: RepositorySessionRecord,
+  ) {
+    const workflowId = record.session.workflowId ??
+      record.context.activeWorkflow;
+    if (!workflowId) return null;
+    return this.authorizeWorkflow(
+      tenantId,
+      ownerId,
+      record.session.repositoryId,
+      record.session.repositoryRevision,
+      workflowId,
+    );
+  }
+
+  async findByWorkflow(
+    tenantId: string,
+    ownerId: string,
+    workflowId: string,
+  ) {
+    const records = await this.list(tenantId, ownerId);
+    return records.find((record) =>
+      record.session.workflowId === workflowId ||
+      record.context.activeWorkflow === workflowId) ?? null;
+  }
+
   async recover() {
     const recovered = await this.store.recover(this.clock().toISOString());
     await this.recordMetrics();
@@ -460,6 +576,7 @@ export class RepositorySessionEngine {
         "repository_session_workflow_access_denied",
         "Workflow is not owned and fenced to the session revision.");
     }
+    return workflow;
   }
 
   private async requireSession(

@@ -19,6 +19,7 @@ export interface RepositorySession {
   readonly ownerId: string;
   readonly userId: string;
   readonly workflowId: string | null;
+  readonly workflowAttachedAt?: string | null;
   readonly lifecycle: RepositorySessionLifecycle;
   readonly createdAt: string;
   readonly updatedAt: string;

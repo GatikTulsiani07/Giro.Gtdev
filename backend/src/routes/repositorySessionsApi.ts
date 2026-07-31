@@ -35,10 +35,12 @@ import {
 type SessionApiEngine = Pick<
   RepositorySessionEngine,
   "create" | "list" | "get" | "archive" | "query" | "plan" |
-  "specification" | "insights" | "coordinate"
+  "specification" | "insights" | "coordinate" | "attachWorkflow" |
+  "workflowMetadata" | "findByWorkflow"
 >;
 
-type SessionApiStatus = 400 | 401 | 403 | 404 | 409 | 424 | 429 | 500 | 503;
+type SessionApiStatus =
+  400 | 401 | 403 | 404 | 409 | 422 | 424 | 429 | 500 | 503;
 
 function diagnosticFromError(
   code: string,
@@ -60,8 +62,9 @@ function diagnosticFromError(
 function statusForCode(code: string): SessionApiStatus {
   if (/access_denied|ownership|forbidden|not_owned/.test(code)) return 403;
   if (/not_found/.test(code)) return 404;
+  if (/lifecycle_incompatible/.test(code)) return 422;
   if (
-    /revision_conflict|version_conflict|identity_conflict|workflow_required|inactive|expired|stale/.test(
+    /conflict|workflow_required|inactive|expired|stale/.test(
       code,
     )
   ) return 409;
@@ -171,6 +174,10 @@ export function repositorySessionApiAuthMiddleware(
     const payload = token ? await verifyAccessToken(token) : null;
     if (!payload) {
       metrics.incrementRepositorySessionApi("failure");
+      if (c.req.path.endsWith("/workflow")) {
+        metrics.incrementRepositorySessionApi(
+          "workflow_authorization_failure");
+      }
       return repositorySessionApiFailure(c, {
         status: 401,
         code: token
@@ -213,6 +220,11 @@ export function createRepositorySessionsApiRoute(options: {
     } catch (error) {
       record("failure");
       const normalized = normalizedError(error);
+      if (operation === "workflow") {
+        record(normalized.status === 401 || normalized.status === 403
+          ? "workflow_authorization_failure"
+          : "workflow_validation_failure");
+      }
       return repositorySessionApiFailure(c, normalized);
     }
   };
@@ -221,6 +233,14 @@ export function createRepositorySessionsApiRoute(options: {
     RepositorySessionApiSchemas.params.parse({
       sessionId: c.req.param("sessionId"),
     }).sessionId;
+
+  const publicRecord = async (
+    userId: string,
+    value: Awaited<ReturnType<SessionApiEngine["get"]>>,
+  ) => publicRepositorySessionRecord(
+    value,
+    await engine.workflowMetadata(userId, userId, value),
+  );
 
   const operation = (
     name: "query" | "plan" | "specification" | "execution",
@@ -256,7 +276,7 @@ export function createRepositorySessionsApiRoute(options: {
       message: `Repository session ${name} completed.`,
       diagnostics: resultDiagnostics(result),
       data: {
-        session: publicRepositorySessionRecord(current),
+        session: await publicRecord(user.userId, current),
         result: sanitizeRepositorySessionApiValue(result),
       },
     });
@@ -284,7 +304,7 @@ export function createRepositorySessionsApiRoute(options: {
       message: reused
         ? "The existing repository session was resumed."
         : "The repository session was created.",
-      data: publicRepositorySessionRecord(result),
+      data: await publicRecord(user.userId, result),
     });
   }));
 
@@ -296,7 +316,12 @@ export function createRepositorySessionsApiRoute(options: {
       code: "repository_sessions_listed",
       message: "Repository sessions were listed.",
       data: {
-        sessions: sessions.map(publicRepositorySessionSummary),
+        sessions: await Promise.all(sessions.map(async (session) =>
+          publicRepositorySessionSummary(
+            session,
+            await engine.workflowMetadata(
+              user.userId, user.userId, session),
+          ))),
         count: sessions.length,
       },
     });
@@ -311,7 +336,7 @@ export function createRepositorySessionsApiRoute(options: {
       status: 200,
       code: "repository_session_retrieved",
       message: "The repository session was retrieved.",
-      data: publicRepositorySessionRecord(result),
+      data: await publicRecord(user.userId, result),
     });
   }));
 
@@ -326,7 +351,7 @@ export function createRepositorySessionsApiRoute(options: {
       status: 200,
       code: "repository_session_archived",
       message: "The repository session was archived.",
-      data: publicRepositorySessionRecord(result),
+      data: await publicRecord(user.userId, result),
     });
   });
 
@@ -375,7 +400,7 @@ export function createRepositorySessionsApiRoute(options: {
       message: "Repository session insights completed.",
       diagnostics: resultDiagnostics(result),
       data: {
-        session: publicRepositorySessionRecord(current),
+        session: await publicRecord(user.userId, current),
         result: sanitizeRepositorySessionApiValue(result),
       },
     });
@@ -388,6 +413,36 @@ export function createRepositorySessionsApiRoute(options: {
       sessionId: input.sessionId,
       objective: input.value,
     }));
+
+  route.post("/:sessionId/workflow", handled("workflow", async (c) => {
+    const user = requireAuthenticatedUser(c);
+    const id = sessionId(c);
+    const input = RepositorySessionApiSchemas.workflow.parse(
+      await c.req.json());
+    setRequestLogContext(c, {
+      sessionId: id,
+      operation: "repository_session_api.workflow",
+    });
+    const result = await engine.attachWorkflow({
+      tenantId: user.userId,
+      ownerId: user.userId,
+      sessionId: id,
+      workflowId: input.workflowId,
+    });
+    record(result.duplicate
+      ? "workflow_duplicate_attachment"
+      : "workflow_attachment");
+    return repositorySessionApiSuccess(c, {
+      status: 200,
+      code: result.duplicate
+        ? "repository_session_workflow_attachment_reused"
+        : "repository_session_workflow_attached",
+      message: result.duplicate
+        ? "The workflow is already attached to this repository session."
+        : "The workflow was attached to the repository session.",
+      data: publicRepositorySessionRecord(result.record, result.workflow),
+    });
+  }));
 
   route.post("/:sessionId/archive", archive(false));
 
