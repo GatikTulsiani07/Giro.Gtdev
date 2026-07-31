@@ -92,6 +92,7 @@ export type RepositoryGatewayErrorCode =
   | "gateway_stale_revision"
   | "gateway_intelligence_unavailable"
   | "gateway_partial_orchestration_failure"
+  | "gateway_rate_limited"
   | "gateway_dependency_unavailable";
 
 export class RepositoryGatewayError extends Error {
