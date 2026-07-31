@@ -41,6 +41,10 @@ export type RepositorySessionApiAction =
   | "specification"
   | "insights"
   | "execution"
+  | "workflow_attachment"
+  | "workflow_duplicate_attachment"
+  | "workflow_validation_failure"
+  | "workflow_authorization_failure"
   | "failure";
 export type RepositoryMetadataApiAction =
   | "listing"
@@ -1656,6 +1660,8 @@ export class MetricsRegistry {
       ...([
         "creation", "reuse", "archive", "query", "plan",
         "specification", "insights", "execution", "failure",
+        "workflow_attachment", "workflow_duplicate_attachment",
+        "workflow_validation_failure", "workflow_authorization_failure",
       ] as const).map((operation) =>
         `giro_repository_session_api_operations_total{operation="${operation}"} ${this.repositorySessionApiActions.get(operation) ?? 0}`
       ),

@@ -207,6 +207,7 @@ export function createRoutes(
     createEngineeringPlatformApiRoute({
       service: engineeringPlatformApiService,
       metrics,
+      sessions: repositorySessionEngine,
     }),
   );
   routes.route(

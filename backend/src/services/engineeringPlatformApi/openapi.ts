@@ -175,7 +175,8 @@ export const engineeringPlatformOpenApi = Object.freeze({
         type: "object",
         required: [
           "workflowId", "repositoryId", "executionId", "version",
-          "lifecycle", "currentStage", "approvalState", "createdAt",
+          "lifecycle", "currentStage", "attachedSessionId",
+          "approvalState", "createdAt",
           "updatedAt", "links",
         ],
         properties: {
@@ -191,6 +192,7 @@ export const engineeringPlatformOpenApi = Object.freeze({
           currentStage: { type: ["string", "null"], enum: [
             ...WORKFLOW_STAGES, null,
           ] },
+          attachedSessionId: { type: ["string", "null"] },
           approvalState: {
             type: "string", enum: ["required", "approved", "not_required"],
           },

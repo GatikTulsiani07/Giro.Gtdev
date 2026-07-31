@@ -18,6 +18,10 @@ import {
 } from "../services/engineeringPlatformApi/idempotencyStore.js";
 import { engineeringPlatformOpenApi } from "../services/engineeringPlatformApi/openapi.js";
 import { KNOWLEDGE_NAMESPACES } from "../services/repositoryKnowledge/types.js";
+import {
+  runtimeRepositorySessionEngine,
+  type RepositorySessionEngine,
+} from "../services/repositorySession/service.js";
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 25;
@@ -269,10 +273,18 @@ function mapError(c: any, error: unknown, metrics: MetricsRegistry) {
 export function createEngineeringPlatformApiRoute(options: {
   service?: EngineeringPlatformApiService;
   metrics?: MetricsRegistry;
+  sessions?: Pick<RepositorySessionEngine, "findByWorkflow">;
 } = {}) {
   const service = options.service ?? runtimeEngineeringPlatformApiService;
   const metrics = options.metrics ?? runtimeMetrics;
+  const sessions = options.sessions ?? runtimeRepositorySessionEngine;
   const route = new Hono();
+
+  const workflowResource = async (ownerId: string, workflow: any) => {
+    const session = await sessions.findByWorkflow(
+      ownerId, ownerId, workflow.workflowId);
+    return publicWorkflow(workflow, session?.session.sessionId ?? null);
+  };
 
   const handled = (handler: (c: any) => Promise<Response>) =>
     async (c: any) => {
@@ -310,7 +322,7 @@ export function createEngineeringPlatformApiRoute(options: {
       ttlMs: IDEMPOTENCY_TTL_MS,
       operation: async () => ({
         status: 201,
-        response: publicWorkflow(await service.createWorkflow({
+        response: await workflowResource(user.userId, await service.createWorkflow({
           ownerId: user.userId,
           repositoryId: input.repositoryId,
           repositoryRevision: input.repositoryRevision,
@@ -335,7 +347,8 @@ export function createEngineeringPlatformApiRoute(options: {
     const query = paginationSchema.parse(c.req.query());
     const workflows = await service.listWorkflows(user.userId);
     const result = page(
-      workflows.map(publicWorkflow),
+      await Promise.all(workflows.map((workflow) =>
+        workflowResource(user.userId, workflow))),
       query.limit,
       query.cursor,
       (item) => `${item.updatedAt}\0${item.workflowId}`,
@@ -348,7 +361,7 @@ export function createEngineeringPlatformApiRoute(options: {
   route.get("/workflows/:workflowId", handled(async (c) => {
     const user = requireAuthenticatedUser(c);
     const workflow = await service.getWorkflow(user.userId, c.req.param("workflowId"));
-    const resource = publicWorkflow(workflow);
+    const resource = await workflowResource(user.userId, workflow);
     c.header("ETag", `\"${resource.version}\"`);
     return ok(c, resource);
   }));
@@ -380,7 +393,7 @@ export function createEngineeringPlatformApiRoute(options: {
       ttlMs: IDEMPOTENCY_TTL_MS,
       operation: async () => ({
         status: 200,
-        response: publicWorkflow(
+        response: await workflowResource(user.userId,
           await service[name](user.userId, workflowId, expectedVersion)),
       }),
     });

@@ -68,6 +68,7 @@ export interface PublicWorkflowResource {
   readonly version: number;
   readonly lifecycle: AutonomousWorkflow["lifecycle"];
   readonly currentStage: WorkflowStage | null;
+  readonly attachedSessionId: string | null;
   readonly approvalState: "required" | "approved" | "not_required";
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -76,6 +77,7 @@ export interface PublicWorkflowResource {
 
 export function publicWorkflow(
   workflow: AutonomousWorkflow,
+  attachedSessionId: string | null = null,
 ): PublicWorkflowResource {
   const root = `/api/v1/workflows/${workflow.workflowId}`;
   return Object.freeze({
@@ -85,6 +87,7 @@ export function publicWorkflow(
     version: workflow.workflowVersion,
     lifecycle: workflow.lifecycle,
     currentStage: workflow.currentStage,
+    attachedSessionId,
     approvalState: workflow.lifecycle === "awaiting_approval"
       ? "required"
       : workflow.approvals.length > 0 ? "approved" : "not_required",
