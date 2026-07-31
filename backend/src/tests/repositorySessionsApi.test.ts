@@ -13,6 +13,8 @@ import {
   REPOSITORY_SESSION_API_ROUTES,
   verifyRepositorySessionApiContracts,
 } from "../services/repositorySessionApi/contracts.js";
+import { publicWorkflow } from
+  "../services/engineeringPlatformApi/service.js";
 import {
   MemoryRepositoryStore,
 } from "../services/repository/store/memoryRepositoryStore.js";
@@ -64,12 +66,19 @@ async function fixture(defaultApiLimit = 1_000) {
     repositories,
     workflows: verified({
       async get(_tenantId: string, workflowId: string) {
+        if (workflowId === "missing-workflow") return null;
         return {
           workflowId,
           ownerId: workflowId === "foreign-workflow"
             ? OTHER.userId : USER.userId,
-          repositoryId: REPOSITORY_ID,
-          repositoryRevision: REVISION,
+          repositoryId: workflowId === "wrong-repository"
+            ? "private/repository" : REPOSITORY_ID,
+          repositoryRevision: workflowId === "wrong-revision"
+            ? "a".repeat(40) : REVISION,
+          lifecycle: workflowId === "failed-workflow"
+            ? "failed" : "created",
+          currentStage: workflowId === "planning-workflow"
+            ? "planning" : null,
         };
       },
     }),
@@ -241,6 +250,135 @@ async function createSession(f: Awaited<ReturnType<typeof fixture>>) {
     body: await response.json() as any,
   };
 }
+
+async function createUnattachedSession(
+  f: Awaited<ReturnType<typeof fixture>>,
+) {
+  const { workflowId: _workflowId, ...body } = CREATE_BODY;
+  const response = await f.app.request("/api/v1/sessions", {
+    method: "POST",
+    headers: f.headers,
+    body: JSON.stringify(body),
+  });
+  return { response, body: await response.json() as any };
+}
+
+test("session workflow attachment is fenced, idempotent, and publicly linked",
+  async () => {
+    const f = await fixture();
+    const created = await createUnattachedSession(f);
+    const id = created.body.data.session.sessionId;
+    const attach = (workflowId: string, headers = f.headers) => f.app.request(
+      `/api/v1/sessions/${id}/workflow`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ workflowId }),
+      });
+
+    const attached = await attach("planning-workflow");
+    const attachedBody = await attached.json() as any;
+    assert.equal(attached.status, 200);
+    assert.equal(attachedBody.code, "repository_session_workflow_attached");
+    assert.equal(attachedBody.data.session.attachedWorkflowId,
+      "planning-workflow");
+    assert.equal(attachedBody.data.session.workflowId, "planning-workflow");
+    assert.equal(attachedBody.data.session.workflowState, "created");
+    assert.equal(attachedBody.data.session.workflowStage, "planning");
+    assert.equal(attachedBody.data.session.attachedAt,
+      "2099-01-01T00:00:00.000Z");
+    assert.equal("ownerId" in attachedBody.data.session, false);
+    assert.equal("persistenceVersion" in attachedBody.data.session, false);
+    const retrieved = await f.app.request(`/api/v1/sessions/${id}`, {
+      headers: f.headers,
+    });
+    const retrievedBody = await retrieved.json() as any;
+    assert.equal(retrievedBody.data.session.attachedWorkflowId,
+      "planning-workflow");
+    assert.equal(retrievedBody.data.session.workflowState, "created");
+    assert.equal(retrievedBody.data.session.workflowStage, "planning");
+
+    const duplicate = await attach("planning-workflow");
+    assert.equal(duplicate.status, 200);
+    assert.equal((await duplicate.json() as any).code,
+      "repository_session_workflow_attachment_reused");
+    assert.equal((await f.engine.findByWorkflow(
+      USER.userId, USER.userId, "planning-workflow"))?.session.sessionId, id);
+    assert.equal(publicWorkflow({
+      workflowId: "planning-workflow",
+      repositoryId: REPOSITORY_ID,
+      executionId: "execution-1",
+      workflowVersion: 1,
+      lifecycle: "created",
+      currentStage: "planning",
+      approvals: [],
+      createdAt: "2099-01-01T00:00:00.000Z",
+      updatedAt: "2099-01-01T00:00:00.000Z",
+    } as never, id).attachedSessionId, id);
+
+    const replacement = await attach("workflow-2");
+    assert.equal(replacement.status, 409);
+    assert.equal((await replacement.json() as any).code,
+      "repository_session_workflow_attachment_conflict");
+    const metrics = f.metrics.render();
+    assert.match(metrics, /operation="workflow_attachment"\} 1/);
+    assert.match(metrics,
+      /operation="workflow_duplicate_attachment"\} 1/);
+    assert.match(metrics,
+      /operation="workflow_validation_failure"\} 1/);
+  });
+
+test("workflow attachment rejects ownership, identity, lifecycle, and input failures",
+  async () => {
+    for (const [workflowId, status, code] of [
+      ["foreign-workflow", 403, "repository_session_workflow_access_denied"],
+      ["wrong-repository", 409,
+        "repository_session_workflow_repository_conflict"],
+      ["wrong-revision", 409,
+        "repository_session_workflow_revision_conflict"],
+      ["missing-workflow", 404, "repository_session_workflow_not_found"],
+      ["failed-workflow", 422,
+        "repository_session_workflow_lifecycle_incompatible"],
+    ] as const) {
+      const f = await fixture();
+      const created = await createUnattachedSession(f);
+      const response = await f.app.request(
+        `/api/v1/sessions/${created.body.data.session.sessionId}/workflow`, {
+          method: "POST",
+          headers: f.headers,
+          body: JSON.stringify({ workflowId }),
+        });
+      const body = await response.json() as any;
+      assert.equal(response.status, status, workflowId);
+      assert.equal(body.code, code, workflowId);
+      assert.equal(body.data, null, workflowId);
+    }
+
+    const f = await fixture();
+    const invalidSession = await f.app.request(
+      "/api/v1/sessions/missing-session/workflow", {
+        method: "POST", headers: f.headers,
+        body: JSON.stringify({ workflowId: "workflow-1" }),
+      });
+    assert.equal(invalidSession.status, 404);
+    const invalidWorkflow = await f.app.request(
+      "/api/v1/sessions/missing-session/workflow", {
+        method: "POST", headers: f.headers,
+        body: JSON.stringify({ workflowId: "../invalid" }),
+      });
+    assert.equal(invalidWorkflow.status, 400);
+    const unauthorized = await f.app.request(
+      "/api/v1/sessions/missing-session/workflow", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workflowId: "workflow-1" }),
+      });
+    assert.equal(unauthorized.status, 401);
+
+    const rendered = f.metrics.render();
+    assert.match(rendered,
+      /operation="workflow_validation_failure"\} 2/);
+    assert.match(rendered,
+      /operation="workflow_authorization_failure"\} 1/);
+  });
 
 test("versioned session API creates, reuses, lists, retrieves, and archives",
   async () => {
@@ -513,7 +651,7 @@ test("session API metrics and startup contracts cover every public operation",
         operation,
       );
     }
-    assert.equal(REPOSITORY_SESSION_API_ROUTES.length, 10);
+    assert.equal(REPOSITORY_SESSION_API_ROUTES.length, 11);
     verifyRepositorySessionApiContracts(f.engine);
     assert.throws(
       () => verifyRepositorySessionApiContracts({} as never),

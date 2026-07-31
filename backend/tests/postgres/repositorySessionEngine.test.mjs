@@ -158,6 +158,43 @@ test("PostgreSQL repository sessions match memory serialization and navigation",
     });
   });
 
+test("PostgreSQL preserves session workflow attachment metadata equivalently",
+  { skip }, async () => {
+    await withDisposableDatabase(availability, async ({ url }) => {
+      await applyMigrations(url);
+      seed(url);
+      const base = record("workflow-session");
+      const expected = {
+        ...base,
+        session: {
+          ...base.session,
+          workflowId: "workflow-attachment-1",
+          workflowAttachedAt: timestamp,
+        },
+        context: {
+          ...base.context,
+          contextVersion: 2,
+          activeWorkflow: "workflow-attachment-1",
+        },
+      };
+      const saved = JSON.parse(scalar(url, `
+        select public.save_repository_engineering_session(
+          ${json(expected)},null)
+      `));
+      assert.deepEqual(saved, expected);
+      assert.equal(scalar(url, `
+        select workflow_id from public.repository_engineering_sessions
+        where tenant_id='user-1' and session_id='workflow-session'
+      `), "workflow-attachment-1");
+      const loaded = JSON.parse(scalar(url, `
+        select public.get_repository_engineering_session(
+          'user-1','user-1','workflow-session')
+      `));
+      assert.equal(loaded.session.workflowAttachedAt, timestamp);
+      assert.equal(loaded.context.activeWorkflow, "workflow-attachment-1");
+    });
+  });
+
 test("PostgreSQL recovery repairs interruption, partial context, and expiration",
   { skip }, async () => {
     await withDisposableDatabase(availability, async ({ url }) => {

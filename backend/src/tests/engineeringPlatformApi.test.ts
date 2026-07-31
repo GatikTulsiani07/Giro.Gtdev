@@ -63,7 +63,10 @@ const composition: WorkflowServiceComposition = {
   },
 };
 
-async function fixture(defaultApiLimit = 1_000) {
+async function fixture(
+  defaultApiLimit = 1_000,
+  attachedSessionId: string | null = null,
+) {
   const repositories = new MemoryRepositoryStore();
   repositories.connectRepository({
     owner: "acme",
@@ -150,6 +153,13 @@ async function fixture(defaultApiLimit = 1_000) {
   const metrics = new MetricsRegistry();
   const app = createApp({
     engineeringPlatformApiService: service,
+    repositorySessionEngine: {
+      async findByWorkflow() {
+        return attachedSessionId
+          ? { session: { sessionId: attachedSessionId } }
+          : null;
+      },
+    } as never,
     metrics,
     rateLimitPolicy: {
       authentication: { windowMs: 60_000, maxRequests: 1_000, burst: 1_000 },
@@ -241,6 +251,7 @@ test("workflow creation is durable, deterministic, safe, and idempotent", async 
   assert.deepEqual(replay.body.data, first.body.data);
   assert.equal(first.body.data.repositoryId, "acme/widgets");
   assert.equal(first.body.data.version, 1);
+  assert.equal(first.body.data.attachedSessionId, null);
   assert.equal(first.response.headers.get("ETag"), "\"1\"");
   assert.equal("ownerId" in first.body.data, false);
   assert.equal("tenantId" in first.body.data, false);
@@ -252,6 +263,20 @@ test("workflow creation is durable, deterministic, safe, and idempotent", async 
   const fetchedBody = await fetched.json() as any;
   assert.equal(fetched.status, 200);
   assert.deepEqual(fetchedBody.data, first.body.data);
+});
+
+test("workflow retrieval exposes only the attached public session id", async () => {
+  const f = await fixture(1_000, "repository-session-public-1");
+  const created = await createWorkflow(f, "attached-workflow");
+  const fetched = await f.app.request(
+    `/api/v1/workflows/${created.body.data.workflowId}`,
+    { headers: f.headers },
+  );
+  const body = await fetched.json() as any;
+  assert.equal(fetched.status, 200);
+  assert.equal(body.data.attachedSessionId, "repository-session-public-1");
+  assert.equal("ownerId" in body.data, false);
+  assert.equal("tenantId" in body.data, false);
 });
 
 test("idempotency conflicts, ownership, and repository revisions fail closed", async () => {
