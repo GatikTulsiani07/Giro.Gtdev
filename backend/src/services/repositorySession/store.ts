@@ -15,6 +15,8 @@ export interface RepositorySessionStore {
     Promise<RepositorySessionRecord>;
   get(tenantId: string, ownerId: string, sessionId: string):
     Promise<RepositorySessionRecord | null>;
+  list(tenantId: string, ownerId: string):
+    Promise<readonly RepositorySessionRecord[]>;
   recordReuse(tenantId: string, ownerId: string, sessionId: string):
     Promise<void>;
   archive(tenantId: string, ownerId: string, sessionId: string, at: string):
@@ -81,6 +83,17 @@ export class MemoryRepositorySessionStore implements RepositorySessionStore {
   async get(tenantId: string, ownerId: string, sessionId: string) {
     const value = this.values.get(this.key(tenantId, sessionId));
     return value && value.session.ownerId === ownerId ? clone(value) : null;
+  }
+  async list(tenantId: string, ownerId: string) {
+    return [...this.values.values()]
+      .filter((value) =>
+        value.session.tenantId === tenantId &&
+        value.session.ownerId === ownerId &&
+        ["active", "recovered"].includes(value.session.lifecycle))
+      .sort((left, right) =>
+        right.session.updatedAt.localeCompare(left.session.updatedAt) ||
+        right.session.sessionId.localeCompare(left.session.sessionId))
+      .map(clone);
   }
   async recordReuse(tenantId: string, ownerId: string, sessionId: string) {
     const key = this.key(tenantId, sessionId);
@@ -233,6 +246,15 @@ export class PostgresRepositorySessionStore implements RepositorySessionStore {
     });
     return value ? clone(value as RepositorySessionRecord) : null;
   }
+  async list(tenantId: string, ownerId: string) {
+    const value = await this.call("list_repository_engineering_sessions", {
+      input_tenant_id: tenantId,
+      input_owner_id: ownerId,
+    }) as { sessions?: unknown } | null;
+    if (!value || !Array.isArray(value.sessions)) return [];
+    return value.sessions.map((record) =>
+      clone(record as RepositorySessionRecord));
+  }
   async recordReuse(tenantId: string, ownerId: string, sessionId: string) {
     await this.call("record_repository_session_reuse", {
       input_tenant_id: tenantId,
@@ -278,6 +300,17 @@ export class PostgresRepositorySessionStore implements RepositorySessionStore {
       throw new RepositorySessionError(
         "repository_session_startup_invalid",
         "Repository Session Engine schema contract is invalid.");
+    }
+    const apiResult = await this.call(
+      "verify_repository_session_api_persistence_contract") as {
+        valid?: boolean;
+        schemaVersion?: string;
+      };
+    if (!apiResult?.valid ||
+        apiResult.schemaVersion !== REPOSITORY_SESSION_SCHEMA_VERSION) {
+      throw new RepositorySessionError(
+        "repository_session_startup_invalid",
+        "Repository Session API persistence contract is invalid.");
     }
   }
 }

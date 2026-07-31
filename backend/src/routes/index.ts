@@ -40,6 +40,16 @@ import {
   runtimeRepositoryApiGateway,
   type RepositoryApiGateway,
 } from "../services/repositoryApiGateway/service.js";
+import {
+  createRepositorySessionsApiRoute,
+  repositorySessionApiAuthMiddleware,
+} from "./repositorySessionsApi.js";
+import {
+  runtimeRepositorySessionEngine,
+  type RepositorySessionEngine,
+} from "../services/repositorySession/service.js";
+import { repositorySessionApiFailure } from
+  "../services/repositorySessionApi/contracts.js";
 
 export function createRoutes(
   readinessCheck: ReadinessCheck,
@@ -83,6 +93,8 @@ export function createRoutes(
     runtimeEngineeringPlatformApiService,
   repositoryApiGateway: RepositoryApiGateway =
     runtimeRepositoryApiGateway,
+  repositorySessionEngine: RepositorySessionEngine =
+    runtimeRepositorySessionEngine,
 ) {
   const routes = new Hono();
 
@@ -106,6 +118,10 @@ export function createRoutes(
     "/api/v1/repository-gateway/*",
     repositoryApiGatewayAuthMiddleware(),
   );
+  routes.use(
+    "/api/v1/sessions/*",
+    repositorySessionApiAuthMiddleware(metrics),
+  );
   routes.use("/api/v1/*", authMiddleware());
 
   const apiRateLimiter = createRateLimitMiddleware({
@@ -128,11 +144,36 @@ export function createRoutes(
   routes.use("/architecture/*", apiRateLimiter);
   routes.use("/indexing/*", apiRateLimiter);
   routes.use("/repositories/*", apiRateLimiter);
+  const repositorySessionRateLimiter = createRateLimitMiddleware({
+    policy: rateLimitPolicy,
+    store: rateLimitStore,
+    trustedProxyCidrs,
+    errorCode: "repository_session_api_rate_limited",
+    onRejected: () => {
+      metrics.incrementRateLimitRejections();
+      metrics.incrementRepositorySessionApi("failure");
+    },
+    onRateLimited: (c, { retryAfter }) => repositorySessionApiFailure(c, {
+      status: 429,
+      code: "repository_session_api_rate_limited",
+      message: "Too many repository session requests. Please try again later.",
+      retryable: true,
+      diagnostics: [{
+        code: "repository_session_api_rate_limited",
+        message: "Too many repository session requests. Please try again later.",
+        severity: "error",
+        details: { retryAfterSeconds: retryAfter },
+      }],
+    }),
+  });
+  routes.use("/api/v1/sessions/*", repositorySessionRateLimiter);
   routes.use("/api/v1/*", createRateLimitMiddleware({
     policy: rateLimitPolicy,
     store: rateLimitStore,
     trustedProxyCidrs,
     errorCode: "rate_limited",
+    skip: (c) => c.req.path === "/api/v1/sessions" ||
+      c.req.path.startsWith("/api/v1/sessions/"),
     onRejected: () => metrics.incrementRateLimitRejections(),
   }));
 
@@ -157,6 +198,13 @@ export function createRoutes(
   routes.route(
     "/api/v1/repository-gateway",
     createRepositoryApiGatewayRoute({ gateway: repositoryApiGateway }),
+  );
+  routes.route(
+    "/api/v1/sessions",
+    createRepositorySessionsApiRoute({
+      engine: repositorySessionEngine,
+      metrics,
+    }),
   );
 
   return routes;

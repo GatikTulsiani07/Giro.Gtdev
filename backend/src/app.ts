@@ -46,6 +46,9 @@ import type {
 import type {
   RepositoryApiGateway,
 } from "./services/repositoryApiGateway/service.js";
+import type {
+  RepositorySessionEngine,
+} from "./services/repositorySession/service.js";
 
 type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
@@ -73,6 +76,7 @@ export interface CreateAppOptions {
   repositoryConnectionStore?: RepositoryConnectionStore;
   engineeringPlatformApiService?: EngineeringPlatformApiService;
   repositoryApiGateway?: RepositoryApiGateway;
+  repositorySessionEngine?: RepositorySessionEngine;
   requestTimeout?: Omit<RequestTimeoutOptions, "timeoutMs"> & {
     timeoutMs?: number;
   };
@@ -185,6 +189,7 @@ export function createApp(options: CreateAppOptions = {}) {
     options.trustedProxyCidrs,
     options.engineeringPlatformApiService,
     options.repositoryApiGateway,
+    options.repositorySessionEngine,
   ));
 
   app.notFound(onNotFound);

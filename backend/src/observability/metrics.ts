@@ -32,6 +32,16 @@ export type EngineeringApiAction =
   | "idempotency_hit"
   | "stale_version_failure"
   | "pagination";
+export type RepositorySessionApiAction =
+  | "creation"
+  | "reuse"
+  | "archive"
+  | "query"
+  | "plan"
+  | "specification"
+  | "insights"
+  | "execution"
+  | "failure";
 
 export interface MetricsRegistryOptions {
   durationBucketsSeconds?: readonly number[];
@@ -285,6 +295,8 @@ export class MetricsRegistry {
   private repositorySessionAverageContextSize = 0;
   private repositorySessionRecoveries = 0;
   private repositorySessionReuse = 0;
+  private readonly repositorySessionApiActions =
+    new Map<RepositorySessionApiAction, number>();
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -1001,6 +1013,13 @@ export class MetricsRegistry {
       Math.max(0, Math.trunc(input.sessionReuse));
   }
 
+  incrementRepositorySessionApi(action: RepositorySessionApiAction): void {
+    this.repositorySessionApiActions.set(
+      action,
+      (this.repositorySessionApiActions.get(action) ?? 0) + 1,
+    );
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1619,6 +1638,14 @@ export class MetricsRegistry {
       "# HELP giro_repository_session_reuse_total Repository session reuse.",
       "# TYPE giro_repository_session_reuse_total counter",
       `giro_repository_session_reuse_total ${this.repositorySessionReuse}`,
+      "# HELP giro_repository_session_api_operations_total Versioned Repository Session API operations.",
+      "# TYPE giro_repository_session_api_operations_total counter",
+      ...([
+        "creation", "reuse", "archive", "query", "plan",
+        "specification", "insights", "execution", "failure",
+      ] as const).map((operation) =>
+        `giro_repository_session_api_operations_total{operation="${operation}"} ${this.repositorySessionApiActions.get(operation) ?? 0}`
+      ),
     );
     return `${lines.join("\n")}\n`;
   }

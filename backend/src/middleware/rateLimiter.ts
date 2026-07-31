@@ -37,6 +37,14 @@ export interface CentralRateLimiterOptions {
   store?: RateLimitStore;
   trustedProxyCidrs?: readonly string[];
   onRejected?: (bucket: RateLimitBucket) => void;
+  onRateLimited?: (
+    c: Context,
+    input: {
+      readonly bucket: RateLimitBucket;
+      readonly message: string;
+      readonly retryAfter: number;
+    },
+  ) => Response | Promise<Response>;
   logger?: Pick<StructuredLogger, "warn">;
 }
 
@@ -168,6 +176,9 @@ export function createRateLimitMiddleware(
         limit: effectiveLimit,
         windowMs: rule.windowMs,
       });
+      if (options.onRateLimited) {
+        return options.onRateLimited(c, { bucket, message, retryAfter });
+      }
       return fail(c, {
         code: options.errorCode ?? "rate_limit_exceeded",
         message,

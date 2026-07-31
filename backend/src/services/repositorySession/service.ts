@@ -192,6 +192,14 @@ export class RepositorySessionEngine {
     return record;
   }
 
+  async list(tenantId: string, ownerId: string) {
+    const records = await this.store.list(tenantId, ownerId);
+    for (const record of records) {
+      await this.authorizeSessionRecord(tenantId, ownerId, record);
+    }
+    return records;
+  }
+
   async recordView(input: RepositorySessionViewInput) {
     const record = await this.requireSession(
       input.tenantId, input.ownerId, input.sessionId);
@@ -377,6 +385,10 @@ export class RepositorySessionEngine {
   }
 
   async archive(tenantId: string, ownerId: string, sessionId: string) {
+    const record = await this.store.get(tenantId, ownerId, sessionId);
+    if (!record) throw new RepositorySessionError(
+      "repository_session_not_found", "Repository session was not found.");
+    await this.authorizeSessionRecord(tenantId, ownerId, record);
     const archived = await this.store.archive(
       tenantId, ownerId, sessionId, this.clock().toISOString());
     if (!archived) throw new RepositorySessionError(
@@ -467,6 +479,15 @@ export class RepositorySessionEngine {
       throw new RepositorySessionError(
         "repository_session_expired", "Repository session has expired.");
     }
+    await this.authorizeSessionRecord(tenantId, ownerId, record);
+    return record;
+  }
+
+  private async authorizeSessionRecord(
+    tenantId: string,
+    ownerId: string,
+    record: RepositorySessionRecord,
+  ) {
     await this.authorizeRepository(
       record.session.ownerId, record.session.userId,
       record.session.ownerId, record.session.repositoryId,
@@ -474,7 +495,6 @@ export class RepositorySessionEngine {
     if (record.context.activeWorkflow) await this.authorizeWorkflow(
       tenantId, ownerId, record.session.repositoryId,
       record.session.repositoryRevision, record.context.activeWorkflow);
-    return record;
   }
 
   private async begin(

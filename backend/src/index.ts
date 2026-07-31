@@ -59,6 +59,9 @@ import { verifyEngineeringPlatformApiContracts } from "./services/engineeringPla
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
 import { runtimeRepositoryApiGateway } from "./services/repositoryApiGateway/service.js";
 import { runtimeRepositorySessionEngine } from "./services/repositorySession/service.js";
+import {
+  verifyRepositorySessionApiContracts,
+} from "./services/repositorySessionApi/contracts.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -627,12 +630,14 @@ try {
 }
 
 try {
+  verifyRepositorySessionApiContracts(runtimeRepositorySessionEngine);
   await runtimeRepositorySessionEngine.verify();
   const recoveredRepositorySessionCount =
     await runtimeRepositorySessionEngine.recover();
   logger.info("repository_session_engine_contract_verified", {
     source: "backend_startup",
     engineVersion: "repository-session-engine-v1",
+    apiVersion: "repository-session-api-v1",
     recoveredRepositorySessionCount,
   });
 } catch {
