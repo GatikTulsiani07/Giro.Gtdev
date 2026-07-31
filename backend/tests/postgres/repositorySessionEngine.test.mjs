@@ -88,6 +88,15 @@ test("PostgreSQL repository sessions match memory serialization and navigation",
         select public.get_repository_engineering_session(
           'user-1','user-1','repository-session-1')
       `)), expected);
+      const listed = JSON.parse(scalar(url, `
+        select public.list_repository_engineering_sessions(
+          'user-1','user-1')
+      `));
+      assert.deepEqual(listed.sessions, [expected]);
+      assert.deepEqual(JSON.parse(scalar(url, `
+        select public.list_repository_engineering_sessions(
+          'user-1','other')
+      `)).sessions, []);
       assert.equal(scalar(url, `
         select public.get_repository_engineering_session(
           'user-1','other','repository-session-1')
@@ -115,6 +124,10 @@ test("PostgreSQL repository sessions match memory serialization and navigation",
       assert.equal(verification.tables, 5);
       assert.equal(verification.indexes, 12);
       assert.equal(verification.retention, true);
+      const apiVerification = JSON.parse(scalar(url,
+        "select public.verify_repository_session_api_persistence_contract()"));
+      assert.equal(apiVerification.valid, true);
+      assert.equal(apiVerification.listing, true);
       assert.equal(scalar(url, `
         select count(*) from pg_class where relname in(
           'repository_engineering_sessions','repository_session_events',
@@ -129,6 +142,18 @@ test("PostgreSQL repository sessions match memory serialization and navigation",
       assert.equal(scalar(url, `
         select has_table_privilege(
           'service_role','public.repository_engineering_sessions','select')
+      `), "t");
+      assert.equal(scalar(url, `
+        select has_function_privilege(
+          'anon',
+          'public.list_repository_engineering_sessions(text,text)',
+          'execute')
+      `), "f");
+      assert.equal(scalar(url, `
+        select has_function_privilege(
+          'service_role',
+          'public.list_repository_engineering_sessions(text,text)',
+          'execute')
       `), "t");
     });
   });

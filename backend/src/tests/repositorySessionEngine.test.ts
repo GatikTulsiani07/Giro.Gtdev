@@ -156,6 +156,11 @@ test("session IDs are deterministic and create reuses the same fenced session",
     assert.equal(second.session.ownerId, USER);
     assert.equal(second.session.userId, USER);
     assert.equal(second.session.workflowId, "workflow-1");
+    assert.deepEqual(
+      (await f.engine.list(USER, USER)).map((record) =>
+        record.session.sessionId),
+      [first.session.sessionId],
+    );
   });
 
 test("service orchestration accumulates navigable engineering context",
@@ -284,6 +289,7 @@ test("metrics and startup/migration contracts are complete", async () => {
     kind: "feature", referenceId: "feature-payments",
   });
   await f.engine.create(f.input);
+  assert.equal((await f.engine.list(USER, USER)).length, 1);
   const metrics = await f.engine.metricsSnapshot(USER);
   assert.equal(metrics.activeSessions, 1);
   assert.equal(metrics.sessionReuse, 1);
