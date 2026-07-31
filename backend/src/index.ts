@@ -62,6 +62,10 @@ import { runtimeRepositorySessionEngine } from "./services/repositorySession/ser
 import {
   verifyRepositorySessionApiContracts,
 } from "./services/repositorySessionApi/contracts.js";
+import {
+  REPOSITORY_METADATA_API_VERSION,
+  verifyRepositoryMetadataApiContracts,
+} from "./services/repositoryMetadataApi/contracts.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -624,6 +628,21 @@ try {
   logger.error("repository_api_gateway_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "repository_api_gateway_contract_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  verifyRepositoryMetadataApiContracts(repositoryStore);
+  logger.info("repository_metadata_api_contract_verified", {
+    source: "backend_startup",
+    apiVersion: REPOSITORY_METADATA_API_VERSION,
+  });
+} catch {
+  logger.error("repository_metadata_api_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_metadata_api_contract_unavailable",
   });
   await flushLogs();
   process.exit(1);

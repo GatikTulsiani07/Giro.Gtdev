@@ -42,6 +42,10 @@ export type RepositorySessionApiAction =
   | "insights"
   | "execution"
   | "failure";
+export type RepositoryMetadataApiAction =
+  | "listing"
+  | "lookup"
+  | "failure";
 
 export interface MetricsRegistryOptions {
   durationBucketsSeconds?: readonly number[];
@@ -297,6 +301,8 @@ export class MetricsRegistry {
   private repositorySessionReuse = 0;
   private readonly repositorySessionApiActions =
     new Map<RepositorySessionApiAction, number>();
+  private readonly repositoryMetadataApiActions =
+    new Map<RepositoryMetadataApiAction, number>();
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -1020,6 +1026,13 @@ export class MetricsRegistry {
     );
   }
 
+  incrementRepositoryMetadataApi(action: RepositoryMetadataApiAction): void {
+    this.repositoryMetadataApiActions.set(
+      action,
+      (this.repositoryMetadataApiActions.get(action) ?? 0) + 1,
+    );
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1645,6 +1658,11 @@ export class MetricsRegistry {
         "specification", "insights", "execution", "failure",
       ] as const).map((operation) =>
         `giro_repository_session_api_operations_total{operation="${operation}"} ${this.repositorySessionApiActions.get(operation) ?? 0}`
+      ),
+      "# HELP giro_repository_metadata_api_operations_total Versioned repository metadata API operations.",
+      "# TYPE giro_repository_metadata_api_operations_total counter",
+      ...(["listing", "lookup", "failure"] as const).map((operation) =>
+        `giro_repository_metadata_api_operations_total{operation="${operation}"} ${this.repositoryMetadataApiActions.get(operation) ?? 0}`
       ),
     );
     return `${lines.join("\n")}\n`;

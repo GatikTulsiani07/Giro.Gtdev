@@ -49,6 +49,9 @@ import type {
 import type {
   RepositorySessionEngine,
 } from "./services/repositorySession/service.js";
+import type {
+  RepositoryMetadataApiService,
+} from "./services/repositoryMetadataApi/service.js";
 
 type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
@@ -77,6 +80,7 @@ export interface CreateAppOptions {
   engineeringPlatformApiService?: EngineeringPlatformApiService;
   repositoryApiGateway?: RepositoryApiGateway;
   repositorySessionEngine?: RepositorySessionEngine;
+  repositoryMetadataApiService?: RepositoryMetadataApiService;
   requestTimeout?: Omit<RequestTimeoutOptions, "timeoutMs"> & {
     timeoutMs?: number;
   };
@@ -190,6 +194,7 @@ export function createApp(options: CreateAppOptions = {}) {
     options.engineeringPlatformApiService,
     options.repositoryApiGateway,
     options.repositorySessionEngine,
+    options.repositoryMetadataApiService,
   ));
 
   app.notFound(onNotFound);

@@ -50,6 +50,12 @@ import {
 } from "../services/repositorySession/service.js";
 import { repositorySessionApiFailure } from
   "../services/repositorySessionApi/contracts.js";
+import { createRepositoryMetadataApiRoute } from
+  "./repositoryMetadataApi.js";
+import {
+  runtimeRepositoryMetadataApiService,
+  type RepositoryMetadataApiService,
+} from "../services/repositoryMetadataApi/service.js";
 
 export function createRoutes(
   readinessCheck: ReadinessCheck,
@@ -95,6 +101,8 @@ export function createRoutes(
     runtimeRepositoryApiGateway,
   repositorySessionEngine: RepositorySessionEngine =
     runtimeRepositorySessionEngine,
+  repositoryMetadataApiService: RepositoryMetadataApiService =
+    runtimeRepositoryMetadataApiService,
 ) {
   const routes = new Hono();
 
@@ -188,6 +196,12 @@ export function createRoutes(
   routes.route("/architecture", architectureRouter);
   routes.route("/indexing", indexingRouter);
   routes.route("/repositories", repositoryIndexingEventsRouter);
+  routes.route(
+    "/api/v1/repositories",
+    createRepositoryMetadataApiRoute({
+      service: repositoryMetadataApiService,
+    }),
+  );
   routes.route(
     "/api/v1",
     createEngineeringPlatformApiRoute({
