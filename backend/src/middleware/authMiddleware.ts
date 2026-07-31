@@ -4,10 +4,17 @@
 import type { MiddlewareHandler } from "hono";
 import { fail } from "../lib/response.js";
 import { parseBearerToken, verifyAccessToken } from "../services/auth/jwt.js";
-import { setAuthenticatedUser } from "../services/auth/authContext.js";
+import {
+  getAuthenticatedUser,
+  setAuthenticatedUser,
+} from "../services/auth/authContext.js";
 
 export const authMiddleware = (): MiddlewareHandler => {
   return async (c, next) => {
+    if (getAuthenticatedUser(c)) {
+      await next();
+      return;
+    }
     const token = parseBearerToken(c.req.header("Authorization"));
     if (!token) {
       return fail(

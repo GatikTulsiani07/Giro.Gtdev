@@ -274,6 +274,12 @@ export class MetricsRegistry {
   private autonomousWorkflowCompletionLatencyMs = 0;
   private readonly engineeringApiActions =
     new Map<EngineeringApiAction, number>();
+  private readonly repositoryGatewayEndpointUsage = new Map<string, number>();
+  private readonly repositoryGatewayServiceDistribution =
+    new Map<string, number>();
+  private repositoryGatewayLatencyMs = 0;
+  private repositoryGatewayCacheHits = 0;
+  private repositoryGatewayFailures = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -950,6 +956,27 @@ export class MetricsRegistry {
       action, (this.engineeringApiActions.get(action) ?? 0) + 1);
   }
 
+  recordRepositoryGateway(input: {
+    endpoint: string;
+    service: string;
+    latencyMs: number;
+    cacheHit: boolean;
+    failed: boolean;
+  }): void {
+    this.repositoryGatewayEndpointUsage.set(
+      input.endpoint,
+      (this.repositoryGatewayEndpointUsage.get(input.endpoint) ?? 0) + 1,
+    );
+    this.repositoryGatewayServiceDistribution.set(
+      input.service,
+      (this.repositoryGatewayServiceDistribution.get(input.service) ?? 0) + 1,
+    );
+    this.repositoryGatewayLatencyMs +=
+      Number.isFinite(input.latencyMs) ? Math.max(0, input.latencyMs) : 0;
+    if (input.cacheHit) this.repositoryGatewayCacheHits += 1;
+    if (input.failed) this.repositoryGatewayFailures += 1;
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1532,6 +1559,27 @@ export class MetricsRegistry {
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([action, value]) =>
           `giro_engineering_api_actions_total{action="${escapeLabel(action)}"} ${value}`),
+      "# HELP giro_repository_gateway_endpoint_usage_total Repository API Gateway requests by endpoint.",
+      "# TYPE giro_repository_gateway_endpoint_usage_total counter",
+      ...[...this.repositoryGatewayEndpointUsage.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([endpoint, value]) =>
+          `giro_repository_gateway_endpoint_usage_total{endpoint="${escapeLabel(endpoint)}"} ${value}`),
+      "# HELP giro_repository_gateway_latency_ms_total Repository API Gateway latency.",
+      "# TYPE giro_repository_gateway_latency_ms_total counter",
+      `giro_repository_gateway_latency_ms_total ${this.repositoryGatewayLatencyMs}`,
+      "# HELP giro_repository_gateway_cache_hits_total Repository API Gateway cache hits.",
+      "# TYPE giro_repository_gateway_cache_hits_total counter",
+      `giro_repository_gateway_cache_hits_total ${this.repositoryGatewayCacheHits}`,
+      "# HELP giro_repository_gateway_failures_total Repository API Gateway failures.",
+      "# TYPE giro_repository_gateway_failures_total counter",
+      `giro_repository_gateway_failures_total ${this.repositoryGatewayFailures}`,
+      "# HELP giro_repository_gateway_service_distribution_total Repository API Gateway service delegation.",
+      "# TYPE giro_repository_gateway_service_distribution_total counter",
+      ...[...this.repositoryGatewayServiceDistribution.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([service, value]) =>
+          `giro_repository_gateway_service_distribution_total{service="${escapeLabel(service)}"} ${value}`),
     );
     return `${lines.join("\n")}\n`;
   }

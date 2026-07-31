@@ -43,6 +43,9 @@ import { repositoryStore } from "./services/repository/store/runtimeRepositorySt
 import type {
   EngineeringPlatformApiService,
 } from "./services/engineeringPlatformApi/service.js";
+import type {
+  RepositoryApiGateway,
+} from "./services/repositoryApiGateway/service.js";
 
 type Variables = RequestContextVariables & RequestDeadlineVariables & {
   indexingJobStore: IndexingJobStore;
@@ -69,6 +72,7 @@ export interface CreateAppOptions {
   trustedProxyCidrs?: readonly string[];
   repositoryConnectionStore?: RepositoryConnectionStore;
   engineeringPlatformApiService?: EngineeringPlatformApiService;
+  repositoryApiGateway?: RepositoryApiGateway;
   requestTimeout?: Omit<RequestTimeoutOptions, "timeoutMs"> & {
     timeoutMs?: number;
   };
@@ -180,6 +184,7 @@ export function createApp(options: CreateAppOptions = {}) {
     rateLimitStore,
     options.trustedProxyCidrs,
     options.engineeringPlatformApiService,
+    options.repositoryApiGateway,
   ));
 
   app.notFound(onNotFound);

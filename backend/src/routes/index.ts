@@ -32,6 +32,14 @@ import {
   runtimeEngineeringPlatformApiService,
   type EngineeringPlatformApiService,
 } from "../services/engineeringPlatformApi/service.js";
+import {
+  createRepositoryApiGatewayRoute,
+  repositoryApiGatewayAuthMiddleware,
+} from "./repositoryApiGateway.js";
+import {
+  runtimeRepositoryApiGateway,
+  type RepositoryApiGateway,
+} from "../services/repositoryApiGateway/service.js";
 
 export function createRoutes(
   readinessCheck: ReadinessCheck,
@@ -73,6 +81,8 @@ export function createRoutes(
   trustedProxyCidrs: readonly string[] = env.TRUSTED_PROXY_CIDRS,
   engineeringPlatformApiService: EngineeringPlatformApiService =
     runtimeEngineeringPlatformApiService,
+  repositoryApiGateway: RepositoryApiGateway =
+    runtimeRepositoryApiGateway,
 ) {
   const routes = new Hono();
 
@@ -92,6 +102,10 @@ export function createRoutes(
   routes.use("/architecture/*", authMiddleware());
   routes.use("/indexing/*", authMiddleware());
   routes.use("/repositories/*", authMiddleware());
+  routes.use(
+    "/api/v1/repository-gateway/*",
+    repositoryApiGatewayAuthMiddleware(),
+  );
   routes.use("/api/v1/*", authMiddleware());
 
   const apiRateLimiter = createRateLimitMiddleware({
@@ -139,6 +153,10 @@ export function createRoutes(
       service: engineeringPlatformApiService,
       metrics,
     }),
+  );
+  routes.route(
+    "/api/v1/repository-gateway",
+    createRepositoryApiGatewayRoute({ gateway: repositoryApiGateway }),
   );
 
   return routes;

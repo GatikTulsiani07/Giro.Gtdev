@@ -57,6 +57,7 @@ import { runtimeRepositoryExecutionCoordinator } from "./services/repositoryExec
 import { runtimeEngineeringPlatformApiService } from "./services/engineeringPlatformApi/service.js";
 import { verifyEngineeringPlatformApiContracts } from "./services/engineeringPlatformApi/openapi.js";
 import { runtimeAgentQuotas } from "./services/agentRuntime/service.js";
+import { runtimeRepositoryApiGateway } from "./services/repositoryApiGateway/service.js";
 
 let server: ServerType;
 let startupCompleted = false;
@@ -601,6 +602,24 @@ try {
   logger.error("engineering_platform_api_contract_verification_failed", {
     source: "backend_startup",
     reasonCode: "engineering_platform_api_dependencies_unavailable",
+  });
+  await flushLogs();
+  process.exit(1);
+}
+
+try {
+  await runtimeRepositoryApiGateway.verify();
+  const recoveredRepositoryGatewayCacheCount =
+    await runtimeRepositoryApiGateway.recover();
+  logger.info("repository_api_gateway_contract_verified", {
+    source: "backend_startup",
+    gatewayVersion: "repository-api-gateway-v1",
+    recoveredRepositoryGatewayCacheCount,
+  });
+} catch {
+  logger.error("repository_api_gateway_contract_verification_failed", {
+    source: "backend_startup",
+    reasonCode: "repository_api_gateway_contract_unavailable",
   });
   await flushLogs();
   process.exit(1);
