@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronsUpDown, Clock3, LayoutDashboard, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Trash2, X } from "lucide-react";
+import { ChevronsUpDown, Clock3, LayoutDashboard, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
 import { PlatformNavigation } from "@/components/platform/platform-navigation";
@@ -19,6 +19,7 @@ import { useUiStore } from "@/store/ui-store";
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/repositories/connect", label: "Connect repository", icon: Plus },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {

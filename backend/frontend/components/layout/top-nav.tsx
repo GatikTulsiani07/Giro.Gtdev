@@ -1,53 +1,55 @@
 "use client";
 
-import Link from "next/link";
-import { Menu, PanelRight, Search } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Menu, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Breadcrumbs } from "@/components/ui/data-display";
+import {
+  BackendStatusBadge,
+  RevisionBadge,
+} from "@/components/ui/foundation";
 import { RepositoryStatusBadge } from "@/components/ui/status-badge";
-import { useRepositories } from "@/hooks/use-repositories";
-import { useSessions } from "@/hooks/use-sessions";
+import { useAuth } from "@/features/auth/auth-context";
+import { useOptionalRepository } from "@/features/repositories/repository-context";
+import { standardApiClient } from "@/services/api/client";
 import { useUiStore } from "@/store/ui-store";
 
 export function TopNav() {
-  const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
-  const toggleInspector = useUiStore((state) => state.toggleInspector);
   const pathname = usePathname();
-  const repositories = useRepositories();
-  const sessions = useSessions();
+  const { token } = useAuth();
+  const repository = useOptionalRepository();
+  const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
+  const health = useQuery({
+    queryKey: ["backend", "health"],
+    queryFn: ({ signal }) => standardApiClient.get<Record<string, unknown>>(
+      "/health", token as string, signal),
+    enabled: Boolean(token),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
   const segments = pathname.split("/").filter(Boolean);
-  const inChat = segments[0] === "chat";
-  const routeRepository = segments[0] === "repositories" && segments.length >= 3
-    ? `${decodeURIComponent(segments[1] ?? "")}/${decodeURIComponent(segments[2] ?? "")}`
-    : null;
-  const activeSession = inChat ? sessions.data?.sessions.find((session) => session.id === segments[1]) : null;
-  const repository = routeRepository ?? (activeSession ? `${activeSession.owner}/${activeSession.repo}` : null);
-  const repositorySearchHref = routeRepository
-    ? `/repositories/${encodeURIComponent(segments[1] ?? "")}/${encodeURIComponent(segments[2] ?? "")}/search`
-    : null;
-  const indexed = repository ? repositories.data?.repositories.find((item) => `${item.owner}/${item.repo}` === repository) : null;
-  const section = repository ? "Repository" : segments[0] === "repositories" ? "Repositories" : "Workspace";
-  const breadcrumbItems = inChat && activeSession
-    ? [
-        { label: "Giro", href: "/dashboard" },
-        { label: `${activeSession.owner}/${activeSession.repo}`, href: `/repositories/${encodeURIComponent(activeSession.owner)}/${encodeURIComponent(activeSession.repo)}` },
-        { label: activeSession.title },
-      ]
-    : [
-        { label: "Giro", href: "/dashboard" },
-        { label: section, href: repository ? "/dashboard" : undefined },
-        ...(repository ? [{ label: repository }] : []),
-      ];
+  const breadcrumbs = [
+    { label: "Giro", href: "/dashboard" },
+    ...(repository?.repositoryId
+      ? [{ label: repository.repositoryId }]
+      : [{ label: segments[0] === "settings" ? "Settings" : "Workspace" }]),
+  ];
+
   return (
-    <header className="layout-gutter flex h-[52px] shrink-0 items-center border-b border-border-subtle bg-background">
-      <Button aria-label="Open navigation" title="Open navigation" variant="ghost" size="icon" className="mr-2 laptop:hidden" onClick={() => setSidebarOpen(true)}><Menu className="size-4" /></Button>
-      <div className="min-w-0"><Breadcrumbs items={breadcrumbItems} /></div>
-      <div className="ml-auto flex items-center gap-1">
-        {indexed ? <RepositoryStatusBadge status={indexed.status} /> : null}
-        {repositorySearchHref ? <Button asChild variant="ghost" size="sm"><Link href={repositorySearchHref}><Search className="size-3.5" /><span className="max-[820px]:sr-only">Search repository</span></Link></Button> : null}
-        {inChat ? <Button aria-label="Toggle retrieval inspector" title="Toggle retrieval inspector" variant="ghost" size="icon" onClick={toggleInspector}><PanelRight className="size-4" /></Button> : null}
-        <div className="ml-2 grid size-8 place-items-center rounded-badge border border-border bg-interactive type-compact-strong text-text-secondary" aria-label="Signed in">G</div>
+    <header className="flex min-h-[52px] shrink-0 items-center gap-3 border-b border-border-subtle bg-background px-3 laptop:px-5">
+      <Button aria-label="Open navigation" title="Open navigation" variant="ghost" size="icon" className="laptop:hidden" onClick={() => setSidebarOpen(true)}><Menu className="size-4" /></Button>
+      <div className="min-w-0"><Breadcrumbs items={breadcrumbs} /></div>
+      <div className="ml-auto hidden min-w-0 items-center gap-2 mobile:flex">
+        {repository?.repositoryId ? <RepositoryStatusBadge status={repository.status} /> : null}
+        {repository?.repositoryId ? <RevisionBadge revision={repository.publishedRevision} /> : null}
+        <BackendStatusBadge available={health.isLoading ? null : !health.isError} />
+        <label className="relative ml-1 hidden desktop:block">
+          <span className="sr-only">Search Giro</span>
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" aria-hidden="true" />
+          <input disabled placeholder="Search coming soon" className="h-8 w-48 rounded-control border border-border-subtle bg-inset pl-8 pr-3 type-compact text-muted-foreground disabled:cursor-not-allowed" />
+        </label>
       </div>
     </header>
   );
