@@ -13,6 +13,79 @@ export type ApiResponse<T> =
 
 export type RepositoryIndexStatus = "indexing" | "indexed" | "failed" | "stale";
 
+export type RepositoryLifecycleStatus =
+  | "queued"
+  | "indexing"
+  | "indexed"
+  | "stale"
+  | "failed";
+
+export interface RepositoryMetadata {
+  repositoryId: string;
+  owner: string;
+  repo: string;
+  repository: string;
+  displayName: string;
+  status: RepositoryLifecycleStatus;
+  currentRevision: string | null;
+  indexedRevision: string | null;
+  publishedRevision: string | null;
+  revisionConsistent: boolean;
+  gatewayCompatible: boolean;
+  isStale: boolean;
+  lastIndexedAt: string | null;
+  lastAccessedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NormalizedDiagnostic {
+  code: string;
+  message: string;
+  severity: "info" | "warning" | "error";
+  service?: string;
+  createdAt?: string;
+  details?: Record<string, unknown>;
+}
+
+export type RepositoryGatewayService =
+  | "repository-overview"
+  | "repository-query"
+  | "repository-insights"
+  | "feature-navigation"
+  | "semantic-navigation"
+  | "change-impact"
+  | "task-planning"
+  | "engineering-specification"
+  | "execution-coordination"
+  | "repository-evolution";
+
+export interface RepositoryGatewayEnvelope<T> {
+  requestId: string;
+  repositoryId: string;
+  revision: string;
+  service: RepositoryGatewayService;
+  status: "ok" | "partial" | "error";
+  payload: T | null;
+  diagnostics: NormalizedDiagnostic[];
+  timestamps: { receivedAt: string; completedAt: string };
+}
+
+export interface RepositorySessionState {
+  sessionId: string;
+  repositoryId: string;
+  revision: string;
+  lifecycle: "active" | "interrupted" | "stale" | "recovered" | "archived";
+  attachedWorkflowId: string | null;
+}
+
+export interface WorkflowState {
+  workflowId: string;
+  version: number;
+  lifecycle: string;
+  currentStage: string | null;
+}
+
 export interface IndexedRepository {
   owner: string;
   repo: string;

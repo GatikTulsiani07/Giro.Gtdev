@@ -140,6 +140,21 @@ export async function apiRequest<T>(
   return envelope.data;
 }
 
+export const standardApiClient = {
+  request: apiRequest,
+  get<T>(path: string, token: string, signal?: AbortSignal) {
+    return apiRequest<T>(path, { method: "GET", token, signal });
+  },
+  post<T>(path: string, token: string, input: unknown, signal?: AbortSignal) {
+    return apiRequest<T>(path, {
+      method: "POST",
+      token,
+      signal,
+      body: JSON.stringify(input),
+    });
+  },
+};
+
 export function isRetryableApiError(error: unknown): boolean {
   return error instanceof ApiClientError && error.retryable;
 }
