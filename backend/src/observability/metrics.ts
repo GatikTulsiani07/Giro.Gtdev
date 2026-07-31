@@ -280,6 +280,11 @@ export class MetricsRegistry {
   private repositoryGatewayLatencyMs = 0;
   private repositoryGatewayCacheHits = 0;
   private repositoryGatewayFailures = 0;
+  private repositorySessionActive = 0;
+  private repositorySessionAverageDurationMs = 0;
+  private repositorySessionAverageContextSize = 0;
+  private repositorySessionRecoveries = 0;
+  private repositorySessionReuse = 0;
   private readonly processStartTimeSeconds: number;
   private readonly uptimeSeconds: () => number;
   private readonly memoryUsage: MetricsRegistryOptions["memoryUsage"];
@@ -977,6 +982,25 @@ export class MetricsRegistry {
     if (input.failed) this.repositoryGatewayFailures += 1;
   }
 
+  recordRepositorySessions(input: {
+    activeSessions: number;
+    averageSessionDurationMs: number;
+    averageContextSize: number;
+    recoveryCount: number;
+    sessionReuse: number;
+  }): void {
+    this.repositorySessionActive =
+      Math.max(0, Math.trunc(input.activeSessions));
+    this.repositorySessionAverageDurationMs =
+      Math.max(0, input.averageSessionDurationMs);
+    this.repositorySessionAverageContextSize =
+      Math.max(0, input.averageContextSize);
+    this.repositorySessionRecoveries =
+      Math.max(0, Math.trunc(input.recoveryCount));
+    this.repositorySessionReuse =
+      Math.max(0, Math.trunc(input.sessionReuse));
+  }
+
   render(): string {
     const memory = this.memoryUsage?.() ?? process.memoryUsage();
     const averageDurationMs = this.requestDurationCount === 0
@@ -1580,6 +1604,21 @@ export class MetricsRegistry {
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([service, value]) =>
           `giro_repository_gateway_service_distribution_total{service="${escapeLabel(service)}"} ${value}`),
+      "# HELP giro_repository_session_active Active repository engineering sessions.",
+      "# TYPE giro_repository_session_active gauge",
+      `giro_repository_session_active ${this.repositorySessionActive}`,
+      "# HELP giro_repository_session_average_duration_ms Average repository session duration.",
+      "# TYPE giro_repository_session_average_duration_ms gauge",
+      `giro_repository_session_average_duration_ms ${this.repositorySessionAverageDurationMs}`,
+      "# HELP giro_repository_session_average_context_size Average bounded session context size.",
+      "# TYPE giro_repository_session_average_context_size gauge",
+      `giro_repository_session_average_context_size ${this.repositorySessionAverageContextSize}`,
+      "# HELP giro_repository_session_recoveries_total Repository session recoveries.",
+      "# TYPE giro_repository_session_recoveries_total counter",
+      `giro_repository_session_recoveries_total ${this.repositorySessionRecoveries}`,
+      "# HELP giro_repository_session_reuse_total Repository session reuse.",
+      "# TYPE giro_repository_session_reuse_total counter",
+      `giro_repository_session_reuse_total ${this.repositorySessionReuse}`,
     );
     return `${lines.join("\n")}\n`;
   }
