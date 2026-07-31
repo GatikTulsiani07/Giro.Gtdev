@@ -17,6 +17,7 @@ import {
   type RepositoryGatewayService,
 } from "../services/repositoryApiGateway/types.js";
 import { MemoryRepositoryStore } from "../services/repository/store/memoryRepositoryStore.js";
+import { MemoryRateLimitStore } from "../services/rateLimit/memoryRateLimitStore.js";
 
 const USER = { userId: "gateway-user", email: "gateway@example.com" };
 const OTHER = { userId: "other-user", email: "other@example.com" };
@@ -380,6 +381,55 @@ test("partial results, unavailable intelligence, metrics, recovery, and startup 
     assert.match(rendered, /giro_repository_gateway_failures_total 1/);
     assert.match(rendered, /giro_repository_gateway_service_distribution_total/);
   });
+
+test("gateway HTTP routes publish partial payloads as 207", async () => {
+  const f = fixture();
+  f.dependencies.overview.getRepositoryOverview = async () => ({
+    status: "partial",
+    architecture: { layers: [] },
+    diagnostics: [{
+      code: "repository_overview_partial",
+      message: "One optional source is unavailable.",
+      severity: "warning",
+    }],
+  }) as never;
+  const app = createApp({ repositoryApiGateway: f.gateway });
+  const response = await app.request(
+    `/api/v1/repository-gateway/acme/widgets/overview?revision=${REVISION}`,
+    { headers: await headers() },
+  );
+  assert.equal(response.status, 207);
+  const body = await response.json() as any;
+  assert.equal(body.status, "partial");
+  assert.ok(body.payload);
+  assert.equal(body.diagnostics[0].severity, "warning");
+});
+
+test("gateway rate limiting retains the gateway error envelope", async () => {
+  const f = fixture();
+  const limited = { windowMs: 60_000, maxRequests: 1, burst: 0 };
+  const roomy = { windowMs: 60_000, maxRequests: 1_000, burst: 0 };
+  const app = createApp({
+    repositoryApiGateway: f.gateway,
+    rateLimitStore: new MemoryRateLimitStore(),
+    rateLimitPolicy: {
+      authentication: roomy, repositoryConnect: roomy, askGiro: roomy,
+      retrievalSearch: roomy, indexingOperations: roomy, defaultApi: limited,
+    },
+  });
+  const auth = await headers();
+  const path =
+    `/api/v1/repository-gateway/acme/widgets/overview?revision=${REVISION}`;
+  assert.equal((await app.request(path, { headers: auth })).status, 200);
+  const response = await app.request(path, { headers: auth });
+  assert.equal(response.status, 429);
+  const body = await response.json() as any;
+  assert.equal(body.status, "error");
+  assert.equal(body.payload, null);
+  assert.equal(body.repositoryId, REPOSITORY_ID);
+  assert.equal(body.revision, REVISION);
+  assert.equal(body.diagnostics[0].code, "gateway_rate_limited");
+});
 
 test("migration and startup source retain gateway safety contracts", async () => {
   const [migration, startup, routes] = await Promise.all([
