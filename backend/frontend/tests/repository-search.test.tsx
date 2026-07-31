@@ -279,11 +279,9 @@ describe("repository search foundation", () => {
     expect(mocks.routerPush.mock.calls.at(-1)?.[0]).toContain("draft=Explain+how+createSession+in+src%2Fsession.ts+works.");
   });
 
-  it("shows a repository-scoped header launcher without duplicating query state", () => {
+  it("keeps search as an inaccessible-to-features shell placeholder", () => {
     render(<TopNav />, { wrapper: wrapper() });
-    expect(screen.getByRole("link", { name: "Search repository" })).toHaveAttribute(
-      "href",
-      "/repositories/acme/platform/search",
-    );
+    expect(screen.getByRole("textbox", { name: "Search Giro" })).toBeDisabled();
+    expect(screen.queryByRole("link", { name: "Search repository" })).not.toBeInTheDocument();
   });
 });

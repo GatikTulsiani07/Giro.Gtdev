@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { RepositoryOverview } from "@/features/repositories/repository-overview";
+import { RepositoryFoundation } from "@/features/repositories/repository-foundation";
 
 export const metadata: Metadata = { title: "Repository" };
 export default async function RepositoryPage({ params }: { params: Promise<{ owner: string; repo: string }> }) {
   const { owner, repo } = await params;
-  return <RepositoryOverview owner={decodeURIComponent(owner)} repo={decodeURIComponent(repo)} />;
+  return <RepositoryFoundation owner={decodeURIComponent(owner)} repo={decodeURIComponent(repo)} />;
 }
