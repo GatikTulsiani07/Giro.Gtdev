@@ -1,102 +1,164 @@
-# Giro.gtdev
+# Giro
 
-AI-powered Engineering Intelligence Platform for GitHub repositories.
+Giro is an open-source repository intelligence workspace for AI-assisted engineering. It indexes GitHub repositories, builds deterministic architecture and semantic context, and gives engineers a grounded workspace for exploring code, evidence, sessions, plans, specifications, and execution readiness.
 
-Giro helps developers understand large codebases faster by building deterministic repository intelligence before passing curated context to an LLM.
+Giro is not another chat box over a repo. It is the intelligence layer before the chat box: repository structure, symbols, features, dependencies, retrieval evidence, and sessions are prepared first so AI answers have something concrete to stand on.
 
-![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Active-success)
-![Backend](https://img.shields.io/badge/Backend-Hono-blue)
-![Architecture](https://img.shields.io/badge/Architecture-Deterministic-orange)
-![License](https://img.shields.io/badge/License-MIT-green)s
+## Why Giro Exists
 
-## Why Giro?
+Modern codebases are larger than the context windows developers usually work inside. Engineers need to understand architecture, ownership, dependencies, symbols, and historical context before they can safely ask an AI system to explain or plan a change.
 
-Modern AI coding tools are powerful, but they often struggle with repository-level understanding.
+Giro solves that gap by turning a repository into a navigable engineering workspace:
 
-Giro focuses on the layer before generation:
+- Repository structure is indexed and normalized.
+- Architecture, feature, semantic, and dependency views are exposed through APIs.
+- Retrieval produces inspectable evidence with files, line ranges, confidence, and request IDs.
+- Engineering sessions preserve repository context across questions and outputs.
+- The frontend presents all of this as a production workspace rather than as raw API responses.
 
+## Key Capabilities
 
-Repository
-↓
-Structure Analysis
-↓
-Architecture Analysis
-↓
-Symbol Extraction
-↓
-Dependency Graph
-↓
-Hybrid Retrieval
-↓
-Context Assembly
-↓
-Grounded AI Answers
+- Connect a GitHub repository and track indexing progress.
+- Browse repository status, architecture, features, symbols, files, evidence, diagnostics, and metadata.
+- Inspect feature relationships, entry points, exit points, related files, symbols, upstream, and downstream dependencies.
+- Navigate semantic code intelligence: definitions, references, implementations, callers, callees, inheritance, and dependencies.
+- Start persistent engineering sessions tied to a repository revision.
+- Ask repository-scoped questions and inspect evidence.
+- Generate plans, specifications, insights, and execution readiness summaries through existing backend actions.
+- Attach workflows and inspect workflow state.
+- Use a keyboard-first workspace with global search, command palette, recent activity, and deep links.
 
+## Architecture Overview
 
- ## Core Idea
+```text
+GitHub repository
+  -> Backend indexing pipeline
+  -> Repository metadata, graph, features, symbols, embeddings, and artifacts
+  -> Repository Gateway and Session APIs
+  -> Next.js frontend workspace
+  -> Developer explores evidence and asks grounded engineering questions
+```
 
-Giro is not trying to replace coding assistants.
+The backend is a Hono + TypeScript API with repository intelligence services, indexing workers, PostgreSQL/Supabase persistence, authentication, retrieval, workflow, and session APIs. The frontend is a Next.js application with TanStack Query, Zustand, Tailwind, and React workspace components.
 
-It is building the intelligence layer that helps AI tools understand codebases better.
+See [docs/architecture.md](docs/architecture.md) for the full system walkthrough.
 
-Features
-Repository ingestion
-Repository structure analysis
-Architecture intelligence
-Symbol extraction
-Dependency graph analysis
-Hybrid retrieval
-Context assembly
-Repository-aware sessions
-Cleanup lifecycle
-Dashboard-ready backend APIs
-Deterministic tests
-Current Status
+## Screenshots
 
-Backend core is active and evolving.
+Screenshots should be added before the first tagged public release.
 
-Repository intelligence: complete
-Retrieval engine: mostly complete
-Architecture intelligence: complete
-Incremental indexing: active
-Repository cleanup lifecycle: in progress
-Frontend: upcoming
-Tech Stack
-TypeScript
-Hono
-Node.js
-Zod
-PostgreSQL / pgvector planned
-Redis / background workers planned
-Next.js frontend planned
-Roadmap
-Complete repository cleanup lifecycle
-Add background indexing workers
-Add persistence layer
-Add pgvector integration
-Build frontend dashboard
-Add retrieval inspector UI
-Deploy live demo
-Vision
+- Dashboard and first-run onboarding: `docs/assets/dashboard.png`
+- Repository workspace: `docs/assets/repository-workspace.png`
+- Engineering session: `docs/assets/engineering-session.png`
+- Architecture dashboard: `docs/assets/architecture-dashboard.png`
 
-The goal is to make Giro the engineering intelligence layer for modern AI-assisted software development.
+## Quick Start
 
-Instead of asking an LLM to guess from limited context, Giro first understands the repository, then helps the model answer with grounded context.
+Prerequisites:
 
-AI Development Workflow
+- Node.js 22 or newer
+- pnpm 11
+- PostgreSQL with pgvector for full backend validation
+- Supabase project or compatible local configuration for repository persistence
+- OpenAI API key if using OpenAI-backed embeddings or models
 
-Giro is built using an AI-assisted engineering workflow.
+Frontend only:
 
-- ChatGPT — Architecture and planning
-- GPT-5 Codex — Feature implementation
-- Manual review — Code quality and refinement
-- GitHub — Version control and sprint tracking
+```bash
+cd backend/frontend
+cp .env.example .env.local
+pnpm install
+pnpm dev
+```
 
-Every feature is planned, implemented, reviewed, tested, and documented before being merged.s
+Backend:
 
-Built by
+```bash
+cd backend
+cp .env.example .env
+pnpm install
+pnpm dev
+```
 
-Gatik Tulsiani
+The frontend expects `NEXT_PUBLIC_GIRO_API_URL` to point to the backend, usually `http://localhost:8000`.
 
-Building in public.
+For complete setup details, see [docs/developer-guide.md](docs/developer-guide.md).
+
+## Tech Stack
+
+- TypeScript
+- Node.js
+- Hono
+- Next.js
+- React
+- Tailwind CSS
+- TanStack Query
+- Zustand
+- PostgreSQL / Supabase
+- pgvector
+- OpenAI APIs
+- Vitest
+
+## Project Structure
+
+```text
+.
+├── backend/                  # Hono API, repository intelligence, workers, tests
+│   ├── src/
+│   │   ├── routes/           # HTTP routes
+│   │   ├── services/         # repository, retrieval, sessions, workflow, semantic intelligence
+│   │   ├── middleware/       # auth, rate limit, request handling
+│   │   └── config/           # runtime environment validation
+│   ├── supabase/migrations/  # database schema and RPC contracts
+│   └── frontend/             # Next.js frontend application
+├── docs/                     # public OSS documentation
+├── .github/                  # CI and community templates
+└── README.md
+```
+
+## Development Workflow
+
+1. Read the relevant docs and API contracts before changing behavior.
+2. Keep backend API contracts stable unless a change is explicitly planned.
+3. Build features against real backend responses; do not invent API fields.
+4. Add focused tests for changed behavior.
+5. Run validation before opening a pull request.
+
+Common commands:
+
+```bash
+cd backend/frontend
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+
+cd ../
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+## Roadmap
+
+- Public alpha documentation and onboarding.
+- Hosted demo repository walkthrough.
+- More complete workflow orchestration UI.
+- Deeper repository evolution and insight surfaces.
+- Production deployment guide.
+- Expanded contributor-friendly issue labels and project board.
+
+## Contributing
+
+Contributions are welcome once the project is public. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then read:
+
+- [docs/developer-guide.md](docs/developer-guide.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/api.md](docs/api.md)
+- [docs/product.md](docs/product.md)
+
+Please open an issue before large architectural changes.
+
+## License
+
+Giro is released under the MIT License. See [LICENSE](LICENSE).
