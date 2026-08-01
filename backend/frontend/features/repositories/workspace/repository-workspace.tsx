@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Panel, PanelGroup } from "react-resizable-panels";
 import {
@@ -9,7 +9,9 @@ import {
   ChevronDown,
   ChevronRight,
   Clipboard,
+  Clock,
   Code2,
+  Command,
   File,
   Folder,
   GitBranch,
@@ -22,6 +24,7 @@ import {
   Package,
   Pin,
   Play,
+  RefreshCw,
   Plus,
   Search,
   Send,
@@ -85,6 +88,8 @@ type Evidence = {
 const VIEW_TABS = VIEWS.map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1), panelId: `repository-${id}-workspace` }));
 const FEATURE_OPERATIONS: FeatureNavigationOperation[] = ["feature", "entry-points", "exit-points", "files", "symbols", "dependencies", "upstream", "downstream"];
 const SEMANTIC_OPERATIONS: SemanticNavigationOperation[] = ["definition", "references", "implementations", "callers", "callees", "inheritance", "dependencies"];
+type SearchKind = "view" | "file" | "symbol" | "feature" | "session" | "recent";
+type WorkspaceSearchItem = { id: string; kind: SearchKind; label: string; detail?: string; action: Record<string, string | null> };
 
 export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; repo: string; metadata: RepositoryMetadata }) {
   const router = useRouter();
@@ -93,6 +98,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
   const [mobilePane, setMobilePane] = useState<"context" | "workspace" | "evidence">("workspace");
   const [leftOpen, setLeftOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
   const liveRegionRef = useRef<HTMLDivElement>(null);
   const guard = repositoryGatewayGuard(metadata);
   const view = parseView(searchParams.get("view"));
@@ -111,6 +117,10 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
   const engineeringAction = useEngineeringAction(metadata, sessionId, metadata.publishedRevision);
   const attachWorkflow = useAttachWorkflow(metadata, metadata.publishedRevision);
   const lastUpdate = overview.dataUpdatedAt ? new Date(overview.dataUpdatedAt).toISOString() : metadata.updatedAt;
+  const [recentFiles, rememberFile] = useRecentItems(metadata.repositoryId, "files");
+  const [recentSymbols, rememberSymbol] = useRecentItems(metadata.repositoryId, "symbols");
+  const [recentFeatures, rememberFeature] = useRecentItems(metadata.repositoryId, "features");
+  const [recentSessions, rememberSession] = useRecentItems(metadata.repositoryId, "sessions");
   const evidence = evidenceFor({
     selectedEvidence,
     overview: overview.data?.data,
@@ -119,18 +129,103 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
     metadata,
     session: currentSession.data?.data,
   });
+  const searchItems = useMemo(() => buildSearchItems({
+    overview: overview.data?.data,
+    sessions: sessions.data?.data.sessions ?? [],
+    recentFiles,
+    recentSymbols,
+    recentFeatures,
+    recentSessions,
+  }), [overview.data?.data, sessions.data?.data.sessions, recentFiles, recentSymbols, recentFeatures, recentSessions]);
 
-  useEffect(() => {
-    if (liveRegionRef.current) liveRegionRef.current.textContent = `${view} view loaded`;
-  }, [view]);
-
-  function setParams(next: Record<string, string | null>) {
+  const setParams = useCallback((next: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(next)) {
       if (value === null || value === "") params.delete(key);
       else params.set(key, value);
     }
     router.push(`/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}?${params.toString()}`, { scroll: false });
+  }, [owner, repo, router, searchParams]);
+
+  useEffect(() => {
+    if (liveRegionRef.current) liveRegionRef.current.textContent = `${view} view loaded`;
+  }, [view]);
+  useEffect(() => {
+    if (searchParams.get("view") || searchParams.get("sessionId") || searchParams.get("file") || searchParams.get("feature") || searchParams.get("symbol")) return;
+    try {
+      const restoredKey = `giro:workspace-restored:${metadata.repositoryId}`;
+      if (window.sessionStorage.getItem(restoredKey)) return;
+      const raw = window.localStorage.getItem(`giro:workspace-state:${metadata.repositoryId}`);
+      const saved = raw ? JSON.parse(raw) as Partial<Record<string, string>> : null;
+      if (!saved) return;
+      window.sessionStorage.setItem(restoredKey, "1");
+      setParams({
+        view: saved.view && VIEWS.includes(saved.view as WorkspaceView) ? saved.view : null,
+        sessionId: saved.sessionId ?? null,
+        file: saved.selectedFile ?? null,
+        feature: saved.selectedFeature ?? null,
+        symbol: saved.selectedSymbol ?? null,
+        evidence: saved.selectedEvidence ?? null,
+      });
+    } catch {
+      // Restore is best-effort and should never block the workspace.
+    }
+  }, [metadata.repositoryId, searchParams, setParams]);
+  useEffect(() => {
+    persistWorkspaceState(metadata.repositoryId, { view, sessionId, selectedFile, selectedFeature, selectedSymbol, selectedEvidence });
+  }, [metadata.repositoryId, selectedEvidence, selectedFeature, selectedFile, selectedSymbol, sessionId, view]);
+  useEffect(() => {
+    if (selectedFile) rememberFile(selectedFile);
+  }, [rememberFile, selectedFile]);
+  useEffect(() => {
+    if (selectedFeature) rememberFeature(selectedFeature);
+  }, [rememberFeature, selectedFeature]);
+  useEffect(() => {
+    if (selectedSymbol) rememberSymbol(selectedSymbol);
+  }, [rememberSymbol, selectedSymbol]);
+  useEffect(() => {
+    if (sessionId) rememberSession(sessionId);
+  }, [rememberSession, sessionId]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("giro:last-repository", metadata.repositoryId);
+    } catch {
+      // Last repository is a local convenience only.
+    }
+  }, [metadata.repositoryId]);
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+      if (event.key === "Escape") {
+        setCommandOpen(false);
+        setLeftOpen(false);
+        setEvidenceOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    const key = `giro:scroll:${metadata.repositoryId}:${view}`;
+    const node = document.getElementById(`repository-${view}-workspace`);
+    if (!node) return;
+    const saved = Number(window.sessionStorage.getItem(key) ?? "0");
+    if (saved > 0) node.scrollTo({ top: saved });
+    const onScroll = () => window.sessionStorage.setItem(key, String(node.scrollTop));
+    node.addEventListener("scroll", onScroll);
+    return () => node.removeEventListener("scroll", onScroll);
+  }, [metadata.repositoryId, view]);
+
+  function activateItem(item: WorkspaceSearchItem) {
+    setParams(item.action);
+    if (item.kind === "file") rememberFile(item.label);
+    if (item.kind === "symbol") rememberSymbol(item.label);
+    if (item.kind === "feature") rememberFeature(item.label);
+    if (item.kind === "session") rememberSession(item.label);
+    setCommandOpen(false);
   }
 
   function selectEvidence(next: string, openDrawer = false) {
@@ -139,7 +234,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
   }
 
   const leftPane = (
-    <WorkspaceLeftPane
+      <WorkspaceLeftPane
       metadata={metadata}
       overview={overview.data?.data}
       sessions={sessions.data?.data.sessions ?? []}
@@ -167,9 +262,9 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
     <main id={`repository-${view}-workspace`} role="main" aria-label="Repository workspace" className="min-w-0 overflow-auto">
       <WorkspaceTabs value={view} onChange={(next) => setParams({ view: next })} />
       {!guard.ready ? <RepositoryGuardNotice reason={guard.reason} metadata={metadata} /> : null}
-      {guard.ready && overview.isError ? <div className="p-4"><ErrorState error={overview.error} retry={() => void overview.refetch()} /></div> : null}
+      {guard.ready && overview.isError ? <div className="p-4"><WorkspaceRecoveryBar label="Repository intelligence is unavailable." retry={() => void overview.refetch()} refreshContext={() => setParams({ evidence: "metadata" })} /><div className="mt-3"><ErrorState error={overview.error} retry={() => void overview.refetch()} /></div></div> : null}
       {guard.ready && overview.isLoading ? <WorkspaceLoading /> : null}
-      {guard.ready && overview.data?.partial ? <InlineAlert tone="warning" className="m-4">Gateway returned usable partial data. Diagnostics are available in the evidence panel.</InlineAlert> : null}
+      {guard.ready && overview.data?.partial ? <div className="m-4"><InlineAlert tone="warning">Gateway returned usable partial data. Diagnostics are available in the evidence panel.</InlineAlert><div className="mt-3"><WorkspaceRecoveryBar label="Partial repository intelligence." retry={() => void overview.refetch()} refreshContext={() => selectEvidence("diagnostics")} /></div></div> : null}
       {guard.ready && overview.data ? (
         <div className="p-4 laptop:p-6">
           {view === "overview" ? <SessionConversation
@@ -214,6 +309,8 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
     <div className="flex min-h-full flex-col">
       <header className="flex min-h-14 items-center gap-3 border-b border-border-subtle bg-panel px-3" aria-label="Repository workspace header">
         <Button size="icon-sm" variant="ghost" className="laptop:hidden" onClick={() => setLeftOpen(true)} aria-label="Open repository context"><Menu className="size-4" /></Button>
+        <Button size="icon-sm" variant="ghost" onClick={() => window.history.back()} aria-label="Back"><ChevronRight className="size-4 rotate-180" /></Button>
+        <Button size="icon-sm" variant="ghost" onClick={() => window.history.forward()} aria-label="Forward"><ChevronRight className="size-4" /></Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <strong className="truncate type-panel-title">{metadata.displayName}</strong>
@@ -223,6 +320,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
             <span className="type-metadata text-muted-foreground">VIEW {view}</span>
           </div>
         </div>
+        <Button variant="secondary" size="sm" onClick={() => setCommandOpen(true)} aria-label="Open command palette"><Command className="size-4" />Search</Button>
         <Button size="icon-sm" variant="ghost" className="laptop:hidden" onClick={() => setEvidenceOpen(true)} aria-label="Open evidence"><Info className="size-4" /></Button>
       </header>
 
@@ -263,18 +361,19 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
         <DrawerHeader title="Evidence" onClose={() => setEvidenceOpen(false)} />
         {rightPane}
       </Drawer>
+      <CommandPalette open={commandOpen} items={searchItems} onClose={() => setCommandOpen(false)} onSelect={activateItem} />
     </div>
   );
 }
 
 function useDesktopLayout() {
-  const [desktop, setDesktop] = useState(false);
+  const [desktop, setDesktop] = useState(() => getDesktopMatches());
   useEffect(() => {
     const query = typeof window.matchMedia === "function"
       ? window.matchMedia("(min-width: 1081px)")
       : null;
     if (!query) return;
-    const update = () => setDesktop(query.matches);
+    const update = () => setDesktop((current) => current === query.matches ? current : query.matches);
     update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
@@ -282,8 +381,114 @@ function useDesktopLayout() {
   return desktop;
 }
 
+function getDesktopMatches() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(min-width: 1081px)")?.matches ?? false;
+}
+
 function WorkspaceTabs({ value, onChange }: { value: WorkspaceView; onChange(value: WorkspaceView): void }) {
   return <div className="sticky top-0 z-10 border-b border-border-subtle bg-panel"><SegmentedControl label="Repository views" items={VIEW_TABS} value={value} onValueChange={(next) => onChange(parseView(next))} /></div>;
+}
+
+function CommandPalette({ open, items, onClose, onSelect }: { open: boolean; items: WorkspaceSearchItem[]; onClose(): void; onSelect(item: WorkspaceSearchItem): void }) {
+  const [query, setQuery] = useState("");
+  const [index, setIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const filtered = useMemo(() => filterSearchItems(items, query), [items, query]);
+  const groups = useMemo(() => groupSearchItems(filtered), [filtered]);
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    setIndex(0);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [open]);
+  useEffect(() => {
+    setIndex(0);
+  }, [query]);
+  if (!open) return null;
+  const active = filtered[index];
+  return (
+    <div className="fixed inset-0 z-50 bg-background/70 p-4 backdrop-blur-sm motion-reduce:transition-none" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section role="dialog" aria-modal="true" aria-label="Command palette" className="mx-auto mt-[8dvh] max-w-2xl overflow-hidden rounded-panel border border-border bg-panel shadow-overlay">
+        <div className="flex items-center gap-2 border-b border-border-subtle px-3">
+          <Search className="size-4 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") onClose();
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setIndex((current) => Math.min(current + 1, Math.max(filtered.length - 1, 0)));
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setIndex((current) => Math.max(current - 1, 0));
+              }
+              if (event.key === "Enter" && active) {
+                event.preventDefault();
+                onSelect(active);
+              }
+            }}
+            className="h-12 min-w-0 flex-1 bg-transparent type-compact outline-none"
+            placeholder="Search files, symbols, features, sessions, and commands"
+            aria-label="Global repository search"
+          />
+          <span className="rounded-badge bg-inset px-2 py-1 type-metadata text-muted-foreground">Esc</span>
+        </div>
+        <div className="max-h-[60dvh] overflow-auto p-2" role="listbox" aria-label="Search results">
+          {filtered.length === 0 ? <EmptyState icon={Search} title="No results" description="Search uses currently loaded repository intelligence and local recent activity." compact /> : null}
+          {Object.entries(groups).map(([group, groupItems]) => (
+            <section key={group} aria-label={`${group} results`} className="py-1">
+              <h2 className="px-2 py-1 type-metadata-label text-muted-foreground">{group}</h2>
+              {groupItems.map((item) => {
+                const itemIndex = filtered.indexOf(item);
+                const selected = itemIndex === index;
+                return (
+                  <button
+                    key={item.id}
+                    role="option"
+                    aria-selected={selected}
+                    className={cn("flex min-h-11 w-full items-center gap-3 rounded-control px-2 text-left transition-colors duration-[150ms] focus-ring", selected ? "bg-selection text-foreground" : "hover:bg-hover")}
+                    onMouseEnter={() => setIndex(itemIndex)}
+                    onClick={() => onSelect(item)}
+                  >
+                    <SearchItemIcon kind={item.kind} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate type-compact-strong">{item.label}</span>
+                      {item.detail ? <span className="block truncate type-metadata text-muted-foreground">{item.detail}</span> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SearchItemIcon({ kind }: { kind: SearchKind }) {
+  if (kind === "file") return <File className="size-4 text-muted-foreground" />;
+  if (kind === "symbol") return <Braces className="size-4 text-muted-foreground" />;
+  if (kind === "feature") return <GitBranch className="size-4 text-muted-foreground" />;
+  if (kind === "session") return <MessageSquare className="size-4 text-muted-foreground" />;
+  if (kind === "recent") return <Clock className="size-4 text-muted-foreground" />;
+  return <Command className="size-4 text-muted-foreground" />;
+}
+
+function WorkspaceRecoveryBar({ label, retry, refreshContext }: { label: string; retry(): void; refreshContext(): void }) {
+  return (
+    <div role="status" aria-label="Workspace recovery" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border-subtle bg-inset p-3">
+      <p className="type-compact text-text-secondary">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" size="sm" onClick={retry}><RefreshCw className="size-4" />Retry</Button>
+        <Button variant="ghost" size="sm" onClick={refreshContext}>Refresh context</Button>
+      </div>
+    </div>
+  );
 }
 
 function WorkspaceLeftPane(props: {
@@ -435,27 +640,28 @@ function PinnedContext({ file, feature, symbol, session }: { file: string; featu
 function RepositoryTree({ metadata, selectedFile, onFile }: { metadata: RepositoryMetadata; selectedFile: string; onFile(path: string): void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({ "": true });
   const [search, setSearch] = useState("");
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const recentFilesKey = `giro:recent-files:${metadata.repositoryId}`;
+  const [recentFiles, setRecentFiles] = useState<string[]>(() => readStringArrayStorage(recentFilesKey));
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(`giro:recent-files:${metadata.repositoryId}`);
-      if (raw) setRecentFiles(JSON.parse(raw) as string[]);
+      const parsed = readStringArrayStorage(recentFilesKey);
+      setRecentFiles((current) => sameStringArray(current, parsed) ? current : parsed);
     } catch {
-      setRecentFiles([]);
+      // Recent file restoration is best-effort local state.
     }
-  }, [metadata.repositoryId]);
+  }, [recentFilesKey]);
   useEffect(() => {
     if (!selectedFile) return;
     setRecentFiles((current) => {
       const next = [selectedFile, ...current.filter((item) => item !== selectedFile)].slice(0, 6);
       try {
-        window.localStorage.setItem(`giro:recent-files:${metadata.repositoryId}`, JSON.stringify(next));
+        window.localStorage.setItem(recentFilesKey, JSON.stringify(next));
       } catch {
         // Local storage is an enhancement; tree navigation still works without it.
       }
       return next;
     });
-  }, [metadata.repositoryId, selectedFile]);
+  }, [recentFilesKey, selectedFile]);
   return (
     <div className="mt-2 border-y border-border-subtle type-compact">
       <div className="sticky top-0 z-10 bg-sidebar py-2">
@@ -1257,6 +1463,129 @@ function collectStrings(value: unknown, keys: string[], target: Set<string>) {
   for (const key of keys) {
     if (typeof record[key] === "string") target.add(record[key]);
   }
+}
+
+function useRecentItems(repositoryId: string, bucket: "files" | "symbols" | "features" | "sessions"): [string[], (item: string) => void] {
+  const key = `giro:recent-${bucket}:${repositoryId}`;
+  const [items, setItems] = useState<string[]>(() => readStringArrayStorage(key));
+  useEffect(() => {
+    try {
+      const parsed = readStringArrayStorage(key);
+      setItems((current) => sameStringArray(current, parsed) ? current : parsed);
+    } catch {
+      // Recent activity restoration is best-effort local state.
+    }
+  }, [key]);
+  const remember = useCallback((item: string) => {
+    if (!item.trim()) return;
+    const next = [item, ...items.filter((value) => value !== item)].slice(0, 10);
+    try {
+      window.localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      // Recent activity is optional local state.
+    }
+  }, [items, key]);
+  return [items, remember];
+}
+
+function readStringArrayStorage(key: string) {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function sameStringArray(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
+}
+
+function persistWorkspaceState(repositoryId: string, state: Record<string, string>) {
+  try {
+    window.localStorage.setItem(`giro:workspace-state:${repositoryId}`, JSON.stringify(state));
+    if (state.sessionId) window.localStorage.setItem(`giro:last-session:${repositoryId}`, state.sessionId);
+  } catch {
+    // Workspace persistence should not block rendering.
+  }
+}
+
+function buildSearchItems(input: {
+  overview?: RepositoryGatewayOverview;
+  sessions: RepositorySessionSummary[];
+  recentFiles: string[];
+  recentSymbols: string[];
+  recentFeatures: string[];
+  recentSessions: string[];
+}): WorkspaceSearchItem[] {
+  const items = new Map<string, WorkspaceSearchItem>();
+  for (const view of VIEWS) {
+    addSearchItem(items, { id: `view:${view}`, kind: "view", label: `Open ${view}`, detail: "Repository view", action: { view } });
+  }
+  for (const feature of featureOptions(input.overview)) {
+    addSearchItem(items, { id: `feature:${feature}`, kind: "feature", label: feature, detail: "Feature", action: { view: "features", feature, evidence: "feature" } });
+  }
+  for (const symbol of symbolOptions(input.overview)) {
+    addSearchItem(items, { id: `symbol:${symbol}`, kind: "symbol", label: symbol, detail: "Symbol", action: { view: "symbols", symbol, evidence: "symbol" } });
+  }
+  const files = new Set<string>();
+  collectStringsDeep(input.overview, ["file", "path", "filePath", "relativeFilePath"], files);
+  for (const file of files) {
+    if (looksSearchableFile(file)) addSearchItem(items, { id: `file:${file}`, kind: "file", label: file, detail: "File", action: { file, evidence: "file" } });
+  }
+  for (const session of input.sessions) {
+    addSearchItem(items, { id: `session:${session.sessionId}`, kind: "session", label: session.sessionId, detail: `${session.lifecycle} · ${session.eventCount} events`, action: { sessionId: session.sessionId, view: "overview" } });
+  }
+  for (const file of input.recentFiles) addSearchItem(items, { id: `recent:file:${file}`, kind: "recent", label: file, detail: "Recent file", action: { file, evidence: "file" } });
+  for (const symbol of input.recentSymbols) addSearchItem(items, { id: `recent:symbol:${symbol}`, kind: "recent", label: symbol, detail: "Recent symbol", action: { view: "symbols", symbol, evidence: "symbol" } });
+  for (const feature of input.recentFeatures) addSearchItem(items, { id: `recent:feature:${feature}`, kind: "recent", label: feature, detail: "Recent feature", action: { view: "features", feature, evidence: "feature" } });
+  for (const sessionId of input.recentSessions) addSearchItem(items, { id: `recent:session:${sessionId}`, kind: "recent", label: sessionId, detail: "Recent session", action: { sessionId, view: "overview" } });
+  return [...items.values()];
+}
+
+function addSearchItem(items: Map<string, WorkspaceSearchItem>, item: WorkspaceSearchItem) {
+  if (!items.has(item.id)) items.set(item.id, item);
+}
+
+function filterSearchItems(items: WorkspaceSearchItem[], query: string): WorkspaceSearchItem[] {
+  const needle = query.trim().toLowerCase();
+  const sorted = [...items].sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind) || a.label.localeCompare(b.label));
+  if (!needle) return sorted.slice(0, 60);
+  return sorted.filter((item) => `${item.label} ${item.detail ?? ""} ${item.kind}`.toLowerCase().includes(needle)).slice(0, 60);
+}
+
+function groupSearchItems(items: WorkspaceSearchItem[]): Record<string, WorkspaceSearchItem[]> {
+  return items.reduce<Record<string, WorkspaceSearchItem[]>>((groups, item) => {
+    const label = item.kind === "view" ? "Views" : item.kind === "file" ? "Files" : item.kind === "symbol" ? "Symbols" : item.kind === "feature" ? "Features" : item.kind === "session" ? "Sessions" : "Recent";
+    groups[label] = [...(groups[label] ?? []), item];
+    return groups;
+  }, {});
+}
+
+function kindOrder(kind: SearchKind): number {
+  return { view: 0, recent: 1, file: 2, feature: 3, symbol: 4, session: 5 }[kind];
+}
+
+function looksSearchableFile(value: string): boolean {
+  return value.includes("/") || /\.[a-z0-9]+$/i.test(value);
+}
+
+function collectStringsDeep(value: unknown, keys: string[], target: Set<string>) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectStringsDeep(item, keys, target);
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const item = record[key];
+    if (typeof item === "string") target.add(item);
+  }
+  for (const item of Object.values(record)) collectStringsDeep(item, keys, target);
 }
 
 function arrayRecords(value: unknown): JsonRecord[] {
