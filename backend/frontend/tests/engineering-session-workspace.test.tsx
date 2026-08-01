@@ -194,7 +194,7 @@ describe("engineering session workspace", () => {
     fireEvent.change(screen.getByLabelText("Engineering action"), { target: { value: "plan" } });
     fireEvent.change(screen.getByLabelText("Question or objective"), { target: { value: "Plan a refactor" } });
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
-    expect(action).toHaveBeenCalledWith({ action: "plan", value: "Plan a refactor" });
+    expect(action).toHaveBeenCalledWith({ action: "plan", value: "Plan a refactor", signal: expect.any(AbortSignal) });
   });
 
   it("attaches workflows and renders workflow state, stage, and timeline", () => {
@@ -211,7 +211,7 @@ describe("engineering session workspace", () => {
     const evidence = screen.getByRole("complementary", { name: "Evidence" });
     expect(evidence).toHaveTextContent("Conversation");
     expect(evidence).toHaveTextContent("req-query");
-    expect(evidence).toHaveTextContent("startLine");
+    expect(evidence).toHaveTextContent("Start Line");
     expect(evidence).toHaveTextContent("Session ready");
   });
 
