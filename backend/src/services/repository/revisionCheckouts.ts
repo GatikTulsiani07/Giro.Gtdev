@@ -84,7 +84,7 @@ export async function cleanupAbandonedRepositoryCheckouts(
     if (!metadata) break;
     if ([metadata.currentRevision, metadata.publishingRevision, metadata.previousRevision].includes(revision)) continue;
     const checkout = await validateRepositoryCheckout(repositoryId, { revision, mustExist: true });
-    if (Date.now() - (await stat(checkout)).mtimeMs < olderThanMs) continue;
+    if (olderThanMs > 0 && Date.now() - (await stat(checkout)).mtimeMs < olderThanMs) continue;
     if (await removeUnpublishedRepositoryCheckout(repositoryId, revision, store)) removed += 1;
   }
   return removed;
