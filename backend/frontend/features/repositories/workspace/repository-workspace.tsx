@@ -8,13 +8,18 @@ import {
   Braces,
   ChevronDown,
   ChevronRight,
+  Clipboard,
+  Code2,
   File,
   Folder,
   GitBranch,
   Info,
+  Layers,
   ListTree,
   Menu,
   MessageSquare,
+  Network,
+  Package,
   Pin,
   Play,
   Plus,
@@ -229,12 +234,12 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
         ]} />
       </div> : null}
 
-      {desktop ? <PanelGroup direction="horizontal" className="flex flex-1">
-        <Panel defaultSize={22} minSize={16} maxSize={34} className="min-w-0 border-r border-border-subtle">{leftPane}</Panel>
+      {desktop ? <PanelGroup direction="horizontal" autoSaveId={`giro:${metadata.repositoryId}:workspace-layout`} className="flex flex-1">
+        <Panel defaultSize={22} minSize={16} maxSize={34} collapsible className="min-w-0 border-r border-border-subtle">{leftPane}</Panel>
         <ResizableHandle />
         <Panel defaultSize={54} minSize={36} className="min-w-0">{centerPane}</Panel>
         <ResizableHandle />
-        <Panel defaultSize={24} minSize={18} maxSize={36} className="min-w-0 border-l border-border-subtle">{rightPane}</Panel>
+        <Panel defaultSize={24} minSize={18} maxSize={36} collapsible className="min-w-0 border-l border-border-subtle">{rightPane}</Panel>
       </PanelGroup> : null}
 
       {!desktop ? <div className="flex-1 overflow-auto">
@@ -429,11 +434,58 @@ function PinnedContext({ file, feature, symbol, session }: { file: string; featu
 
 function RepositoryTree({ metadata, selectedFile, onFile }: { metadata: RepositoryMetadata; selectedFile: string; onFile(path: string): void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({ "": true });
+  const [search, setSearch] = useState("");
+  const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`giro:recent-files:${metadata.repositoryId}`);
+      if (raw) setRecentFiles(JSON.parse(raw) as string[]);
+    } catch {
+      setRecentFiles([]);
+    }
+  }, [metadata.repositoryId]);
+  useEffect(() => {
+    if (!selectedFile) return;
+    setRecentFiles((current) => {
+      const next = [selectedFile, ...current.filter((item) => item !== selectedFile)].slice(0, 6);
+      try {
+        window.localStorage.setItem(`giro:recent-files:${metadata.repositoryId}`, JSON.stringify(next));
+      } catch {
+        // Local storage is an enhancement; tree navigation still works without it.
+      }
+      return next;
+    });
+  }, [metadata.repositoryId, selectedFile]);
   return (
-    <div role="tree" aria-label="Repository files" className="mt-2 max-h-[32dvh] overflow-auto border-y border-border-subtle py-2 type-compact">
-      <TreeDirectory metadata={metadata} path="" level={1} open={open} setOpen={setOpen} selectedFile={selectedFile} onFile={onFile} />
+    <div className="mt-2 border-y border-border-subtle type-compact">
+      <div className="sticky top-0 z-10 bg-sidebar py-2">
+        <label className="block">
+          <span className="sr-only">Search repository files</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 w-full rounded-control border border-border bg-inset px-2 type-compact focus-ring" placeholder="Search files" />
+        </label>
+        <RepositoryBreadcrumbs path={selectedFile} onFile={onFile} />
+      </div>
+      {recentFiles.length > 0 ? <section className="border-b border-border-subtle py-2" aria-label="Recent files">
+        <p className="px-1 type-metadata-label text-muted-foreground">Recent files</p>
+        {recentFiles.map((file) => <button key={file} className="block min-h-8 w-full truncate rounded-control px-1 text-left hover:bg-hover focus-ring" onClick={() => onFile(file)}>{file}</button>)}
+      </section> : null}
+      <div role="tree" aria-label="Repository files" className="max-h-[32dvh] overflow-auto py-2">
+        <TreeDirectory metadata={metadata} path="" level={1} open={open} setOpen={setOpen} selectedFile={selectedFile} search={search.trim().toLowerCase()} onFile={onFile} />
+      </div>
     </div>
   );
+}
+
+function RepositoryBreadcrumbs({ path, onFile }: { path: string; onFile(path: string): void }) {
+  if (!path) return <p className="mt-2 truncate type-metadata text-muted-foreground">No file selected.</p>;
+  const parts = path.split("/").filter(Boolean);
+  return <nav aria-label="File breadcrumbs" className="mt-2 flex flex-wrap gap-1 type-metadata text-muted-foreground">
+    {parts.map((part, index) => {
+      const partial = parts.slice(0, index + 1).join("/");
+      const last = index === parts.length - 1;
+      return <span key={partial} className="inline-flex items-center gap-1">{index > 0 ? <span>/</span> : null}{last ? <button className="rounded-control text-foreground focus-ring" onClick={() => onFile(partial)}>{part}</button> : <span>{part}</span>}</span>;
+    })}
+  </nav>;
 }
 
 function TreeDirectory(props: {
@@ -443,11 +495,15 @@ function TreeDirectory(props: {
   open: Record<string, boolean>;
   setOpen(next: Record<string, boolean> | ((state: Record<string, boolean>) => Record<string, boolean>)): void;
   selectedFile: string;
+  search: string;
   onFile(path: string): void;
 }) {
   const expanded = props.open[props.path] ?? false;
   const query = useRepositoryDirectory(props.metadata, props.path, expanded);
-  const entries = (query.data ?? []).map((entry) => normalizeEntry(entry, props.path)).sort((a, b) => Number(a.type === "file") - Number(b.type === "file") || a.name.localeCompare(b.name));
+  const entries = (query.data ?? [])
+    .map((entry) => normalizeEntry(entry, props.path))
+    .filter((entry) => !props.search || entry.name.toLowerCase().includes(props.search) || entry.path.toLowerCase().includes(props.search))
+    .sort((a, b) => Number(a.type === "file") - Number(b.type === "file") || a.name.localeCompare(b.name));
   const name = props.path ? props.path.split("/").pop() ?? props.path : props.metadata.repo;
 
   function toggle() {
@@ -712,21 +768,101 @@ function WorkflowPanel(props: {
 }
 
 function ArchitectureView({ overview, onEvidence }: { overview: RepositoryGatewayOverview; onEvidence(key: string): void }) {
-  const architecture = asRecord(overview.architecture);
-  const organization = asRecord(overview.codeOrganization);
   return (
     <article className="space-y-6" aria-labelledby="architecture-heading">
-      <ViewHeader eyebrow="Architecture" title="Repository structure" description="Subsystems, packages, layers, dependencies, and hotspots from published intelligence." />
-      <DocumentationSection title="Subsystems" value={overview.subsystems ?? architecture?.subsystems ?? architecture?.subsystemIds} empty="No subsystems returned." onInspect={() => onEvidence("architecture")} />
-      <DocumentationSection title="Packages" value={architecture?.packageHierarchy} empty="No package hierarchy returned." />
-      <DocumentationSection title="Layers" value={architecture?.layers} empty="No layers returned." />
-      <DocumentationSection title="Hotspots" value={architecture?.hotspots} empty="No hotspots returned." />
-      <DocumentationSection title="Dependencies" value={architecture?.dependencyGraph} empty="No dependencies returned." />
-      <DocumentationSection title="Fan-in" value={organization?.highestFanIn ?? organization?.mostImportedFiles} empty="No fan-in data returned." />
-      <DocumentationSection title="Fan-out" value={organization?.highestFanOut} empty="No fan-out data returned." />
-      <DocumentationSection title="Cycles" value={organization?.cyclicDependencies} empty="No dependency cycles returned." />
-      <DocumentationSection title="Utility modules" value={organization?.utilityClusters} empty="No utility modules returned." />
+      <ViewHeader eyebrow="Architecture" title="Repository structure" description="Visual repository intelligence from published architecture and code organization data." />
+      <ArchitectureDashboard overview={overview} onEvidence={onEvidence} />
+      <InsightDashboard overview={overview} onEvidence={onEvidence} />
     </article>
+  );
+}
+
+function ArchitectureDashboard({ overview, onEvidence }: { overview: RepositoryGatewayOverview; onEvidence(key: string): void }) {
+  const architecture = asRecord(overview.architecture);
+  const organization = asRecord(overview.codeOrganization);
+  const sections = [
+    { title: "Layer overview", detailTitle: "Layers", icon: Layers, value: architecture?.layers, empty: "No layers returned.", evidence: "architecture" },
+    { title: "Package overview", detailTitle: "Packages", icon: Package, value: architecture?.packageHierarchy ?? architecture?.packages, empty: "No package hierarchy returned.", evidence: "architecture" },
+    { title: "Module hierarchy", detailTitle: "Subsystems", icon: ListTree, value: architecture?.moduleHierarchy ?? architecture?.modules ?? overview.subsystems, empty: "No module hierarchy returned.", evidence: "architecture" },
+    { title: "Hotspots", detailTitle: "Hotspots", icon: AlertTriangle, value: architecture?.hotspots ?? organization?.hotspots, empty: "No hotspots returned.", evidence: "architecture" },
+    { title: "Cyclic dependencies", detailTitle: "Cycles", icon: GitBranch, value: organization?.cyclicDependencies ?? architecture?.cycles, empty: "No dependency cycles returned.", evidence: "organization" },
+    { title: "Fan-in", detailTitle: "Fan-in", icon: Network, value: organization?.highestFanIn ?? organization?.mostImportedFiles ?? architecture?.fanIn, empty: "No fan-in data returned.", evidence: "organization" },
+    { title: "Fan-out", detailTitle: "Fan-out", icon: Network, value: organization?.highestFanOut ?? architecture?.fanOut, empty: "No fan-out data returned.", evidence: "organization" },
+    { title: "Utility modules", detailTitle: "Utility modules", icon: Code2, value: organization?.utilityClusters ?? architecture?.utilityModules, empty: "No utility modules returned.", evidence: "organization" },
+  ];
+  return (
+    <section aria-label="Architecture dashboard" className="grid gap-4">
+      <h2 className="type-panel-title">Architecture dashboard</h2>
+      <div className="grid gap-3 tablet:grid-cols-2 desktop:grid-cols-4">
+        {sections.map((section) => <ArchitectureMetricCard key={section.title} {...section} onEvidence={onEvidence} />)}
+      </div>
+      <div className="grid gap-4 laptop:grid-cols-2">
+        {sections.map((section) => <ExpandableDataSection key={section.title} title={section.detailTitle} value={section.value} empty={section.empty} onEvidence={() => onEvidence(section.evidence)} />)}
+      </div>
+      <DependencyList value={architecture?.dependencyGraph ?? architecture?.dependencies} />
+    </section>
+  );
+}
+
+function ArchitectureMetricCard({ title, icon: Icon, value, empty, evidence, onEvidence }: { title: string; icon: typeof ListTree; value: JsonValue | undefined; empty: string; evidence: string; onEvidence(key: string): void }) {
+  return (
+    <button className="rounded-control border border-border-subtle bg-panel p-3 text-left transition-colors duration-[150ms] hover:bg-hover focus-ring" onClick={() => onEvidence(evidence)}>
+      <div className="flex items-center justify-between gap-2">
+        <Icon className="size-4 text-muted-foreground" />
+        <span className="type-metadata text-muted-foreground">{valueCountLabel(value)}</span>
+      </div>
+      <p className="mt-3 type-panel-title">{title}</p>
+      <p className="mt-1 line-clamp-2 type-compact text-muted-foreground">{isEmptyValue(value) ? empty : valuePreview(value)}</p>
+    </button>
+  );
+}
+
+function ExpandableDataSection({ title, value, empty, onEvidence }: { title: string; value: JsonValue | undefined; empty: string; onEvidence(): void }) {
+  return (
+    <details className="rounded-control border border-border-subtle bg-panel p-4" open>
+      <summary className="cursor-pointer"><h2 className="inline type-panel-title">{title}</h2></summary>
+      <div className="mt-3 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={onEvidence}>Evidence</Button>
+      </div>
+      <div className="mt-3">{isEmptyValue(value) ? <p className="type-compact text-muted-foreground">{empty}</p> : renderValue(value)}</div>
+    </details>
+  );
+}
+
+function DependencyList({ value }: { value: JsonValue | undefined }) {
+  if (isEmptyValue(value)) return null;
+  return (
+    <section className="rounded-control border border-border-subtle bg-panel p-4" aria-label="Dependency lists">
+      <h2 className="type-panel-title">Dependencies</h2>
+      <div className="mt-3">{renderValue(value)}</div>
+    </section>
+  );
+}
+
+function InsightDashboard({ overview, onEvidence }: { overview: RepositoryGatewayOverview; onEvidence(key: string): void }) {
+  const architecture = asRecord(overview.architecture);
+  const organization = asRecord(overview.codeOrganization);
+  const quality = asRecord(overview.quality);
+  const evolution = asRecord(overview.evolution);
+  const insights = [
+    { title: "Insight hotspots", value: architecture?.hotspots ?? organization?.hotspots, evidence: "architecture" },
+    { title: "Insight coupling", value: quality?.coupling ?? architecture?.coupling ?? organization?.coupling, evidence: "quality" },
+    { title: "Insight architecture findings", value: architecture?.findings ?? architecture?.diagnostics, evidence: "architecture" },
+    { title: "Insight feature findings", value: overview.features, evidence: "feature" },
+    { title: "Insight dependency findings", value: architecture?.dependencyGraph ?? architecture?.dependencies, evidence: "relationships" },
+    { title: "Insight: Repository evolution summary", value: overview.evolution, evidence: "evolution" },
+  ];
+  return (
+    <section aria-label="Insight dashboard" className="border-t border-border-subtle pt-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="type-panel-title">Insight dashboard</h2>
+        <Button variant="ghost" size="sm" onClick={() => onEvidence("insights")}>Evidence</Button>
+      </div>
+      <div className="mt-3 grid gap-3 laptop:grid-cols-2">
+        {insights.map((item) => <ExpandableDataSection key={item.title} title={item.title} value={item.value} empty={`No ${item.title.toLowerCase()} returned.`} onEvidence={() => onEvidence(item.evidence)} />)}
+      </div>
+      {!evolution ? null : <div className="mt-4"><DocumentationSection title="Evolution summary" value={evolution} empty="No evolution summary returned." onInspect={() => onEvidence("evolution")} /></div>}
+    </section>
   );
 }
 
@@ -749,7 +885,8 @@ function FeatureExplorer(props: {
   }, [onFeature, props.selectedFeature, selected]);
   return (
     <section className="space-y-5" aria-labelledby="features-heading">
-      <ViewHeader eyebrow="Feature Explorer" title="Features" description="Navigate feature summaries, files, symbols, dependencies, and flow." />
+      <ViewHeader eyebrow="Feature Explorer" title="Feature map" description="Navigate feature summaries, ownership, entry and exit points, files, symbols, dependencies, and flow." />
+      <FeatureMapOverview overview={props.overview} selectedFeature={selected} onFeature={props.onFeature} />
       <Selector label="Feature selector" value={selected} options={featureNames} placeholder="No features returned" onChange={props.onFeature} />
       <Selector label="Feature operation" value={operation} options={FEATURE_OPERATIONS} onChange={(value) => setOperation(value as FeatureNavigationOperation)} />
       {query.isError ? <ErrorState error={query.error} retry={() => void query.refetch()} compact /> : null}
@@ -759,12 +896,43 @@ function FeatureExplorer(props: {
         <div className="grid gap-4">
           {query.data.partial ? <InlineAlert tone="warning">Feature response is partial; diagnostics remain usable.</InlineAlert> : null}
           <DocumentationSection title="Feature summary" value={(query.data.data.feature ?? query.data.data.features ?? query.data.data) as JsonValue} empty="Empty feature result." onInspect={() => props.onEvidence("feature")} />
+          <DocumentationSection title="Feature ownership" value={query.data.data.ownership ?? query.data.data.feature?.ownership ?? query.data.data.feature?.owner} empty="No ownership returned." onInspect={() => props.onEvidence("feature")} />
+          <DocumentationSection title="Entry points" value={query.data.data.entryPoints ?? query.data.data["entry-points"] ?? query.data.data.feature?.entryPoints} empty="No entry points returned." onInspect={() => props.onEvidence("feature")} />
+          <DocumentationSection title="Exit points" value={query.data.data.exitPoints ?? query.data.data["exit-points"] ?? query.data.data.feature?.exitPoints} empty="No exit points returned." onInspect={() => props.onEvidence("feature")} />
+          <DocumentationSection title="Related APIs" value={query.data.data.apis ?? query.data.data.relatedApis ?? query.data.data.feature?.apis} empty="No related APIs returned." onInspect={() => props.onEvidence("feature")} />
           <DocumentationSection title="Related files" value={query.data.data.files ?? query.data.data.feature?.files} empty="No files returned." onInspect={() => props.onEvidence("files")} />
           <DocumentationSection title="Related symbols" value={query.data.data.symbols ?? query.data.data.feature?.symbolIds} empty="No symbols returned." onInspect={() => props.onEvidence("symbols")} />
+          <DocumentationSection title="Dependencies" value={query.data.data.dependencies ?? query.data.data.feature?.dependencies} empty="No dependencies returned." onInspect={() => props.onEvidence("relationships")} />
+          <DocumentationSection title="Upstream" value={query.data.data.upstream ?? query.data.data.feature?.upstream} empty="No upstream features returned." onInspect={() => props.onEvidence("relationships")} />
+          <DocumentationSection title="Downstream" value={query.data.data.downstream ?? query.data.data.feature?.downstream} empty="No downstream features returned." onInspect={() => props.onEvidence("relationships")} />
           <DocumentationSection title="Relationships" value={query.data.data.relationships} empty="No relationships returned." onInspect={() => props.onEvidence("relationships")} />
           <DocumentationSection title="Flow" value={query.data.data.flows} empty="No flow returned." />
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function FeatureMapOverview({ overview, selectedFeature, onFeature }: { overview: RepositoryGatewayOverview; selectedFeature: string; onFeature(feature: string): void }) {
+  const features = arrayRecords(overview.features);
+  if (features.length === 0) return <InlineAlert tone="info">No grouped feature data returned by the gateway.</InlineAlert>;
+  const groups = groupRecords(features, ["group", "domain", "owner", "module", "package"]);
+  return (
+    <section aria-label="Grouped features" className="rounded-control border border-border-subtle bg-panel p-4">
+      <h2 className="type-panel-title">Grouped features</h2>
+      <div className="mt-3 grid gap-3 laptop:grid-cols-2">
+        {Object.entries(groups).map(([group, items]) => (
+          <details key={group} className="rounded-control border border-border-subtle p-3" open>
+            <summary className="cursor-pointer type-compact-strong">{group}</summary>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {items.map((feature) => {
+                const name = stringField(feature, ["name", "featureId", "id"]) ?? valuePreview(feature);
+                return <button key={name} className={cn("rounded-badge border border-border-subtle px-2 py-1 type-metadata hover:bg-hover focus-ring", selectedFeature === name && "bg-selection text-foreground")} onClick={() => onFeature(name)}>{name}</button>;
+              })}
+            </div>
+          </details>
+        ))}
+      </div>
     </section>
   );
 }
@@ -785,7 +953,8 @@ function SymbolExplorer(props: {
   const query = useSemanticNavigation(props.owner, props.repo, props.metadata, operation, queryValue, Boolean(queryValue));
   return (
     <section className="space-y-5" aria-labelledby="symbols-heading">
-      <ViewHeader eyebrow="Symbol Explorer" title="Symbols" description="Search definitions and relationships through the semantic gateway." />
+      <ViewHeader eyebrow="Symbol Explorer" title="Symbol navigation" description="Search definitions, hierarchy, inheritance, callers, callees, references, implementations, and dependencies through the semantic gateway." />
+      <SymbolQuickNavigation symbols={symbolNames} selectedSymbol={queryValue} onSymbol={(symbol) => { setDraft(symbol); props.onSymbol(symbol); }} />
       <form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); props.onSymbol(draft.trim()); }}>
         <label className="min-w-0 flex-1">
           <span className="type-metadata-label text-muted-foreground">Search</span>
@@ -802,10 +971,29 @@ function SymbolExplorer(props: {
         <div className="grid gap-4">
           {query.data.partial ? <InlineAlert tone="warning">Semantic response is partial; diagnostics remain usable.</InlineAlert> : null}
           <DocumentationSection title="Symbol details" value={query.data.data.symbols} empty="No symbol details returned." onInspect={() => props.onEvidence("symbol")} />
+          <DocumentationSection title="Hierarchy" value={query.data.data.hierarchy} empty="No hierarchy returned." onInspect={() => props.onEvidence("symbol")} />
+          <DocumentationSection title="Inheritance" value={query.data.data.inheritance} empty="No inheritance returned." onInspect={() => props.onEvidence("relationships")} />
+          <DocumentationSection title="Callers" value={query.data.data.callers} empty="No callers returned." onInspect={() => props.onEvidence("relationships")} />
+          <DocumentationSection title="Callees" value={query.data.data.callees} empty="No callees returned." onInspect={() => props.onEvidence("relationships")} />
+          <DocumentationSection title="References" value={query.data.data.references} empty="No references returned." onInspect={() => props.onEvidence("relationships")} />
+          <DocumentationSection title="Implementations" value={query.data.data.implementations} empty="No implementations returned." onInspect={() => props.onEvidence("relationships")} />
+          <DocumentationSection title="Dependencies" value={query.data.data.dependencies} empty="No dependencies returned." onInspect={() => props.onEvidence("relationships")} />
           <DocumentationSection title="Relationship list" value={query.data.data.relationships} empty="No relationships returned." onInspect={() => props.onEvidence("relationships")} />
           <DocumentationSection title="Metadata" value={query.data.data as JsonValue} empty="No semantic metadata returned." />
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function SymbolQuickNavigation({ symbols, selectedSymbol, onSymbol }: { symbols: string[]; selectedSymbol: string; onSymbol(symbol: string): void }) {
+  if (symbols.length === 0) return <InlineAlert tone="info">No quick navigation symbols returned by the gateway.</InlineAlert>;
+  return (
+    <section aria-label="Symbol quick navigation" className="rounded-control border border-border-subtle bg-panel p-4">
+      <h2 className="type-panel-title">Quick navigation</h2>
+      <div className="mt-3 flex max-h-28 flex-wrap gap-1.5 overflow-auto">
+        {symbols.slice(0, 48).map((symbol) => <button key={symbol} className={cn("rounded-badge border border-border-subtle px-2 py-1 type-metadata hover:bg-hover focus-ring", selectedSymbol === symbol && "bg-selection text-foreground")} onClick={() => onSymbol(symbol)}>{symbol}</button>)}
+      </div>
     </section>
   );
 }
@@ -832,18 +1020,46 @@ function RenderedFile({ file }: { file: FileReadResult }) {
   const large = file.sizeBytes > 524_288 || file.content.length > 524_288;
   const unknown = !file.language || file.language === "unknown";
   const binary = looksBinary(file.content);
-  if (binary) return <InlineAlert tone="warning" className="mt-4">Binary file content is not rendered.</InlineAlert>;
-  if (large) return <InlineAlert tone="warning" className="mt-4">Large file content is truncated by the backend response.</InlineAlert>;
+  const markdown = file.language === "markdown" || file.filePath.toLowerCase().endsWith(".md");
+  if (binary) return <InlineAlert tone="warning" className="mt-4">Binary file placeholder. Content is not rendered.</InlineAlert>;
+  if (large) return <InlineAlert tone="warning" className="mt-4">Large file placeholder. The viewer does not render files over 512 KB.</InlineAlert>;
   return (
-    <div className="mt-4 overflow-hidden rounded-control border border-border-subtle bg-code">
+    <div className="mt-4 overflow-hidden rounded-control border border-border-subtle bg-code" aria-label="Rendered file">
       <div className="flex h-9 items-center gap-3 border-b border-border-subtle px-3 type-metadata text-muted-foreground">
         <span>{unknown ? "text" : file.language}</span>
         <span>{file.lineCount} lines</span>
         <span>{file.sizeBytes} bytes</span>
       </div>
-      <pre className="max-h-[56dvh] overflow-auto p-4 type-mono text-code-foreground"><code>{file.content}</code></pre>
+      {markdown ? <details className="border-b border-border-subtle bg-panel p-3">
+        <summary className="cursor-pointer type-metadata-label text-muted-foreground">Markdown preview</summary>
+        <div className="mt-3"><MarkdownMessage>{file.content}</MarkdownMessage></div>
+      </details> : null}
+      <div className="max-h-[56dvh] overflow-auto p-0 type-mono text-code-foreground">
+        {file.content.split("\n").map((line, index) => <FileLine key={index} line={line} lineNumber={index + 1} />)}
+      </div>
     </div>
   );
+}
+
+function FileLine({ line, lineNumber }: { line: string; lineNumber: number }) {
+  const id = `L${lineNumber}`;
+  return (
+    <div id={id} className="group grid min-w-max grid-cols-[4rem_minmax(0,1fr)_2rem] border-b border-border-subtle/60 last:border-b-0 hover:bg-hover/60">
+      <a className="px-3 py-1 text-right type-metadata text-muted-foreground focus-ring" href={`#${id}`} aria-label={`Line ${lineNumber}`}>{lineNumber}</a>
+      <pre className="whitespace-pre-wrap break-words px-3 py-1 type-mono"><code>{highlightLine(line)}</code></pre>
+      <button className="opacity-0 transition-opacity duration-[150ms] group-hover:opacity-100 group-focus-within:opacity-100 focus-ring" onClick={() => void navigator.clipboard?.writeText(line)} aria-label={`Copy line ${lineNumber}`}><Clipboard className="mx-auto size-3.5" /></button>
+    </div>
+  );
+}
+
+function highlightLine(line: string): ReactNode {
+  const parts = line.split(/(\b(?:const|let|var|function|return|class|interface|type|import|from|export|async|await|if|else|for|while|switch|case|break|new)\b|"[^"]*"|'[^']*'|`[^`]*`|\/\/.*$)/g);
+  return parts.map((part, index) => {
+    if (/^(const|let|var|function|return|class|interface|type|import|from|export|async|await|if|else|for|while|switch|case|break|new)$/.test(part)) return <span key={index} className="text-accent">{part}</span>;
+    if (/^["'`]/.test(part)) return <span key={index} className="text-success">{part}</span>;
+    if (/^\/\//.test(part)) return <span key={index} className="text-muted-foreground">{part}</span>;
+    return <span key={index}>{part}</span>;
+  });
 }
 
 function EvidencePanel({ evidence, metadata, diagnostics, onOpenFile, onOpenSymbol }: { evidence: Evidence; metadata: RepositoryMetadata; diagnostics: NormalizedDiagnostic[]; onOpenFile(path: string): void; onOpenSymbol(symbol: string): void }) {
@@ -881,6 +1097,16 @@ function EvidencePanel({ evidence, metadata, diagnostics, onOpenFile, onOpenSymb
 
 function renderEvidenceValue(value: JsonValue | NormalizedDiagnostic[] | undefined, onOpenFile: (path: string) => void, onOpenSymbol: (symbol: string) => void): ReactNode {
   if (Array.isArray(value)) {
+    const records = arrayRecords(value);
+    if (records.length > 0) {
+      const groups = groupRecords(records, ["kind", "type", "category", "source"]);
+      return <div className="grid gap-3">{Object.entries(groups).map(([group, items]) => (
+        <section key={group} aria-label={`${group} evidence group`} className="grid gap-2">
+          <h3 className="type-metadata-label text-muted-foreground">{group}</h3>
+          {items.map((item, index) => <EvidenceCard key={index} value={item} index={index} onOpenFile={onOpenFile} onOpenSymbol={onOpenSymbol} />)}
+        </section>
+      ))}</div>;
+    }
     return <div className="grid gap-2">{value.map((item, index) => <EvidenceCard key={index} value={item as JsonValue} index={index} onOpenFile={onOpenFile} onOpenSymbol={onOpenSymbol} />)}</div>;
   }
   return renderValue(value);
@@ -1033,6 +1259,22 @@ function collectStrings(value: unknown, keys: string[], target: Set<string>) {
   }
 }
 
+function arrayRecords(value: unknown): JsonRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = asRecord(item);
+    return record ? [record] : [];
+  });
+}
+
+function groupRecords(records: JsonRecord[], keys: string[]): Record<string, JsonRecord[]> {
+  return records.reduce<Record<string, JsonRecord[]>>((groups, record) => {
+    const group = stringField(record, keys) ?? "Ungrouped";
+    groups[group] = [...(groups[group] ?? []), record];
+    return groups;
+  }, {});
+}
+
 function evidenceFor(input: {
   selectedEvidence: string;
   overview?: RepositoryGatewayOverview;
@@ -1097,6 +1339,30 @@ function cellValue(value: JsonValue | undefined): ReactNode {
   if (Array.isArray(value)) return <span>{value.map((item) => typeof item === "object" ? JSON.stringify(item) : String(item)).join(", ")}</span>;
   if (typeof value === "object") return <span>{JSON.stringify(value)}</span>;
   return <span className="break-words">{String(value)}</span>;
+}
+
+function valueCountLabel(value: JsonValue | undefined): string {
+  if (Array.isArray(value)) return `${value.length} items`;
+  const record = asRecord(value);
+  if (record) return `${Object.keys(record).length} fields`;
+  if (value === undefined || value === null || value === "") return "No data";
+  return "1 value";
+}
+
+function valuePreview(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const first = value[0];
+    if (first === undefined) return "No items returned.";
+    return valuePreview(first);
+  }
+  const record = asRecord(value);
+  if (!record) return "Data returned.";
+  const direct = stringField(record, ["summary", "description", "name", "path", "filePath", "qualifiedName", "id"]);
+  if (direct) return direct;
+  const first = Object.entries(record).find(([, item]) => !isEmptyValue(item));
+  return first ? `${labelize(first[0])}: ${valuePreview(first[1])}` : "Fields returned.";
 }
 
 function stringifyEvidence(value: unknown): string {
