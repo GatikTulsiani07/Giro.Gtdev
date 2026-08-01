@@ -14,7 +14,12 @@ import {
   Info,
   ListTree,
   Menu,
+  MessageSquare,
+  Pin,
+  Play,
   Search,
+  Send,
+  Trash2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +31,15 @@ import { ResizableHandle } from "@/components/ui/resizable-handle";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RepositoryStatusBadge } from "@/components/ui/status-badge";
 import { SegmentedControl } from "@/components/ui/tabs";
+import {
+  useArchiveEngineeringSession,
+  useAttachWorkflow,
+  useCreateEngineeringSession,
+  useDeleteEngineeringSession,
+  useEngineeringAction,
+  useEngineeringSession,
+  useEngineeringSessions,
+} from "@/hooks/use-engineering-sessions";
 import {
   repositoryGatewayGuard,
   useFeatureNavigation,
@@ -44,6 +58,9 @@ import type {
   NormalizedDiagnostic,
   RepositoryGatewayOverview,
   RepositoryMetadata,
+  RepositorySessionDetail,
+  RepositorySessionEvent,
+  RepositorySessionSummary,
   SemanticNavigationOperation,
 } from "@/types/api";
 
@@ -75,7 +92,16 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
   const selectedFeature = searchParams.get("feature") ?? "";
   const selectedSymbol = searchParams.get("symbol") ?? "";
   const selectedEvidence = searchParams.get("evidence") ?? "metadata";
+  const sessionId = searchParams.get("sessionId") ?? "";
+  const selectedWorkflow = searchParams.get("workflow") ?? "";
   const overview = useGatewayOverview(owner, repo, metadata);
+  const sessions = useEngineeringSessions(metadata);
+  const createSession = useCreateEngineeringSession(metadata);
+  const archiveSession = useArchiveEngineeringSession(metadata);
+  const deleteSession = useDeleteEngineeringSession(metadata);
+  const currentSession = useEngineeringSession(sessionId, metadata.publishedRevision);
+  const engineeringAction = useEngineeringAction(metadata, sessionId, metadata.publishedRevision);
+  const attachWorkflow = useAttachWorkflow(metadata, metadata.publishedRevision);
   const lastUpdate = overview.dataUpdatedAt ? new Date(overview.dataUpdatedAt).toISOString() : metadata.updatedAt;
   const evidence = evidenceFor({
     selectedEvidence,
@@ -83,6 +109,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
     diagnostics: overview.data?.diagnostics,
     requestId: overview.data?.requestId,
     metadata,
+    session: currentSession.data?.data,
   });
 
   useEffect(() => {
@@ -107,9 +134,22 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
     <WorkspaceLeftPane
       metadata={metadata}
       overview={overview.data?.data}
+      sessions={sessions.data?.data.sessions ?? []}
+      activeSessionId={sessionId}
+      sessionsLoading={sessions.isLoading}
+      creatingSession={createSession.isPending}
+      archivingSession={archiveSession.isPending}
+      deletingSession={deleteSession.isPending}
       selectedFile={selectedFile}
       selectedFeature={selectedFeature}
       selectedSymbol={selectedSymbol}
+      session={currentSession.data?.data}
+      onCreateSession={() => void createSession.mutateAsync({}).then((envelope) => setParams({ sessionId: envelope.data.session.sessionId, view: "overview" }))}
+      onSession={(nextSessionId) => setParams({ sessionId: nextSessionId })}
+      onArchiveSession={(nextSessionId) => void archiveSession.mutateAsync(nextSessionId)}
+      onDeleteSession={(nextSessionId) => void deleteSession.mutateAsync(nextSessionId).then(() => {
+        if (nextSessionId === sessionId) setParams({ sessionId: null });
+      })}
       onFile={(file) => setParams({ file, evidence: "file" })}
       onFeature={(feature) => setParams({ view: "features", feature, evidence: "feature" })}
       onSymbol={(symbol) => setParams({ view: "symbols", symbol, evidence: "symbol" })}
@@ -124,7 +164,28 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
       {guard.ready && overview.data?.partial ? <InlineAlert tone="warning" className="m-4">Gateway returned usable partial data. Diagnostics are available in the evidence panel.</InlineAlert> : null}
       {guard.ready && overview.data ? (
         <div className="p-4 laptop:p-6">
-          {view === "overview" ? <OverviewView overview={overview.data.data} repository={metadata} onEvidence={selectEvidence} /> : null}
+          {view === "overview" ? <SessionConversation
+            metadata={metadata}
+            sessionId={sessionId}
+            session={currentSession.data?.data}
+            sessionLoading={currentSession.isLoading}
+            sessionError={currentSession.error}
+            onRetry={() => void currentSession.refetch()}
+            onCreate={() => void createSession.mutateAsync({}).then((envelope) => setParams({ sessionId: envelope.data.session.sessionId }))}
+            creating={createSession.isPending}
+            actionPending={engineeringAction.isPending}
+            actionError={engineeringAction.error}
+            onAction={(action, value) => void engineeringAction.mutateAsync({ action, value }).then(() => selectEvidence(action === "query" ? "conversation" : action))}
+            workflowId={selectedWorkflow}
+            onWorkflowId={(workflow) => setParams({ workflow })}
+            attachingWorkflow={attachWorkflow.isPending}
+            workflowError={attachWorkflow.error}
+            onAttachWorkflow={(workflowId) => {
+              if (!sessionId) return;
+              void attachWorkflow.mutateAsync({ sessionId, workflowId }).then((envelope) => setParams({ workflow: envelope.data.session.attachedWorkflowId ?? workflowId, evidence: "workflow" }));
+            }}
+            onEvidence={selectEvidence}
+          /> : null}
           {view === "architecture" ? <ArchitectureView overview={overview.data.data} onEvidence={selectEvidence} /> : null}
           {view === "features" ? <FeatureExplorer owner={owner} repo={repo} metadata={metadata} overview={overview.data.data} selectedFeature={selectedFeature} onFeature={(feature) => setParams({ feature, evidence: "feature" })} onEvidence={selectEvidence} /> : null}
           {view === "symbols" ? <SymbolExplorer owner={owner} repo={repo} metadata={metadata} overview={overview.data.data} selectedSymbol={selectedSymbol} onSymbol={(symbol) => setParams({ symbol, evidence: "symbol" })} onEvidence={selectEvidence} /> : null}
@@ -133,7 +194,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
       ) : null}
     </main>
   );
-  const rightPane = <EvidencePanel evidence={evidence} metadata={metadata} diagnostics={overview.data?.diagnostics ?? []} />;
+  const rightPane = <EvidencePanel evidence={evidence} metadata={metadata} diagnostics={[...(overview.data?.diagnostics ?? []), ...(currentSession.data?.data.diagnostics ?? [])]} />;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -175,6 +236,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
 
       <footer role="status" className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-subtle bg-inset px-4 py-1 type-metadata text-muted-foreground">
         <span>Gateway {guard.ready ? "available" : "unavailable"}</span>
+        <span>Session {sessionId || "none"}</span>
         <span>Revision {metadata.publishedRevision?.slice(0, 12) ?? "missing"}</span>
         <span>Last update {lastUpdate}</span>
       </footer>
@@ -213,9 +275,20 @@ function WorkspaceTabs({ value, onChange }: { value: WorkspaceView; onChange(val
 function WorkspaceLeftPane(props: {
   metadata: RepositoryMetadata;
   overview?: RepositoryGatewayOverview;
+  sessions: RepositorySessionSummary[];
+  activeSessionId: string;
+  sessionsLoading: boolean;
+  creatingSession: boolean;
+  archivingSession: boolean;
+  deletingSession: boolean;
   selectedFile: string;
   selectedFeature: string;
   selectedSymbol: string;
+  session?: RepositorySessionDetail;
+  onCreateSession(): void;
+  onSession(sessionId: string): void;
+  onArchiveSession(sessionId: string): void;
+  onDeleteSession(sessionId: string): void;
   onFile(path: string): void;
   onFeature(feature: string): void;
   onSymbol(symbol: string): void;
@@ -224,10 +297,28 @@ function WorkspaceLeftPane(props: {
   const symbolNames = useMemo(() => symbolOptions(props.overview), [props.overview]);
   return (
     <aside aria-label="Repository context" className="h-full overflow-auto bg-sidebar p-3">
+      <SessionHistory
+        sessions={props.sessions}
+        activeSessionId={props.activeSessionId}
+        loading={props.sessionsLoading}
+        creating={props.creatingSession}
+        archiving={props.archivingSession}
+        deleting={props.deletingSession}
+        onCreate={props.onCreateSession}
+        onOpen={props.onSession}
+        onArchive={props.onArchiveSession}
+        onDelete={props.onDeleteSession}
+      />
       <SectionTitle icon={ListTree} title="Repository Tree" />
       <RepositoryTree metadata={props.metadata} selectedFile={props.selectedFile} onFile={props.onFile} />
       <ContextList title="Features" values={featureNames} selected={props.selectedFeature} onSelect={props.onFeature} empty="No features returned." />
       <ContextList title="Symbols" values={symbolNames} selected={props.selectedSymbol} onSelect={props.onSymbol} empty="No symbols returned." />
+      <PinnedContext
+        file={props.selectedFile}
+        feature={props.selectedFeature}
+        symbol={props.selectedSymbol}
+        session={props.session}
+      />
       <section className="mt-5" aria-label="Repository context metadata">
         <h2 className="type-metadata-label text-muted-foreground">Context</h2>
         <dl className="mt-2 space-y-2 type-compact">
@@ -237,6 +328,64 @@ function WorkspaceLeftPane(props: {
         </dl>
       </section>
     </aside>
+  );
+}
+
+function SessionHistory(props: {
+  sessions: RepositorySessionSummary[];
+  activeSessionId: string;
+  loading: boolean;
+  creating: boolean;
+  archiving: boolean;
+  deleting: boolean;
+  onCreate(): void;
+  onOpen(sessionId: string): void;
+  onArchive(sessionId: string): void;
+  onDelete(sessionId: string): void;
+}) {
+  return (
+    <section className="mb-5" aria-label="Session history">
+      <div className="flex items-center justify-between gap-2">
+        <SectionTitle icon={MessageSquare} title="Session history" />
+        <Button size="icon-sm" variant="ghost" onClick={props.onCreate} disabled={props.creating} aria-label="Start engineering session"><Play className="size-4" /></Button>
+      </div>
+      <div className="mt-2 max-h-52 overflow-auto border-y border-border-subtle py-1">
+        {props.loading ? <Skeleton className="h-9" /> : null}
+        {props.sessions.map((session) => (
+          <div key={session.sessionId} className={cn("group flex items-center gap-1 rounded-control", props.activeSessionId === session.sessionId && "bg-selection")}>
+            <button className="min-w-0 flex-1 px-2 py-2 text-left focus-ring" onClick={() => props.onOpen(session.sessionId)}>
+              <span className="block truncate type-compact-strong">{session.sessionId}</span>
+              <span className="block truncate type-metadata text-muted-foreground">{session.lifecycle} · {session.eventCount} events</span>
+            </button>
+            <Button size="icon-sm" variant="ghost" disabled={props.archiving} onClick={() => props.onArchive(session.sessionId)} aria-label={`Archive ${session.sessionId}`}><X className="size-3.5" /></Button>
+            <Button size="icon-sm" variant="ghost" disabled={props.deleting} onClick={() => props.onDelete(session.sessionId)} aria-label={`Delete ${session.sessionId}`}><Trash2 className="size-3.5" /></Button>
+          </div>
+        ))}
+        {!props.loading && props.sessions.length === 0 ? <p className="px-2 py-3 type-compact text-muted-foreground">No session. Start an engineering session to persist work.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function PinnedContext({ file, feature, symbol, session }: { file: string; feature: string; symbol: string; session?: RepositorySessionDetail }) {
+  const chips = [
+    file ? `File: ${file}` : null,
+    feature ? `Feature: ${feature}` : null,
+    symbol ? `Symbol: ${symbol}` : null,
+    session?.context.activeArchitecture ? `Architecture: ${session.context.activeArchitecture}` : null,
+    session?.context.activeWorkflow ? `Workflow: ${session.context.activeWorkflow}` : null,
+    ...((session?.context.recentFiles ?? []).slice(0, 3).map((item) => `Recent file: ${item}`)),
+    ...((session?.context.recentFeatures ?? []).slice(0, 3).map((item) => `Recent feature: ${item}`)),
+    ...((session?.context.recentSymbols ?? []).slice(0, 3).map((item) => `Recent symbol: ${item}`)),
+  ].filter((item): item is string => Boolean(item));
+  return (
+    <section className="mt-5" aria-label="Pinned context">
+      <div className="flex items-center gap-2"><Pin className="size-4 text-muted-foreground" /><h2 className="type-metadata-label text-muted-foreground">Pinned context</h2></div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {chips.map((chip) => <span key={chip} className="max-w-full truncate rounded-badge bg-selection px-2 py-1 type-metadata text-foreground">{chip}</span>)}
+        {chips.length === 0 ? <p className="type-compact text-muted-foreground">No context pinned.</p> : null}
+      </div>
+    </section>
   );
 }
 
@@ -302,6 +451,172 @@ function OverviewView({ overview, repository, onEvidence }: { overview: Reposito
       <DocumentationSection title="Evolution summary" value={overview.evolution} empty="No evolution summary returned." onInspect={() => onEvidence("evolution")} />
       <DocumentationSection title="Statistics" value={overview.metrics ?? ({ status: repository.status, currentRevision: repository.currentRevision, indexedRevision: repository.indexedRevision, publishedRevision: repository.publishedRevision } satisfies JsonRecord)} empty="No statistics returned." onInspect={() => onEvidence("metrics")} />
     </article>
+  );
+}
+
+function SessionConversation(props: {
+  metadata: RepositoryMetadata;
+  sessionId: string;
+  session?: RepositorySessionDetail;
+  sessionLoading: boolean;
+  sessionError: unknown;
+  onRetry(): void;
+  onCreate(): void;
+  creating: boolean;
+  actionPending: boolean;
+  actionError: unknown;
+  onAction(action: "query" | "plan" | "specification" | "insights" | "execution", value: string): void;
+  workflowId: string;
+  onWorkflowId(workflowId: string): void;
+  attachingWorkflow: boolean;
+  workflowError: unknown;
+  onAttachWorkflow(workflowId: string): void;
+  onEvidence(key: string): void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [action, setAction] = useState<"query" | "plan" | "specification" | "insights" | "execution">("query");
+  const listRef = useRef<HTMLDivElement>(null);
+  const liveRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+  }, [props.session?.events.length, props.actionPending]);
+  useEffect(() => {
+    if (liveRef.current && props.actionPending) liveRef.current.textContent = "Engineering action is running.";
+  }, [props.actionPending]);
+
+  function submit() {
+    if (!props.sessionId || props.actionPending) return;
+    if (action !== "insights" && !draft.trim()) return;
+    props.onAction(action, action === "insights" ? "Repository insights" : draft.trim());
+    if (action === "query") setDraft("");
+  }
+
+  if (!props.sessionId) {
+    return (
+      <section aria-label="Engineering session workspace" className="space-y-5">
+        <ViewHeader eyebrow="Engineering Session" title="Persistent AI workspace" description="Start or reopen a repository session to maintain engineering context." />
+        <EmptyState icon={MessageSquare} title="No session" description="Create a repository session to ask questions, generate plans, inspect evidence, and attach workflows." action={<Button onClick={props.onCreate} disabled={props.creating}><Play className="size-4" />Start engineering session</Button>} />
+        <OverviewView overview={{}} repository={props.metadata} onEvidence={props.onEvidence} />
+      </section>
+    );
+  }
+
+  if (props.sessionLoading) return <WorkspaceLoading />;
+  if (props.sessionError || !props.session) return <ErrorState error={props.sessionError} retry={props.onRetry} />;
+
+  const outputs = props.session.events.filter((event) => ["plan", "specification", "execution_summary", "insight"].includes(event.kind));
+
+  return (
+    <section aria-label="Engineering session workspace" className="grid min-h-[calc(100dvh-12rem)] gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-4">
+        <div>
+          <p className="type-section-eyebrow text-muted-foreground">Engineering Session</p>
+          <h1 className="mt-2 type-section-title">{props.session.session.sessionId}</h1>
+          <p className="mt-1 type-compact text-muted-foreground">{props.session.session.lifecycle} · revision {props.session.session.revision.slice(0, 8)}</p>
+        </div>
+        <Button variant="secondary" size="sm" onClick={() => props.onEvidence("conversation")}>Inspect evidence</Button>
+      </div>
+
+      <ActiveContextChips session={props.session} />
+
+      <div ref={listRef} className="max-h-[42dvh] overflow-auto border-y border-border-subtle" aria-label="Conversation history">
+        {props.session.events.map((event) => <ConversationEvent key={event.eventId} event={event} onEvidence={props.onEvidence} />)}
+        {props.actionPending ? <div role="status" className="border-t border-border-subtle p-3 type-compact text-muted-foreground">Streaming response placeholder. Waiting for backend result...</div> : null}
+        {props.session.events.length === 0 && !props.actionPending ? <EmptyState icon={MessageSquare} title="Empty conversation" description="Ask an engineering question or generate an output for this repository session." compact /> : null}
+      </div>
+
+      <div className="grid gap-3 laptop:grid-cols-[180px_minmax(0,1fr)_auto]">
+        <Selector label="Engineering action" value={action} options={["query", "plan", "specification", "execution", "insights"]} onChange={(value) => setAction(value as typeof action)} />
+        <label>
+          <span className="type-metadata-label text-muted-foreground">Question or objective</span>
+          <textarea className="mt-1 min-h-20 w-full rounded-control border border-border bg-inset px-3 py-2 type-compact focus-ring" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={action === "insights" ? "No input required" : "Ask a question or describe the engineering objective"} />
+        </label>
+        <Button className="self-end" onClick={submit} disabled={props.actionPending || (action !== "insights" && !draft.trim())}><Send className="size-4" />Run</Button>
+      </div>
+      {props.actionError ? <ErrorState error={props.actionError} compact /> : null}
+
+      <EngineeringOutputs outputs={outputs} onEvidence={props.onEvidence} />
+      <WorkflowPanel
+        session={props.session}
+        workflowId={props.workflowId}
+        onWorkflowId={props.onWorkflowId}
+        attaching={props.attachingWorkflow}
+        error={props.workflowError}
+        onAttach={props.onAttachWorkflow}
+      />
+      <div ref={liveRef} className="sr-only" aria-live="polite" />
+    </section>
+  );
+}
+
+function ActiveContextChips({ session }: { session: RepositorySessionDetail }) {
+  const values = [
+    session.context.activeFeature ? `Feature: ${session.context.activeFeature}` : null,
+    session.context.activeModule ? `Module: ${session.context.activeModule}` : null,
+    session.context.activeWorkflow ? `Workflow: ${session.context.activeWorkflow}` : null,
+    ...session.context.recentFiles.slice(0, 3).map((item) => `File: ${item}`),
+    ...session.context.recentSymbols.slice(0, 3).map((item) => `Symbol: ${item}`),
+  ].filter((item): item is string => Boolean(item));
+  return <div aria-label="Active context chips" className="flex flex-wrap gap-1.5">{values.map((item) => <span className="rounded-badge bg-selection px-2 py-1 type-metadata" key={item}>{item}</span>)}{values.length === 0 ? <p className="type-compact text-muted-foreground">No context attached to this session yet.</p> : null}</div>;
+}
+
+function ConversationEvent({ event, onEvidence }: { event: RepositorySessionEvent; onEvidence(key: string): void }) {
+  const heading = event.kind.replace(/_/g, " ");
+  return (
+    <article className="border-t border-border-subtle p-3 first:border-t-0" aria-label={`${event.kind} event`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="capitalize type-panel-title">{heading}</h2>
+        <button className="type-metadata text-muted-foreground underline-offset-4 hover:underline focus-ring" onClick={() => onEvidence(event.kind)}>{event.referenceId}</button>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap type-compact text-text-secondary">{event.summary}</p>
+      {!isEmptyValue(event.attributes) ? <details className="mt-2"><summary className="cursor-pointer type-metadata-label text-muted-foreground">Request metadata</summary><div className="mt-2">{renderValue(event.attributes)}</div></details> : null}
+    </article>
+  );
+}
+
+function EngineeringOutputs({ outputs, onEvidence }: { outputs: RepositorySessionEvent[]; onEvidence(key: string): void }) {
+  return (
+    <section aria-label="Engineering outputs" className="border-t border-border-subtle pt-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="type-panel-title">Engineering outputs</h2>
+        <Button variant="ghost" size="sm" onClick={() => onEvidence("outputs")}>Evidence</Button>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {outputs.map((event) => <details key={event.eventId} className="border-y border-border-subtle py-2"><summary className="cursor-pointer capitalize type-compact-strong">{event.kind.replace(/_/g, " ")}</summary><div className="mt-2">{renderValue(event.attributes)}</div></details>)}
+        {outputs.length === 0 ? <p className="type-compact text-muted-foreground">No engineering outputs generated yet.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowPanel(props: {
+  session: RepositorySessionDetail;
+  workflowId: string;
+  onWorkflowId(workflowId: string): void;
+  attaching: boolean;
+  error: unknown;
+  onAttach(workflowId: string): void;
+}) {
+  const workflow = props.session.session.attachedWorkflowId;
+  return (
+    <section aria-label="Workflow" className="border-t border-border-subtle pt-4">
+      <h2 className="type-panel-title">Workflow</h2>
+      {workflow ? (
+        <dl className="mt-3 grid gap-2 type-compact">
+          <Meta label="Attached workflow" value={workflow} />
+          <Meta label="Workflow state" value={props.session.session.workflowState ?? "missing"} />
+          <Meta label="Current stage" value={props.session.session.workflowStage ?? "missing"} />
+          <Meta label="Attached at" value={props.session.session.attachedAt ?? "missing"} />
+        </dl>
+      ) : <p className="mt-2 type-compact text-muted-foreground">No workflow attached.</p>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <input className="h-10 min-w-0 flex-1 rounded-control border border-border bg-inset px-3 type-compact focus-ring" value={props.workflowId} onChange={(event) => props.onWorkflowId(event.target.value)} placeholder="workflow id" aria-label="Workflow ID" />
+        <Button variant="secondary" onClick={() => props.onAttach(props.workflowId.trim())} disabled={props.attaching || !props.workflowId.trim()}>Attach workflow</Button>
+      </div>
+      {props.error ? <div className="mt-3"><ErrorState error={props.error} compact /></div> : null}
+      <details className="mt-3"><summary className="cursor-pointer type-metadata-label text-muted-foreground">Timeline</summary>{props.session.events.length > 0 ? <ol className="mt-2 space-y-2">{props.session.events.map((event) => <li className="type-compact" key={event.eventId}>{event.sequence}. {event.kind} · {event.createdAt}</li>)}</ol> : <p className="mt-2 type-compact text-muted-foreground">No workflow timeline events returned.</p>}</details>
+    </section>
   );
 }
 
@@ -597,6 +912,7 @@ function evidenceFor(input: {
   diagnostics?: NormalizedDiagnostic[];
   requestId?: string;
   metadata: RepositoryMetadata;
+  session?: RepositorySessionDetail;
 }): Evidence {
   const overview = input.overview;
   const map: Record<string, Evidence> = {
@@ -613,6 +929,14 @@ function evidenceFor(input: {
     relationships: { title: "Relationships", kind: "Relationships", value: overview?.architecture, requestId: input.requestId },
     diagnostics: { title: "Diagnostics", kind: "Diagnostics", value: input.diagnostics as unknown as JsonValue, requestId: input.requestId },
     metadata: { title: "Metadata", kind: "Metadata", value: input.metadata as unknown as JsonValue, requestId: input.requestId },
+    conversation: { title: "Conversation", kind: "Metadata", value: input.session?.events as unknown as JsonValue, requestId: input.requestId },
+    query: { title: "Query evidence", kind: "Metadata", value: input.session?.events.filter((event) => event.kind === "query") as unknown as JsonValue, requestId: input.requestId },
+    plan: { title: "Plan evidence", kind: "Metadata", value: input.session?.events.filter((event) => event.kind === "plan") as unknown as JsonValue, requestId: input.requestId },
+    specification: { title: "Specification evidence", kind: "Metadata", value: input.session?.events.filter((event) => event.kind === "specification") as unknown as JsonValue, requestId: input.requestId },
+    execution: { title: "Execution readiness", kind: "Metadata", value: input.session?.events.filter((event) => event.kind === "execution_summary") as unknown as JsonValue, requestId: input.requestId },
+    insights: { title: "Insights", kind: "Metadata", value: input.session?.events.filter((event) => event.kind === "insight") as unknown as JsonValue, requestId: input.requestId },
+    outputs: { title: "Engineering outputs", kind: "Metadata", value: input.session?.events.filter((event) => ["plan", "specification", "execution_summary", "insight"].includes(event.kind)) as unknown as JsonValue, requestId: input.requestId },
+    workflow: { title: "Workflow", kind: "Metadata", value: input.session?.session as unknown as JsonValue, requestId: input.requestId },
   };
   return map[input.selectedEvidence] ?? map.metadata;
 }
