@@ -94,18 +94,18 @@ export function useEngineeringAction(metadata: RepositoryMetadata, sessionId: st
   const client = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { action: "query" | "plan" | "specification" | "insights" | "execution"; value: string }) => {
+    mutationFn: async (input: { action: "query" | "plan" | "specification" | "insights" | "execution"; value: string; signal?: AbortSignal }) => {
       switch (input.action) {
         case "query":
-          return repositorySessionsApi.query(token as string, sessionId, input.value);
+          return repositorySessionsApi.query(token as string, sessionId, input.value, input.signal);
         case "plan":
-          return repositorySessionsApi.plan(token as string, sessionId, input.value);
+          return repositorySessionsApi.plan(token as string, sessionId, input.value, input.signal);
         case "specification":
-          return repositorySessionsApi.specification(token as string, sessionId, input.value);
+          return repositorySessionsApi.specification(token as string, sessionId, input.value, input.signal);
         case "insights":
-          return repositorySessionsApi.insights(token as string, sessionId);
+          return repositorySessionsApi.insights(token as string, sessionId, input.signal);
         case "execution":
-          return repositorySessionsApi.execution(token as string, sessionId, input.value);
+          return repositorySessionsApi.execution(token as string, sessionId, input.value, input.signal);
       }
     },
     onMutate: async (input) => {

@@ -17,12 +17,14 @@ import {
   MessageSquare,
   Pin,
   Play,
+  Plus,
   Search,
   Send,
   Trash2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CopyControl } from "@/components/ui/copy-control";
 import { Drawer } from "@/components/ui/drawer";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -48,6 +50,7 @@ import {
   useRepositoryFile,
   useSemanticNavigation,
 } from "@/hooks/use-repository-workspace";
+import { MarkdownMessage } from "@/features/chat/markdown-message";
 import { cn } from "@/lib/utils";
 import type {
   DirectoryEntry,
@@ -175,7 +178,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
             creating={createSession.isPending}
             actionPending={engineeringAction.isPending}
             actionError={engineeringAction.error}
-            onAction={(action, value) => void engineeringAction.mutateAsync({ action, value }).then(() => selectEvidence(action === "query" ? "conversation" : action))}
+            onAction={(action, value, signal) => void engineeringAction.mutateAsync({ action, value, signal }).then(() => selectEvidence(action === "query" ? "conversation" : action))}
             workflowId={selectedWorkflow}
             onWorkflowId={(workflow) => setParams({ workflow })}
             attachingWorkflow={attachWorkflow.isPending}
@@ -194,7 +197,13 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
       ) : null}
     </main>
   );
-  const rightPane = <EvidencePanel evidence={evidence} metadata={metadata} diagnostics={[...(overview.data?.diagnostics ?? []), ...(currentSession.data?.data.diagnostics ?? [])]} />;
+  const rightPane = <EvidencePanel
+    evidence={evidence}
+    metadata={metadata}
+    diagnostics={[...(overview.data?.diagnostics ?? []), ...(currentSession.data?.data.diagnostics ?? [])]}
+    onOpenFile={(file) => setParams({ file, evidence: "file" })}
+    onOpenSymbol={(symbol) => setParams({ view: "symbols", symbol, evidence: "symbol" })}
+  />;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -343,31 +352,60 @@ function SessionHistory(props: {
   onArchive(sessionId: string): void;
   onDelete(sessionId: string): void;
 }) {
+  const [search, setSearch] = useState("");
+  const filtered = props.sessions.filter((session) =>
+    [session.sessionId, session.lifecycle, session.activeFeature, session.activeModule, session.lastEventKind]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(search.toLowerCase()));
+  const recent = filtered.filter((session) => session.lifecycle !== "archived");
+  const archived = filtered.filter((session) => session.lifecycle === "archived");
   return (
     <section className="mb-5" aria-label="Session history">
       <div className="flex items-center justify-between gap-2">
         <SectionTitle icon={MessageSquare} title="Session history" />
         <Button size="icon-sm" variant="ghost" onClick={props.onCreate} disabled={props.creating} aria-label="Start engineering session"><Play className="size-4" /></Button>
       </div>
+      <label className="mt-2 block">
+        <span className="sr-only">Search sessions</span>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 w-full rounded-control border border-border bg-inset px-2 type-compact focus-ring" placeholder="Search sessions" />
+      </label>
       <div className="mt-2 max-h-52 overflow-auto border-y border-border-subtle py-1">
-        {props.loading ? <Skeleton className="h-9" /> : null}
-        {props.sessions.map((session) => (
-          <div key={session.sessionId} className={cn("group flex items-center gap-1 rounded-control", props.activeSessionId === session.sessionId && "bg-selection")}>
-            <button className="min-w-0 flex-1 px-2 py-2 text-left focus-ring" onClick={() => props.onOpen(session.sessionId)}>
-              <span className="block truncate type-compact-strong">{session.sessionId}</span>
-              <span className="block truncate type-metadata text-muted-foreground">{session.lifecycle} · {session.eventCount} events</span>
-            </button>
-            <Button size="icon-sm" variant="ghost" disabled={props.archiving} onClick={() => props.onArchive(session.sessionId)} aria-label={`Archive ${session.sessionId}`}><X className="size-3.5" /></Button>
-            <Button size="icon-sm" variant="ghost" disabled={props.deleting} onClick={() => props.onDelete(session.sessionId)} aria-label={`Delete ${session.sessionId}`}><Trash2 className="size-3.5" /></Button>
-          </div>
-        ))}
-        {!props.loading && props.sessions.length === 0 ? <p className="px-2 py-3 type-compact text-muted-foreground">No session. Start an engineering session to persist work.</p> : null}
+        {props.loading ? <LoadingRows rows={3} /> : null}
+        <SessionGroup title="Recent sessions" sessions={recent} activeSessionId={props.activeSessionId} archiving={props.archiving} deleting={props.deleting} onOpen={props.onOpen} onArchive={props.onArchive} onDelete={props.onDelete} />
+        <SessionGroup title="Archived sessions" sessions={archived} activeSessionId={props.activeSessionId} archiving={props.archiving} deleting={props.deleting} onOpen={props.onOpen} onArchive={props.onArchive} onDelete={props.onDelete} />
+        {!props.loading && filtered.length === 0 ? <p className="px-2 py-3 type-compact text-muted-foreground">No matching sessions.</p> : null}
       </div>
     </section>
   );
 }
 
+function SessionGroup({ title, sessions, activeSessionId, archiving, deleting, onOpen, onArchive, onDelete }: {
+  title: string;
+  sessions: RepositorySessionSummary[];
+  activeSessionId: string;
+  archiving: boolean;
+  deleting: boolean;
+  onOpen(sessionId: string): void;
+  onArchive(sessionId: string): void;
+  onDelete(sessionId: string): void;
+}) {
+  if (sessions.length === 0) return null;
+  return <div className="py-1"><p className="px-2 py-1 type-metadata-label text-muted-foreground">{title}</p>{sessions.map((session) => (
+    <div key={session.sessionId} className={cn("group flex items-center gap-1 rounded-control transition-colors duration-[150ms]", activeSessionId === session.sessionId && "bg-selection")}>
+      <button className="min-w-0 flex-1 px-2 py-2 text-left focus-ring" aria-current={activeSessionId === session.sessionId ? "page" : undefined} onClick={() => onOpen(session.sessionId)}>
+        <span className="block truncate type-compact-strong">{session.sessionId}</span>
+        <span className="block truncate type-metadata text-muted-foreground">{session.lifecycle} · {session.eventCount} events</span>
+      </button>
+      <Button size="icon-sm" variant="ghost" disabled={archiving} onClick={() => onArchive(session.sessionId)} aria-label={`Archive ${session.sessionId}`}><X className="size-3.5" /></Button>
+      <Button size="icon-sm" variant="ghost" disabled={deleting} onClick={() => onDelete(session.sessionId)} aria-label={`Delete ${session.sessionId}`}><Trash2 className="size-3.5" /></Button>
+    </div>
+  ))}</div>;
+}
+
 function PinnedContext({ file, feature, symbol, session }: { file: string; feature: string; symbol: string; session?: RepositorySessionDetail }) {
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
   const chips = [
     file ? `File: ${file}` : null,
     feature ? `Feature: ${feature}` : null,
@@ -377,12 +415,12 @@ function PinnedContext({ file, feature, symbol, session }: { file: string; featu
     ...((session?.context.recentFiles ?? []).slice(0, 3).map((item) => `Recent file: ${item}`)),
     ...((session?.context.recentFeatures ?? []).slice(0, 3).map((item) => `Recent feature: ${item}`)),
     ...((session?.context.recentSymbols ?? []).slice(0, 3).map((item) => `Recent symbol: ${item}`)),
-  ].filter((item): item is string => Boolean(item));
+  ].filter((item): item is string => typeof item === "string" && !removed.has(item));
   return (
     <section className="mt-5" aria-label="Pinned context">
       <div className="flex items-center gap-2"><Pin className="size-4 text-muted-foreground" /><h2 className="type-metadata-label text-muted-foreground">Pinned context</h2></div>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {chips.map((chip) => <span key={chip} className="max-w-full truncate rounded-badge bg-selection px-2 py-1 type-metadata text-foreground">{chip}</span>)}
+        {chips.map((chip) => <button key={chip} className="max-w-full truncate rounded-badge bg-selection px-2 py-1 type-metadata text-foreground focus-ring" onClick={() => setRemoved((current) => new Set([...current, chip]))} aria-label={`Remove ${chip}`}>{chip} ×</button>)}
         {chips.length === 0 ? <p className="type-compact text-muted-foreground">No context pinned.</p> : null}
       </div>
     </section>
@@ -465,7 +503,7 @@ function SessionConversation(props: {
   creating: boolean;
   actionPending: boolean;
   actionError: unknown;
-  onAction(action: "query" | "plan" | "specification" | "insights" | "execution", value: string): void;
+  onAction(action: "query" | "plan" | "specification" | "insights" | "execution", value: string, signal?: AbortSignal): void;
   workflowId: string;
   onWorkflowId(workflowId: string): void;
   attachingWorkflow: boolean;
@@ -477,6 +515,8 @@ function SessionConversation(props: {
   const [action, setAction] = useState<"query" | "plan" | "specification" | "insights" | "execution">("query");
   const listRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -488,8 +528,20 @@ function SessionConversation(props: {
   function submit() {
     if (!props.sessionId || props.actionPending) return;
     if (action !== "insights" && !draft.trim()) return;
-    props.onAction(action, action === "insights" ? "Repository insights" : draft.trim());
+    const controller = new AbortController();
+    abortRef.current = controller;
+    props.onAction(action, action === "insights" ? "Repository insights" : draft.trim(), controller.signal);
     if (action === "query") setDraft("");
+  }
+
+  function updateDraft(value: string) {
+    setDraft(value);
+    requestAnimationFrame(() => {
+      const node = textareaRef.current;
+      if (!node) return;
+      node.style.height = "auto";
+      node.style.height = `${Math.min(node.scrollHeight, 180)}px`;
+    });
   }
 
   if (!props.sessionId) {
@@ -520,9 +572,11 @@ function SessionConversation(props: {
 
       <ActiveContextChips session={props.session} />
 
-      <div ref={listRef} className="max-h-[42dvh] overflow-auto border-y border-border-subtle" aria-label="Conversation history">
+      <ContextComposer session={props.session} draft={draft} onApply={(chip) => updateDraft(draft ? `${draft}\n\n${chip}` : chip)} />
+
+      <div ref={listRef} className="max-h-[42dvh] overflow-auto scroll-smooth border-y border-border-subtle motion-reduce:scroll-auto" aria-label="Conversation history">
         {props.session.events.map((event) => <ConversationEvent key={event.eventId} event={event} onEvidence={props.onEvidence} />)}
-        {props.actionPending ? <div role="status" className="border-t border-border-subtle p-3 type-compact text-muted-foreground">Streaming response placeholder. Waiting for backend result...</div> : null}
+        {props.actionPending ? <TypingIndicator onAbort={() => abortRef.current?.abort()} /> : null}
         {props.session.events.length === 0 && !props.actionPending ? <EmptyState icon={MessageSquare} title="Empty conversation" description="Ask an engineering question or generate an output for this repository session." compact /> : null}
       </div>
 
@@ -530,10 +584,14 @@ function SessionConversation(props: {
         <Selector label="Engineering action" value={action} options={["query", "plan", "specification", "execution", "insights"]} onChange={(value) => setAction(value as typeof action)} />
         <label>
           <span className="type-metadata-label text-muted-foreground">Question or objective</span>
-          <textarea className="mt-1 min-h-20 w-full rounded-control border border-border bg-inset px-3 py-2 type-compact focus-ring" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={action === "insights" ? "No input required" : "Ask a question or describe the engineering objective"} />
+          <textarea ref={textareaRef} className="mt-1 min-h-20 w-full resize-none rounded-control border border-border bg-inset px-3 py-2 type-compact transition-[height,border-color] duration-[150ms] focus-ring" value={draft} disabled={props.actionPending} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Backspace") updateDraft(""); if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={action === "insights" ? "No input required" : "Ask a question or describe the engineering objective"} />
         </label>
-        <Button className="self-end" onClick={submit} disabled={props.actionPending || (action !== "insights" && !draft.trim())}><Send className="size-4" />Run</Button>
+        <div className="flex items-end gap-2">
+          <Button variant="secondary" className="self-end" onClick={() => updateDraft("")} disabled={!draft || props.actionPending}>Clear</Button>
+          {props.actionPending ? <Button variant="destructive" className="self-end" onClick={() => abortRef.current?.abort()}>Abort</Button> : <Button className="self-end" onClick={submit} disabled={action !== "insights" && !draft.trim()}><Send className="size-4" />Run</Button>}
+        </div>
       </div>
+      <SuggestedPrompts onSelect={updateDraft} />
       {props.actionError ? <ErrorState error={props.actionError} compact /> : null}
 
       <EngineeringOutputs outputs={outputs} onEvidence={props.onEvidence} />
@@ -548,6 +606,31 @@ function SessionConversation(props: {
       <div ref={liveRef} className="sr-only" aria-live="polite" />
     </section>
   );
+}
+
+function ContextComposer({ session, draft, onApply }: { session: RepositorySessionDetail; draft: string; onApply(value: string): void }) {
+  const chips = [
+    ...session.context.recentFiles.map((item) => `file:${item}`),
+    ...session.context.recentFeatures.map((item) => `feature:${item}`),
+    ...session.context.recentSymbols.map((item) => `symbol:${item}`),
+    session.context.activeArchitecture ? `architecture:${session.context.activeArchitecture}` : null,
+    session.context.activeWorkflow ? `workflow:${session.context.activeWorkflow}` : null,
+  ].filter((item): item is string => typeof item === "string" && !draft.includes(item));
+  return <section aria-label="Context composer" className="rounded-control border border-border-subtle bg-inset p-3"><div className="flex items-center gap-2"><Pin className="size-4 text-muted-foreground" /><h2 className="type-metadata-label text-muted-foreground">Context composer</h2></div><div className="mt-2 flex flex-wrap gap-1.5">{chips.map((chip) => <button key={chip} className="inline-flex items-center gap-1 rounded-badge bg-interactive px-2 py-1 type-metadata text-text-secondary hover:bg-hover hover:text-foreground focus-ring" onClick={() => onApply(`Attach ${chip}`)}><Plus className="size-3" />{chip}</button>)}{chips.length === 0 ? <p className="type-compact text-muted-foreground">No additional context suggestions.</p> : null}</div></section>;
+}
+
+function SuggestedPrompts({ onSelect }: { onSelect(value: string): void }) {
+  const prompts = [
+    "Summarize the risk in this implementation.",
+    "Generate a step-by-step plan for this change.",
+    "Draft an engineering specification with acceptance criteria.",
+    "Check execution readiness and missing context.",
+  ];
+  return <div aria-label="Suggested prompts" className="flex flex-wrap gap-1.5">{prompts.map((prompt) => <button key={prompt} className="rounded-badge border border-border-subtle px-2 py-1 type-metadata text-muted-foreground hover:bg-hover hover:text-foreground focus-ring" onClick={() => onSelect(prompt)}>{prompt}</button>)}</div>;
+}
+
+function TypingIndicator({ onAbort }: { onAbort(): void }) {
+  return <div role="status" className="border-t border-border-subtle p-3"><div className="flex items-center justify-between gap-3"><p className="type-metadata-label text-muted-foreground">Giro is composing</p><Button variant="ghost" size="sm" onClick={onAbort}>Abort request</Button></div><div className="mt-3 space-y-2" aria-label="Streaming placeholder"><Skeleton className="h-3 w-2/3" /><Skeleton className="h-3 w-5/6" /><Skeleton className="h-3 w-1/2" /></div><p className="mt-2 type-compact text-muted-foreground">Streaming placeholder. Waiting for backend result...</p></div>;
 }
 
 function ActiveContextChips({ session }: { session: RepositorySessionDetail }) {
@@ -569,10 +652,18 @@ function ConversationEvent({ event, onEvidence }: { event: RepositorySessionEven
         <h2 className="capitalize type-panel-title">{heading}</h2>
         <button className="type-metadata text-muted-foreground underline-offset-4 hover:underline focus-ring" onClick={() => onEvidence(event.kind)}>{event.referenceId}</button>
       </div>
-      <p className="mt-2 whitespace-pre-wrap type-compact text-text-secondary">{event.summary}</p>
+      <div className="mt-2"><MarkdownMessage>{event.summary}</MarkdownMessage></div>
+      <p className="mt-2 type-metadata text-muted-foreground">{new Date(event.createdAt).toLocaleString()}</p>
+      <ReasoningDetails attributes={event.attributes} />
       {!isEmptyValue(event.attributes) ? <details className="mt-2"><summary className="cursor-pointer type-metadata-label text-muted-foreground">Request metadata</summary><div className="mt-2">{renderValue(event.attributes)}</div></details> : null}
     </article>
   );
+}
+
+function ReasoningDetails({ attributes }: { attributes: JsonRecord }) {
+  const reasoning = attributes.reasoning ?? attributes.rationale ?? attributes.analysis;
+  if (typeof reasoning !== "string" || !reasoning.trim()) return null;
+  return <details className="mt-3 rounded-control bg-inset p-3"><summary className="cursor-pointer type-metadata-label text-muted-foreground">Reasoning</summary><div className="mt-2"><MarkdownMessage>{reasoning}</MarkdownMessage></div></details>;
 }
 
 function EngineeringOutputs({ outputs, onEvidence }: { outputs: RepositorySessionEvent[]; onEvidence(key: string): void }) {
@@ -755,27 +846,63 @@ function RenderedFile({ file }: { file: FileReadResult }) {
   );
 }
 
-function EvidencePanel({ evidence, metadata, diagnostics }: { evidence: Evidence; metadata: RepositoryMetadata; diagnostics: NormalizedDiagnostic[] }) {
+function EvidencePanel({ evidence, metadata, diagnostics, onOpenFile, onOpenSymbol }: { evidence: Evidence; metadata: RepositoryMetadata; diagnostics: NormalizedDiagnostic[]; onOpenFile(path: string): void; onOpenSymbol(symbol: string): void }) {
+  const detailsText = stringifyEvidence(evidence.value);
+  const confidence = findNestedValue(evidence.value, "confidence");
   return (
-    <aside aria-label="Evidence" className="h-full overflow-auto bg-panel p-4">
-      <p className="type-section-eyebrow text-muted-foreground">Evidence</p>
-      <h2 className="mt-1 type-section-title">{evidence.title}</h2>
-      <div className="mt-4 grid gap-3">
-        <EvidenceLine label="Kind" value={evidence.kind} />
-        <EvidenceLine label="Repository" value={metadata.repositoryId} />
-        <EvidenceLine label="Revision" value={metadata.publishedRevision ?? "missing"} />
-        {evidence.requestId ? <EvidenceLine label="Request ID" value={evidence.requestId} /> : null}
-        {evidence.confidence !== undefined ? <EvidenceLine label="Confidence" value={String(evidence.confidence)} /> : null}
+    <aside aria-label="Evidence" className="h-full overflow-auto bg-panel">
+      <div className="sticky top-0 z-10 border-b border-border-subtle bg-panel p-4">
+        <p className="type-section-eyebrow text-muted-foreground">Evidence</p>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <h2 className="type-section-title">{evidence.title}</h2>
+          <CopyControl value={detailsText} label={`Copy ${evidence.title} evidence`} />
+        </div>
       </div>
-      <div className="mt-5">
-        <h3 className="type-metadata-label text-muted-foreground">Details</h3>
-        <div className="mt-2">{renderValue(evidence.value)}</div>
-      </div>
-      <div className="mt-5">
-        <h3 className="type-metadata-label text-muted-foreground">Diagnostics</h3>
-        {diagnostics.length > 0 ? <div className="mt-2 space-y-2">{diagnostics.map((item) => <DiagnosticItem key={`${item.code}-${item.message}`} item={item} />)}</div> : <p className="mt-2 type-compact text-muted-foreground">No diagnostics returned.</p>}
+      <div className="p-4">
+        <div className="grid gap-3">
+          <EvidenceLine label="Kind" value={evidence.kind} />
+          <EvidenceLine label="Repository" value={metadata.repositoryId} />
+          <EvidenceLine label="Revision" value={metadata.publishedRevision ?? "missing"} />
+          {evidence.requestId ? <EvidenceLine label="Request ID" value={evidence.requestId} /> : null}
+          {confidence !== undefined ? <EvidenceLine label="Confidence" value={typeof confidence === "object" ? JSON.stringify(confidence) : String(confidence)} /> : null}
+        </div>
+        <details className="mt-5" open>
+          <summary className="cursor-pointer type-metadata-label text-muted-foreground">Details</summary>
+          <div className="mt-2">{renderEvidenceValue(evidence.value, onOpenFile, onOpenSymbol)}</div>
+        </details>
+        <details className="mt-5" open={diagnostics.length > 0}>
+          <summary className="cursor-pointer type-metadata-label text-muted-foreground">Diagnostics</summary>
+          {diagnostics.length > 0 ? <div className="mt-2 space-y-2">{diagnostics.map((item) => <DiagnosticItem key={`${item.code}-${item.message}`} item={item} />)}</div> : <p className="mt-2 type-compact text-muted-foreground">No diagnostics returned.</p>}
+        </details>
       </div>
     </aside>
+  );
+}
+
+function renderEvidenceValue(value: JsonValue | NormalizedDiagnostic[] | undefined, onOpenFile: (path: string) => void, onOpenSymbol: (symbol: string) => void): ReactNode {
+  if (Array.isArray(value)) {
+    return <div className="grid gap-2">{value.map((item, index) => <EvidenceCard key={index} value={item as JsonValue} index={index} onOpenFile={onOpenFile} onOpenSymbol={onOpenSymbol} />)}</div>;
+  }
+  return renderValue(value);
+}
+
+function EvidenceCard({ value, index, onOpenFile, onOpenSymbol }: { value: JsonValue; index: number; onOpenFile(path: string): void; onOpenSymbol(symbol: string): void }) {
+  const record = asRecord(value);
+  if (!record) return <div className="type-compact">{String(value)}</div>;
+  const file = stringField(record, ["file", "path", "filePath", "relativeFilePath"]) ?? findStringFieldDeep(record, ["file", "path", "filePath", "relativeFilePath"]);
+  const symbol = stringField(record, ["symbol", "symbolId", "qualifiedName", "name"]) ?? findStringFieldDeep(record, ["symbol", "symbolId", "qualifiedName", "name"]);
+  const range = findLineRange(record);
+  return (
+    <details className="rounded-control border border-border-subtle p-3" open={index < 2}>
+      <summary className="cursor-pointer type-compact-strong">{file ?? symbol ?? `Evidence ${index + 1}`}</summary>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {file ? <Button variant="ghost" size="sm" onClick={() => onOpenFile(file)}>Open related file</Button> : null}
+        {symbol ? <Button variant="ghost" size="sm" onClick={() => onOpenSymbol(symbol)}>Open related symbol</Button> : null}
+        <CopyControl value={JSON.stringify(record, null, 2)} label="Copy evidence item" />
+      </div>
+      {range ? <p className="mt-2 type-metadata text-muted-foreground">Lines {range.start} - {range.end}</p> : null}
+      <div className="mt-3">{renderValue(record)}</div>
+    </details>
   );
 }
 
@@ -970,6 +1097,86 @@ function cellValue(value: JsonValue | undefined): ReactNode {
   if (Array.isArray(value)) return <span>{value.map((item) => typeof item === "object" ? JSON.stringify(item) : String(item)).join(", ")}</span>;
   if (typeof value === "object") return <span>{JSON.stringify(value)}</span>;
   return <span className="break-words">{String(value)}</span>;
+}
+
+function stringifyEvidence(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value ?? null, null, 2);
+  } catch {
+    return String(value ?? "");
+  }
+}
+
+function findNestedValue(value: unknown, key: string): JsonValue | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findNestedValue(item, key);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (key in record) return record[key] as JsonValue;
+  for (const item of Object.values(record)) {
+    const found = findNestedValue(item, key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function stringField(record: JsonRecord, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function findStringFieldDeep(value: unknown, keys: string[]): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringFieldDeep(item, keys);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  const record = value as JsonRecord;
+  const direct = stringField(record, keys);
+  if (direct) return direct;
+  for (const item of Object.values(record)) {
+    const found = findStringFieldDeep(item, keys);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function findLineRange(value: unknown): { start: string; end: string } | null {
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findLineRange(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  const record = value as JsonRecord;
+  const start = record.startLine ?? record.line;
+  const end = record.endLine ?? start;
+  if (typeof start === "string" || typeof start === "number") {
+    return { start: String(start), end: typeof end === "string" || typeof end === "number" ? String(end) : String(start) };
+  }
+  for (const item of Object.values(record)) {
+    const found = findLineRange(item);
+    if (found) return found;
+  }
+  return null;
+}
+
+function LoadingRows({ rows }: { rows: number }) {
+  return <div role="status" aria-label="Loading rows" className="space-y-2 p-2">{Array.from({ length: rows }, (_, index) => <Skeleton key={index} className="h-9" />)}</div>;
 }
 
 function isEmptyValue(value: unknown): boolean {
