@@ -234,7 +234,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
   }
 
   const leftPane = (
-      <WorkspaceLeftPane
+    <WorkspaceLeftPane
       metadata={metadata}
       overview={overview.data?.data}
       sessions={sessions.data?.data.sessions ?? []}
@@ -346,7 +346,7 @@ export function RepositoryWorkspace({ owner, repo, metadata }: { owner: string; 
         <div className={cn(mobilePane !== "evidence" && "hidden")}>{rightPane}</div>
       </div> : null}
 
-      <footer role="status" className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-subtle bg-inset px-4 py-1 type-metadata text-muted-foreground">
+      <footer role="status" aria-label="Workspace status" className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-subtle bg-inset px-4 py-1 type-metadata text-muted-foreground">
         <span>Gateway {guard.ready ? "available" : "unavailable"}</span>
         <span>Session {sessionId || "none"}</span>
         <span>Revision {metadata.publishedRevision?.slice(0, 12) ?? "missing"}</span>
@@ -394,19 +394,25 @@ function CommandPalette({ open, items, onClose, onSelect }: { open: boolean; ite
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const filtered = useMemo(() => filterSearchItems(items, query), [items, query]);
   const groups = useMemo(() => groupSearchItems(filtered), [filtered]);
   useEffect(() => {
     if (!open) return;
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setQuery("");
     setIndex(0);
     requestAnimationFrame(() => inputRef.current?.focus());
+    return () => {
+      restoreFocusRef.current?.focus();
+    };
   }, [open]);
   useEffect(() => {
     setIndex(0);
   }, [query]);
   if (!open) return null;
   const active = filtered[index];
+  const activeId = active ? `command-result-${active.id.replace(/[^a-zA-Z0-9_-]/g, "-")}` : undefined;
   return (
     <div className="fixed inset-0 z-50 bg-background/70 p-4 backdrop-blur-sm motion-reduce:transition-none" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role="dialog" aria-modal="true" aria-label="Command palette" className="mx-auto mt-[8dvh] max-w-2xl overflow-hidden rounded-panel border border-border bg-panel shadow-overlay">
@@ -434,10 +440,12 @@ function CommandPalette({ open, items, onClose, onSelect }: { open: boolean; ite
             className="h-12 min-w-0 flex-1 bg-transparent type-compact outline-none"
             placeholder="Search files, symbols, features, sessions, and commands"
             aria-label="Global repository search"
+            aria-controls="command-palette-results"
+            aria-activedescendant={activeId}
           />
           <span className="rounded-badge bg-inset px-2 py-1 type-metadata text-muted-foreground">Esc</span>
         </div>
-        <div className="max-h-[60dvh] overflow-auto p-2" role="listbox" aria-label="Search results">
+        <div id="command-palette-results" className="max-h-[60dvh] overflow-auto p-2" role="listbox" aria-label="Search results">
           {filtered.length === 0 ? <EmptyState icon={Search} title="No results" description="Search uses currently loaded repository intelligence and local recent activity." compact /> : null}
           {Object.entries(groups).map(([group, groupItems]) => (
             <section key={group} aria-label={`${group} results`} className="py-1">
@@ -448,6 +456,7 @@ function CommandPalette({ open, items, onClose, onSelect }: { open: boolean; ite
                 return (
                   <button
                     key={item.id}
+                    id={`command-result-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`}
                     role="option"
                     aria-selected={selected}
                     className={cn("flex min-h-11 w-full items-center gap-3 rounded-control px-2 text-left transition-colors duration-[150ms] focus-ring", selected ? "bg-selection text-foreground" : "hover:bg-hover")}
@@ -836,7 +845,7 @@ function SessionConversation(props: {
 
       <ContextComposer session={props.session} draft={draft} onApply={(chip) => updateDraft(draft ? `${draft}\n\n${chip}` : chip)} />
 
-      <div ref={listRef} className="max-h-[42dvh] overflow-auto scroll-smooth border-y border-border-subtle motion-reduce:scroll-auto" aria-label="Conversation history">
+      <div ref={listRef} className="max-h-[42dvh] overflow-auto scroll-smooth rounded-control border border-border-subtle bg-panel motion-reduce:scroll-auto" aria-label="Conversation history">
         {props.session.events.map((event) => <ConversationEvent key={event.eventId} event={event} onEvidence={props.onEvidence} />)}
         {props.actionPending ? <TypingIndicator onAbort={() => abortRef.current?.abort()} /> : null}
         {props.session.events.length === 0 && !props.actionPending ? <EmptyState icon={MessageSquare} title="Empty conversation" description="Ask an engineering question or generate an output for this repository session." compact /> : null}
@@ -909,13 +918,13 @@ function ActiveContextChips({ session }: { session: RepositorySessionDetail }) {
 function ConversationEvent({ event, onEvidence }: { event: RepositorySessionEvent; onEvidence(key: string): void }) {
   const heading = event.kind.replace(/_/g, " ");
   return (
-    <article className="border-t border-border-subtle p-3 first:border-t-0" aria-label={`${event.kind} event`}>
+    <article className={cn("border-t border-border-subtle p-3 first:border-t-0", event.kind === "query" ? "bg-inset/50" : "bg-panel")} aria-label={`${event.kind} event`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="capitalize type-panel-title">{heading}</h2>
         <button className="type-metadata text-muted-foreground underline-offset-4 hover:underline focus-ring" onClick={() => onEvidence(event.kind)}>{event.referenceId}</button>
       </div>
       <div className="mt-2"><MarkdownMessage>{event.summary}</MarkdownMessage></div>
-      <p className="mt-2 type-metadata text-muted-foreground">{new Date(event.createdAt).toLocaleString()}</p>
+      <time className="mt-2 block type-metadata text-muted-foreground" dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time>
       <ReasoningDetails attributes={event.attributes} />
       {!isEmptyValue(event.attributes) ? <details className="mt-2"><summary className="cursor-pointer type-metadata-label text-muted-foreground">Request metadata</summary><div className="mt-2">{renderValue(event.attributes)}</div></details> : null}
     </article>
@@ -968,7 +977,7 @@ function WorkflowPanel(props: {
         <Button variant="secondary" onClick={() => props.onAttach(props.workflowId.trim())} disabled={props.attaching || !props.workflowId.trim()}>Attach workflow</Button>
       </div>
       {props.error ? <div className="mt-3"><ErrorState error={props.error} compact /></div> : null}
-      <details className="mt-3"><summary className="cursor-pointer type-metadata-label text-muted-foreground">Timeline</summary>{props.session.events.length > 0 ? <ol className="mt-2 space-y-2">{props.session.events.map((event) => <li className="type-compact" key={event.eventId}>{event.sequence}. {event.kind} · {event.createdAt}</li>)}</ol> : <p className="mt-2 type-compact text-muted-foreground">No workflow timeline events returned.</p>}</details>
+      <details className="mt-3"><summary className="cursor-pointer type-metadata-label text-muted-foreground">Timeline</summary>{props.session.events.length > 0 ? <ol className="mt-3 space-y-3 border-l border-border-subtle pl-3">{props.session.events.map((event) => <li className="type-compact" key={event.eventId}><span className="type-compact-strong">{event.sequence}. {event.kind}</span><time className="mt-1 block type-metadata text-muted-foreground" dateTime={event.createdAt}>{event.createdAt}</time></li>)}</ol> : <p className="mt-2 type-compact text-muted-foreground">No workflow timeline events returned.</p>}</details>
     </section>
   );
 }
@@ -1081,7 +1090,7 @@ function FeatureExplorer(props: {
   onFeature(feature: string): void;
   onEvidence(key: string): void;
 }) {
-  const featureNames = featureOptions(props.overview);
+  const featureNames = useMemo(() => featureOptions(props.overview), [props.overview]);
   const [operation, setOperation] = useState<FeatureNavigationOperation>("feature");
   const selected = props.selectedFeature || featureNames[0] || "";
   const query = useFeatureNavigation(props.owner, props.repo, props.metadata, operation, selected, Boolean(selected));
@@ -1154,7 +1163,7 @@ function SymbolExplorer(props: {
 }) {
   const [operation, setOperation] = useState<SemanticNavigationOperation>("definition");
   const [draft, setDraft] = useState(props.selectedSymbol || "");
-  const symbolNames = symbolOptions(props.overview);
+  const symbolNames = useMemo(() => symbolOptions(props.overview), [props.overview]);
   const queryValue = props.selectedSymbol || draft;
   const query = useSemanticNavigation(props.owner, props.repo, props.metadata, operation, queryValue, Boolean(queryValue));
   return (
