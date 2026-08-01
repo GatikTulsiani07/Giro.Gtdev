@@ -18,16 +18,20 @@ describe("empty dashboard onboarding", () => {
 
   it("presents the repository workflow in order with one primary connection action", () => {
     render(<DashboardScreen />);
-    expect(screen.getByRole("heading", { name: "Establish repository context first." })).toBeInTheDocument();
-    const steps = within(screen.getByRole("list", { name: "Repository onboarding steps" })).getAllByRole("listitem");
+    expect(screen.getByRole("heading", { name: "Connect your first repository." })).toBeInTheDocument();
+    const steps = within(screen.getByRole("list", { name: "Developer onboarding steps" })).getAllByRole("listitem");
     expect(steps.map((step) => within(step).getByRole("heading").textContent)).toEqual([
-      "Connect a repository",
-      "Giro indexes repository knowledge",
-      "Explore architecture",
-      "Search repository evidence",
-      "Ask repository-scoped questions",
+      "Connect Repository",
+      "Wait for Index",
+      "Open Workspace",
+      "Ask First Question",
+      "Create First Session",
+      "Explore Architecture",
     ]);
-    expect(screen.getByRole("link", { name: "Connect repository" })).toHaveAttribute("href", "/repositories/connect");
+    expect(screen.getAllByRole("link", { name: "Connect repository" })[0]).toHaveAttribute("href", "/repositories/connect");
+    expect(screen.getByRole("complementary", { name: "Demo repository walkthrough" })).toHaveTextContent("giro-demo/sample-platform");
+    expect(screen.getByRole("link", { name: /Open walkthrough/ })).toHaveAttribute("href", "/repositories/giro-demo/sample-platform");
+    expect(screen.getByRole("link", { name: /Explore architecture/ })).toHaveAttribute("href", "/repositories/giro-demo/sample-platform?view=architecture&feature=Authentication");
     expect(screen.queryByRole("heading", { name: "Recent sessions" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Engineering command center")).not.toBeInTheDocument();
   });
@@ -39,6 +43,6 @@ describe("empty dashboard onboarding", () => {
       "Loading dashboard repositories and investigations.",
     );
     expect(screen.getByLabelText("Engineering command center")).toHaveAttribute("aria-busy", "true");
-    expect(screen.queryByRole("list", { name: "Repository onboarding steps" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Developer onboarding steps" })).not.toBeInTheDocument();
   });
 });
