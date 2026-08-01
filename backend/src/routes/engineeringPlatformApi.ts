@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { fail, ok } from "../lib/response.js";
 import { setRequestLogContext } from "../middleware/requestContext.js";
@@ -105,6 +105,15 @@ function parseIfMatch(value: string | undefined): number {
       "precondition_failed", "If-Match must contain a workflow version.");
   }
   return Number(match[1]);
+}
+
+function routeParam(c: Context, name: string): string {
+  const value = c.req.param(name);
+  if (!value) {
+    throw new EngineeringPlatformApiError(
+      "invalid_request", `The ${name} route parameter is required.`);
+  }
+  return value;
 }
 
 function publicArtifact(artifact: any) {
@@ -219,7 +228,7 @@ function historyFor(workflow: any) {
     });
 }
 
-function mapError(c: any, error: unknown, metrics: MetricsRegistry) {
+function mapError(c: Context, error: unknown, metrics: MetricsRegistry) {
   if (error instanceof EngineeringPlatformApiError) {
     const status = {
       invalid_request: 400,
@@ -286,8 +295,8 @@ export function createEngineeringPlatformApiRoute(options: {
     return publicWorkflow(workflow, session?.session.sessionId ?? null);
   };
 
-  const handled = (handler: (c: any) => Promise<Response>) =>
-    async (c: any) => {
+  const handled = (handler: (c: Context) => Promise<Response>) =>
+    async (c: Context) => {
       try {
         return await handler(c);
       } catch (error) {
@@ -360,7 +369,8 @@ export function createEngineeringPlatformApiRoute(options: {
 
   route.get("/workflows/:workflowId", handled(async (c) => {
     const user = requireAuthenticatedUser(c);
-    const workflow = await service.getWorkflow(user.userId, c.req.param("workflowId"));
+    const workflow = await service.getWorkflow(user.userId,
+      routeParam(c, "workflowId"));
     const resource = await workflowResource(user.userId, workflow);
     c.header("ETag", `\"${resource.version}\"`);
     return ok(c, resource);
@@ -371,7 +381,7 @@ export function createEngineeringPlatformApiRoute(options: {
     metric: "approval" | "retry" | "resume" | "cancellation" | "replay",
   ) => handled(async (c) => {
     const user = requireAuthenticatedUser(c);
-    const workflowId = c.req.param("workflowId");
+    const workflowId = routeParam(c, "workflowId");
     const expectedVersion = parseIfMatch(c.req.header("If-Match"));
     const idempotencyKey = c.req.header("Idempotency-Key");
     if (!idempotencyKey) {
@@ -416,7 +426,8 @@ export function createEngineeringPlatformApiRoute(options: {
   route.get("/workflows/:workflowId/history", handled(async (c) => {
     const user = requireAuthenticatedUser(c);
     const query = paginationSchema.parse(c.req.query());
-    const workflow = await service.getWorkflow(user.userId, c.req.param("workflowId"));
+    const workflow = await service.getWorkflow(user.userId,
+      routeParam(c, "workflowId"));
     const result = page(
       historyFor(workflow), query.limit, query.cursor,
       (item) => String(item.version),
@@ -429,10 +440,11 @@ export function createEngineeringPlatformApiRoute(options: {
   route.get("/workflows/:workflowId/artifacts", handled(async (c) => {
     const user = requireAuthenticatedUser(c);
     const query = paginationSchema.parse(c.req.query());
-    await service.getWorkflow(user.userId, c.req.param("workflowId"));
+    const workflowId = routeParam(c, "workflowId");
+    await service.getWorkflow(user.userId, workflowId);
     try {
       const artifact = publicArtifact(await service.artifact(
-        user.userId, c.req.param("workflowId")));
+        user.userId, workflowId));
       return ok(c, page([artifact], query.limit, query.cursor,
         (item) => item.artifactId));
     } catch (error) {
@@ -447,7 +459,7 @@ export function createEngineeringPlatformApiRoute(options: {
   route.get("/workflows/:workflowId/artifacts/:artifactId", handled(async (c) => {
     const user = requireAuthenticatedUser(c);
     return ok(c, publicArtifact(await service.artifact(
-      user.userId, c.req.param("workflowId"), c.req.param("artifactId"))));
+      user.userId, routeParam(c, "workflowId"), routeParam(c, "artifactId"))));
   }));
 
   for (const [path, method] of [
@@ -458,14 +470,14 @@ export function createEngineeringPlatformApiRoute(options: {
     route.get(`/workflows/:workflowId/${path}`, handled(async (c) => {
       const user = requireAuthenticatedUser(c);
       return ok(c, publicStageResource(await service[method](
-        user.userId, c.req.param("workflowId"))));
+        user.userId, routeParam(c, "workflowId"))));
     }));
   }
 
   route.get("/repositories/:owner/:repo/knowledge", handled(async (c) => {
     const user = requireAuthenticatedUser(c);
     const query = knowledgeQuerySchema.parse(c.req.query());
-    const repositoryId = `${c.req.param("owner")}/${c.req.param("repo")}`;
+    const repositoryId = `${routeParam(c, "owner")}/${routeParam(c, "repo")}`;
     const entries = await service.retrieveKnowledge({
       ownerId: user.userId,
       repositoryId,
@@ -487,16 +499,16 @@ export function createEngineeringPlatformApiRoute(options: {
   route.get("/repositories/:owner/:repo/knowledge/:knowledgeId", handled(
     async (c) => {
       const user = requireAuthenticatedUser(c);
-      const repositoryId = `${c.req.param("owner")}/${c.req.param("repo")}`;
+      const repositoryId = `${routeParam(c, "owner")}/${routeParam(c, "repo")}`;
       return ok(c, publicKnowledge(await service.getKnowledge(
-        user.userId, repositoryId, c.req.param("knowledgeId"))));
+        user.userId, repositoryId, routeParam(c, "knowledgeId"))));
     },
   ));
 
   route.get("/repositories/:owner/:repo/memory", handled(async (c) => {
     const user = requireAuthenticatedUser(c);
     const query = knowledgeQuerySchema.parse(c.req.query());
-    const repositoryId = `${c.req.param("owner")}/${c.req.param("repo")}`;
+    const repositoryId = `${routeParam(c, "owner")}/${routeParam(c, "repo")}`;
     let memories = (await service.memories(user.userId, repositoryId))
       .map(publicMemory)
       .filter((memory) =>

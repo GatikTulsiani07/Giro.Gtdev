@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { requireAuthenticatedUser } from "../services/auth/authContext.js";
 import { setAuthenticatedUser } from "../services/auth/authContext.js";
@@ -83,7 +83,7 @@ const schemas = {
 } as const;
 
 const pathPart = z.string().regex(/^[A-Za-z0-9._-]{1,200}$/);
-const requestId = (c: any) => String(c.get("requestId"));
+const requestId = (c: Context) => String(c.get("requestId"));
 const serviceByPath: Readonly<Record<string, RepositoryGatewayService>> = {
   overview: "repository-overview",
   query: "repository-query",
@@ -97,7 +97,7 @@ const serviceByPath: Readonly<Record<string, RepositoryGatewayService>> = {
   evolution: "repository-evolution",
 };
 
-function gatewayRequestCoordinates(c: any) {
+function gatewayRequestCoordinates(c: Context) {
   const parts = new URL(c.req.url).pathname.split("/").filter(Boolean);
   const gatewayIndex = parts.indexOf("repository-gateway");
   const owner = parts[gatewayIndex + 1] ?? "";
@@ -110,7 +110,7 @@ function gatewayRequestCoordinates(c: any) {
 }
 
 export async function repositoryApiGatewayRateLimitFailure(
-  c: any,
+  c: Context,
   retryAfter: number,
 ) {
   const receivedAt = new Date().toISOString();
@@ -140,7 +140,7 @@ export async function repositoryApiGatewayRateLimitFailure(
 }
 
 export function repositoryApiGatewayAuthMiddleware() {
-  return async (c: any, next: () => Promise<void>) => {
+  return async (c: Context, next: () => Promise<void>) => {
     const token = parseBearerToken(c.req.header("Authorization"));
     const payload = token ? await verifyAccessToken(token) : null;
     if (payload) {
@@ -194,14 +194,14 @@ export function createRepositoryApiGatewayRoute(options: {
   const gateway = options.gateway ?? runtimeRepositoryApiGateway;
   const route = new Hono();
 
-  const repository = (c: any) => {
+  const repository = (c: Context) => {
     const owner = pathPart.parse(c.req.param("owner"));
     const repo = pathPart.parse(c.req.param("repo"));
     return `${owner}/${repo}`;
   };
 
   const errorResponse = (
-    c: any,
+    c: Context,
     service: RepositoryGatewayService,
     repositoryId: string,
     requestedRevision: string,

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { setRequestLogContext } from "../middleware/requestContext.js";
 import {
@@ -165,7 +165,7 @@ export function repositorySessionApiAuthMiddleware(
   metrics: Pick<MetricsRegistry, "incrementRepositorySessionApi"> =
     runtimeMetrics,
 ) {
-  return async (c: any, next: () => Promise<void>) => {
+  return async (c: Context, next: () => Promise<void>) => {
     if (getAuthenticatedUser(c)) {
       await next();
       return;
@@ -210,8 +210,8 @@ export function createRepositorySessionsApiRoute(options: {
 
   const handled = (
     operation: string,
-    handler: (c: any) => Promise<Response>,
-  ) => async (c: any) => {
+    handler: (c: Context) => Promise<Response>,
+  ) => async (c: Context) => {
     try {
       setRequestLogContext(c, {
         operation: `repository_session_api.${operation}`,
@@ -229,7 +229,7 @@ export function createRepositorySessionsApiRoute(options: {
     }
   };
 
-  const sessionId = (c: any) =>
+  const sessionId = (c: Context) =>
     RepositorySessionApiSchemas.params.parse({
       sessionId: c.req.param("sessionId"),
     }).sessionId;

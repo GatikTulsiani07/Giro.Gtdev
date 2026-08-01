@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { fail, ok } from "../lib/response.js";
 import { createValidationError } from "../lib/apiErrors.js";
@@ -19,7 +19,7 @@ export function createRepositoryMetadataApiRoute(options: {
   const service = options.service ?? runtimeRepositoryMetadataApiService;
   const route = new Hono();
 
-  const failure = (c: any, error: unknown) => {
+  const failure = (c: Context, error: unknown) => {
     if (error instanceof z.ZodError) {
       return fail(c, createValidationError(error.flatten()), 400);
     }
