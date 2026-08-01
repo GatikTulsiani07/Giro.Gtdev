@@ -71,6 +71,79 @@ export interface RepositoryGatewayEnvelope<T> {
   timestamps: { receivedAt: string; completedAt: string };
 }
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+export type JsonRecord = Record<string, JsonValue>;
+
+export type FeatureNavigationOperation =
+  | "feature"
+  | "entry-points"
+  | "exit-points"
+  | "files"
+  | "symbols"
+  | "dependencies"
+  | "upstream"
+  | "downstream";
+
+export type SemanticNavigationOperation =
+  | "definition"
+  | "references"
+  | "implementations"
+  | "callers"
+  | "callees"
+  | "inheritance"
+  | "dependencies";
+
+export interface RepositoryGatewayOverview {
+  architecture?: JsonRecord;
+  codeOrganization?: JsonRecord;
+  quality?: JsonRecord;
+  evolution?: JsonRecord;
+  metrics?: JsonRecord;
+  subsystems?: JsonValue[];
+  symbols?: JsonRecord;
+  [key: string]: JsonValue | undefined;
+}
+
+export interface FeatureNavigationPayload {
+  feature?: JsonRecord | null;
+  features?: JsonValue[];
+  relationships?: JsonValue[];
+  flows?: JsonValue[];
+  [key: string]: JsonValue | undefined;
+}
+
+export interface SemanticNavigationPayload {
+  query?: string;
+  symbols?: JsonValue[];
+  relationships?: JsonValue[];
+  [key: string]: JsonValue | undefined;
+}
+
+export interface DirectoryEntry {
+  name?: string;
+  path?: string;
+  relativePath?: string;
+  type?: "file" | "directory" | string;
+  sizeBytes?: number;
+  [key: string]: JsonValue | undefined;
+}
+
+export interface FileReadResult {
+  filePath: string;
+  content: string;
+  lineCount: number;
+  language: string;
+  sizeBytes: number;
+  [key: string]: JsonValue;
+}
+
+export interface FileTreeNode {
+  name: string;
+  type: "file" | "directory";
+  children?: FileTreeNode[];
+}
+
 export interface RepositorySessionState {
   sessionId: string;
   repositoryId: string;

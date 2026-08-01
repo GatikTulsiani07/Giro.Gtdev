@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiClientError, apiRequest } from "@/services/api/client";
 import { normalizeApiBaseUrl } from "@/services/api/config";
+import { repositoryGatewayClient } from "@/services/api/gateway";
 import { encodeRepositoryId, repositoriesApi } from "@/services/api/repositories";
+import { repositoryWorkspaceApi } from "@/services/api/repository-workspace";
 import { sessionsApi } from "@/services/api/sessions";
 
 function jsonResponse(body: unknown, status = 200, requestId = "req-1") {
@@ -85,5 +87,55 @@ describe("API contract client", () => {
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).body).toBe(JSON.stringify({ owner: "acme", repo: "platform", title: "Architecture" }));
     expect(fetchMock.mock.calls[1]?.[0]).toContain("/sessions/s1");
     expect((fetchMock.mock.calls[2]?.[1] as RequestInit).body).toBe(JSON.stringify({ question: "Where does it start?" }));
+  });
+
+  it("treats HTTP 207 gateway responses as usable partial data", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      requestId: "gateway-207",
+      repositoryId: "acme/platform",
+      revision: "1111111111111111111111111111111111111111",
+      service: "repository-overview",
+      status: "partial",
+      payload: { metrics: { filesAnalyzed: 1 } },
+      diagnostics: [{ code: "partial", message: "Partial result", severity: "warning" }],
+      timestamps: { receivedAt: "2026-07-31T00:00:00.000Z", completedAt: "2026-07-31T00:00:00.000Z" },
+    }, 207)));
+    await expect(repositoryGatewayClient.get("/api/v1/repository-gateway/acme/platform/overview?revision=1111111111111111111111111111111111111111", "token"))
+      .resolves.toMatchObject({ partial: true, requestId: "gateway-207", data: { metrics: { filesAnalyzed: 1 } } });
+  });
+
+  it.each([
+    [409, "gateway_stale_revision"],
+    [424, "gateway_intelligence_unavailable"],
+  ])("normalizes gateway %i errors with diagnostics", async (status, code) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      requestId: `gateway-${status}`,
+      repositoryId: "acme/platform",
+      revision: "1111111111111111111111111111111111111111",
+      service: "repository-overview",
+      status: "error",
+      payload: null,
+      diagnostics: [{ code, message: "Gateway cannot serve this revision.", severity: "error" }],
+      timestamps: { receivedAt: "2026-07-31T00:00:00.000Z", completedAt: "2026-07-31T00:00:00.000Z" },
+    }, status)));
+    await expect(repositoryGatewayClient.get("/api/v1/repository-gateway/acme/platform/overview?revision=1111111111111111111111111111111111111111", "token"))
+      .rejects.toMatchObject({ status, code, requestId: `gateway-${status}` });
+  });
+
+  it("passes AbortSignal through workspace gateway and tool requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      requestId: "gateway-signal",
+      repositoryId: "acme/platform",
+      revision: "1111111111111111111111111111111111111111",
+      service: "semantic-navigation",
+      status: "ok",
+      payload: { symbols: [] },
+      diagnostics: [],
+      timestamps: { receivedAt: "2026-07-31T00:00:00.000Z", completedAt: "2026-07-31T00:00:00.000Z" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    await repositoryWorkspaceApi.semantic("token", "acme", "platform", "1111111111111111111111111111111111111111", "definition", "RepositoryWorkspace", controller.signal);
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal).toBe(controller.signal);
   });
 });
