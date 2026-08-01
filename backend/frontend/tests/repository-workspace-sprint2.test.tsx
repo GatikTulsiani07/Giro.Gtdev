@@ -13,6 +13,13 @@ const queryMocks = vi.hoisted(() => ({
   semantic: vi.fn(),
   directory: vi.fn(),
   file: vi.fn(),
+  engineeringSessions: vi.fn(),
+  engineeringSession: vi.fn(),
+  createEngineeringSession: vi.fn(),
+  archiveEngineeringSession: vi.fn(),
+  deleteEngineeringSession: vi.fn(),
+  engineeringAction: vi.fn(),
+  attachWorkflow: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,6 +38,16 @@ vi.mock("@/hooks/use-repository-workspace", async () => {
     useRepositoryFile: queryMocks.file,
   };
 });
+
+vi.mock("@/hooks/use-engineering-sessions", () => ({
+  useEngineeringSessions: queryMocks.engineeringSessions,
+  useEngineeringSession: queryMocks.engineeringSession,
+  useCreateEngineeringSession: queryMocks.createEngineeringSession,
+  useArchiveEngineeringSession: queryMocks.archiveEngineeringSession,
+  useDeleteEngineeringSession: queryMocks.deleteEngineeringSession,
+  useEngineeringAction: queryMocks.engineeringAction,
+  useAttachWorkflow: queryMocks.attachWorkflow,
+}));
 
 const metadata: RepositoryMetadata = {
   repositoryId: "acme/platform",
@@ -146,6 +163,13 @@ describe("Giro Frontend Sprint 2 workspace", () => {
       isError: false,
       refetch: vi.fn(),
     });
+    queryMocks.engineeringSessions.mockReturnValue({ data: { data: { sessions: [], count: 0 } }, isLoading: false });
+    queryMocks.engineeringSession.mockReturnValue({ data: undefined, isLoading: false, error: null, refetch: vi.fn() });
+    queryMocks.createEngineeringSession.mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue({ data: { session: { sessionId: "session-1" } } }), isPending: false });
+    queryMocks.archiveEngineeringSession.mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue({}), isPending: false });
+    queryMocks.deleteEngineeringSession.mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue({}), isPending: false });
+    queryMocks.engineeringAction.mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue({}), isPending: false, error: null });
+    queryMocks.attachWorkflow.mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue({ data: { session: { attachedWorkflowId: "workflow-1" } } }), isPending: false, error: null });
   });
 
   it("renders the permanent three-pane repository workspace and status bars", () => {
@@ -155,15 +179,14 @@ describe("Giro Frontend Sprint 2 workspace", () => {
     expect(screen.getByRole("main", { name: "Repository workspace" })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Evidence" })).toBeInTheDocument();
     expect(screen.getByText("Gateway available")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Engineering session workspace" })).toBeInTheDocument();
   });
 
   it("renders overview documentation without fake metric cards", () => {
-    renderWorkspace();
-    expect(screen.getByRole("heading", { name: "Architecture summary" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Code organization" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Quality" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Evolution summary" })).toBeInTheDocument();
-    expect(screen.getByText("Files Analyzed")).toBeInTheDocument();
+    renderWorkspace("view=architecture");
+    expect(screen.getByRole("heading", { name: "Repository structure" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Dependencies" })).toBeInTheDocument();
+    expect(screen.queryByText("Unknown runtime")).not.toBeInTheDocument();
   });
 
   it("serializes workspace navigation and selected file through URL state", () => {

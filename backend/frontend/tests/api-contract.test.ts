@@ -3,6 +3,7 @@ import { ApiClientError, apiRequest } from "@/services/api/client";
 import { normalizeApiBaseUrl } from "@/services/api/config";
 import { repositoryGatewayClient } from "@/services/api/gateway";
 import { encodeRepositoryId, repositoriesApi } from "@/services/api/repositories";
+import { repositorySessionsApi } from "@/services/api/repository-sessions";
 import { repositoryWorkspaceApi } from "@/services/api/repository-workspace";
 import { sessionsApi } from "@/services/api/sessions";
 
@@ -136,6 +137,90 @@ describe("API contract client", () => {
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
     await repositoryWorkspaceApi.semantic("token", "acme", "platform", "1111111111111111111111111111111111111111", "definition", "RepositoryWorkspace", controller.signal);
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal).toBe(controller.signal);
+  });
+
+  it("uses published repository session create and reuse envelopes", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        success: true,
+        requestId: "session-create",
+        status: 201,
+        code: "repository_session_created",
+        message: "The repository session was created.",
+        retryable: false,
+        diagnostics: [],
+        data: { session: { sessionId: "session-1", revision: "1111111111111111111111111111111111111111" }, events: [], context: {}, diagnostics: [] },
+      }, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        success: true,
+        requestId: "session-reuse",
+        status: 200,
+        code: "repository_session_reused",
+        message: "The existing repository session was resumed.",
+        retryable: false,
+        diagnostics: [],
+        data: { session: { sessionId: "session-1", revision: "1111111111111111111111111111111111111111" }, events: [], context: {}, diagnostics: [] },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    await repositorySessionsApi.create("token", { owner: "acme", repo: "platform", revision: "1111111111111111111111111111111111111111" });
+    await repositorySessionsApi.create("token", { owner: "acme", repo: "platform", revision: "1111111111111111111111111111111111111111" });
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/api/v1/sessions");
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).body).toBe(JSON.stringify({ owner: "acme", repo: "platform", revision: "1111111111111111111111111111111111111111" }));
+  });
+
+  it("uses published repository session actions and workflow attachment", async () => {
+    const sessionEnvelope = (code: string, data: unknown = { session: { sessionId: "session-1", revision: "1111111111111111111111111111111111111111" }, result: {} }) => jsonResponse({
+      success: true,
+      requestId: code,
+      status: 200,
+      code,
+      message: code,
+      retryable: false,
+      diagnostics: [],
+      data,
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(sessionEnvelope("repository_session_query_completed"))
+      .mockResolvedValueOnce(sessionEnvelope("repository_session_plan_completed"))
+      .mockResolvedValueOnce(sessionEnvelope("repository_session_specification_completed"))
+      .mockResolvedValueOnce(sessionEnvelope("repository_session_insights_completed"))
+      .mockResolvedValueOnce(sessionEnvelope("repository_session_execution_completed"))
+      .mockResolvedValueOnce(sessionEnvelope("repository_session_workflow_attached", { session: { sessionId: "session-1", attachedWorkflowId: "workflow-1" }, events: [], context: {}, diagnostics: [] }))
+      .mockResolvedValueOnce(new Response(null, { status: 204, headers: { "X-Request-ID": "delete-1" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await repositorySessionsApi.query("token", "session-1", "How?");
+    await repositorySessionsApi.plan("token", "session-1", "Plan");
+    await repositorySessionsApi.specification("token", "session-1", "Spec");
+    await repositorySessionsApi.insights("token", "session-1");
+    await repositorySessionsApi.execution("token", "session-1", "Ready?");
+    await repositorySessionsApi.workflow("token", "session-1", "workflow-1");
+    await expect(repositorySessionsApi.remove("token", "session-1")).resolves.toMatchObject({ status: 204 });
+    expect(fetchMock.mock.calls.map(([url]) => String(url).replace(/^.*\/api\/v1\/sessions/, "/api/v1/sessions"))).toEqual([
+      "/api/v1/sessions/session-1/query",
+      "/api/v1/sessions/session-1/plan",
+      "/api/v1/sessions/session-1/specification",
+      "/api/v1/sessions/session-1/insights",
+      "/api/v1/sessions/session-1/execution",
+      "/api/v1/sessions/session-1/workflow",
+      "/api/v1/sessions/session-1",
+    ]);
+  });
+
+  it("passes AbortSignal through repository session requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      success: true,
+      requestId: "session-signal",
+      status: 200,
+      code: "repository_session_retrieved",
+      message: "The repository session was retrieved.",
+      retryable: false,
+      diagnostics: [],
+      data: { session: { sessionId: "session-1" }, events: [], context: {}, diagnostics: [] },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    await repositorySessionsApi.get("token", "session-1", controller.signal);
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal).toBe(controller.signal);
   });
 });
