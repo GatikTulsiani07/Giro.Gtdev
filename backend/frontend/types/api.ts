@@ -159,6 +159,110 @@ export interface WorkflowState {
   currentStage: string | null;
 }
 
+export type RepositorySessionLifecycle =
+  | "active"
+  | "interrupted"
+  | "stale"
+  | "recovered"
+  | "archived";
+
+export type RepositorySessionEventKind =
+  | "query"
+  | "answer"
+  | "feature"
+  | "symbol"
+  | "file"
+  | "insight"
+  | "plan"
+  | "specification"
+  | "execution_summary";
+
+export interface RepositorySessionResource {
+  sessionId: string;
+  repositoryId: string;
+  repositoryOwner: string;
+  repositoryName: string;
+  revision: string;
+  workflowId: string | null;
+  attachedWorkflowId: string | null;
+  workflowState: string | null;
+  workflowStage: string | null;
+  attachedAt: string | null;
+  lifecycle: RepositorySessionLifecycle;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  archivedAt: string | null;
+}
+
+export interface RepositorySessionSummary extends RepositorySessionResource {
+  eventCount: number;
+  lastEventKind: RepositorySessionEventKind | null;
+  activeFeature: string | null;
+  activeModule: string | null;
+}
+
+export interface RepositorySessionEvent {
+  eventId: string;
+  sequence: number;
+  kind: RepositorySessionEventKind;
+  referenceId: string;
+  summary: string;
+  attributes: JsonRecord;
+  createdAt: string;
+}
+
+export interface RepositorySessionContext {
+  contextVersion: number;
+  activeFeature: string | null;
+  activeModule: string | null;
+  activeWorkflow: string | null;
+  activeArchitecture: string | null;
+  activeChangeAnalysis: string | null;
+  previousQuestions: string[];
+  previousAnswers: string[];
+  recentFiles: string[];
+  recentSymbols: string[];
+  recentFeatures: string[];
+  viewedInsights: string[];
+  viewedPlans: string[];
+  viewedSpecifications: string[];
+  viewedExecutionSummaries: string[];
+  updatedAt: string;
+}
+
+export interface RepositorySessionDetail {
+  session: RepositorySessionResource;
+  events: RepositorySessionEvent[];
+  context: RepositorySessionContext;
+  diagnostics: NormalizedDiagnostic[];
+}
+
+export interface RepositorySessionOperationResult {
+  session: RepositorySessionDetail;
+  result: JsonValue;
+}
+
+export interface WorkflowAttachment {
+  sessionId: string;
+  workflowId: string | null;
+  attachedWorkflowId: string | null;
+  workflowState: string | null;
+  workflowStage: string | null;
+  attachedAt: string | null;
+}
+
+export interface RepositorySessionEnvelope<T> {
+  success: boolean;
+  requestId: string;
+  status: number;
+  code: string;
+  message: string;
+  retryable: boolean;
+  diagnostics: NormalizedDiagnostic[];
+  data: T;
+}
+
 export interface IndexedRepository {
   owner: string;
   repo: string;
