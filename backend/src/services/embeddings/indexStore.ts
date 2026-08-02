@@ -119,10 +119,7 @@ export class SupabaseEmbeddingIndexStore implements EmbeddingIndexStore {
   }
 
   async storeChunk(input: StoreEmbeddingInput, signal?: AbortSignal): Promise<void> {
-    await storeChunkEmbedding(input, {
-      signal,
-      databaseClient: this.client as typeof supabase,
-    });
+    await storeChunkEmbedding(input, { signal });
   }
 
   async validate(

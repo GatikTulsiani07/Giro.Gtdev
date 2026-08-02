@@ -121,6 +121,7 @@ const EnvSchema = z
     SUPABASE_URL: httpUrlEnvironmentValue,
     SUPABASE_ANON_KEY: optionalNonEmptyString,
     SUPABASE_SERVICE_ROLE_KEY: optionalNonEmptyString,
+    DATABASE_URL: optionalNonEmptyString,
     OPENAI_API_KEY: z.string().trim().min(20),
     EMBEDDINGS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
     MODEL_NAME: z.string().trim().min(1).default("gpt-4.1-mini"),
