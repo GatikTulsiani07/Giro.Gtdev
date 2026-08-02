@@ -72,6 +72,7 @@ import {
   runtimeEmbeddingIndexStore,
   type EmbeddingIndexStore,
 } from "../../embeddings/indexStore.js";
+import { EmbeddingPersistenceError } from "../../embeddings/store.js";
 import { runtimeEmbeddingIndexConfiguration } from "../../embeddings/indexVersion.js";
 import { parseRepositoryAst } from "../../repositoryGraph/astParser.js";
 import {
@@ -290,6 +291,88 @@ function errorMessage(error: unknown): string {
   return "unknown error";
 }
 
+function errorCause(error: unknown): unknown {
+  return error instanceof Error ? error.cause : undefined;
+}
+
+const ORIGINAL_ERROR_SECRET_PATTERNS: ReadonlyArray<[RegExp, string]> = [
+  [/\bBearer\s+\S+/gi, "Bearer [REDACTED]"],
+  [/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[REDACTED]"],
+  [/\bsb_(?:secret|publishable)_[A-Za-z0-9_-]+\b/g, "[REDACTED]"],
+  [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED]"],
+  [/([?&](?:key|token|secret|api_key|apikey)=)[^&\s]+/gi, "$1[REDACTED]"],
+  [/((?:authorization|api[_-]?key|service[_-]?key|jwt|token|secret)\s*[:=]\s*)\S+/gi, "$1[REDACTED]"],
+];
+
+function htmlErrorSummary(value: string): string | null {
+  if (!/(?:<!doctype html|<html[\s>]|<body[\s>])/i.test(value)) return null;
+  const title = value.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  const headline = value.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
+  const subheadline = value.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i)?.[1];
+  const rayId = value.match(/Cloudflare Ray ID:\s*<[^>]+>([^<]+)</i)?.[1];
+  const parts = [title, headline, subheadline]
+    .map((part) => part?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    .filter((part): part is string => Boolean(part));
+  if (rayId?.trim()) parts.push(`Cloudflare Ray ID: ${rayId.trim()}`);
+  return parts.length > 0 ? parts.join(" | ") : "HTML error response from Supabase/PostgREST";
+}
+
+function safeOriginalErrorText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  let redacted = htmlErrorSummary(value) ?? value;
+  for (const [pattern, replacement] of ORIGINAL_ERROR_SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, replacement);
+  }
+  return redacted.slice(0, 8_000);
+}
+
+function originalErrorMessage(error: unknown): string | undefined {
+  const cause = errorCause(error);
+  if (cause instanceof Error && cause.message.length > 0) return safeOriginalErrorText(cause.message);
+  if (cause && typeof cause === "object") {
+    const message = (cause as { message?: unknown }).message;
+    if (typeof message === "string" && message.length > 0) return safeOriginalErrorText(message);
+  }
+  return error instanceof Error && error.message.length > 0 ? safeOriginalErrorText(error.message) : undefined;
+}
+
+function originalErrorCode(error: unknown): string | undefined {
+  const candidate = errorCause(error) ?? error;
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const code = (candidate as { code?: unknown }).code;
+  return typeof code === "string" && code.length > 0 ? code : undefined;
+}
+
+function originalErrorStack(error: unknown): string | undefined {
+  if (!(error instanceof Error) || typeof error.stack !== "string") return undefined;
+  const summary = safeOriginalErrorText(error.stack);
+  const frames = error.stack
+    .split("\n")
+    .filter((line) => /^\s+at\s/.test(line))
+    .map((line) => safeOriginalErrorText(line))
+    .filter((line): line is string => Boolean(line))
+    .slice(0, 20);
+  return [summary, ...frames].filter(Boolean).join("\n").slice(0, 8_000);
+}
+
+function originalFailureLogFields(error: unknown): Readonly<Record<string, unknown>> {
+  if (!(error instanceof EmbeddingPersistenceError)) return {};
+  return {
+    originalErrorMessage: originalErrorMessage(error),
+    originalErrorCode: originalErrorCode(error),
+    originalErrorStack: originalErrorStack(error),
+  };
+}
+
+function embeddingFailureDetails(error: unknown): Readonly<Record<string, unknown>> | undefined {
+  if (!(error instanceof EmbeddingPersistenceError)) return undefined;
+  return {
+    ...error.diagnostics,
+    originalErrorMessage: originalErrorMessage(error),
+    originalErrorCode: originalErrorCode(error),
+  };
+}
+
 function sanitizedMessage(message: string): string {
   return message.split("\n")[0]?.trim() || "Indexing failed";
 }
@@ -327,6 +410,13 @@ export function normalizeIndexingJobFailure(
   const normalized = message.toLowerCase();
 
   if (input.stage === "embed") {
+    const details = embeddingFailureDetails(error);
+    if (details) {
+      return {
+        ...failureFromCode("embedding_failed", "Repository embedding failed.", true),
+        details,
+      };
+    }
     if (
       normalized.includes("openai") ||
       normalized.includes("rate limit") ||
@@ -1159,7 +1249,9 @@ export async function processNextIndexingJob(
     logger.error("indexing_job_failed", {
       ...jobLogFields(claimed, workerId),
       failureCode: failure.code,
+      failureMessage: failure.message,
       retryable: failure.retryable,
+      ...originalFailureLogFields(error),
       durationMs: Math.max(0, Math.round(performance.now() - jobStartedAtMs)),
       ...(failure.details?.reason ? {
         quotaReason: failure.details.reason,

@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { semanticSearch } from "../services/embeddings/search.js";
-import { deleteRepositoryRetrievalData, storeChunkEmbedding } from "../services/embeddings/store.js";
+import { deleteRepositoryRetrievalData, EmbeddingPersistenceError, storeChunkEmbedding } from "../services/embeddings/store.js";
 import { keywordSearch } from "../services/retrieval/keywordSearch.js";
 import { loadSummary, saveSummary } from "../services/intelligence/summaryStore.js";
 import { runtimeEmbeddingIndexConfiguration } from "../services/embeddings/indexVersion.js";
@@ -174,16 +174,19 @@ test("semantic adapter sends the repository and revision in the authoritative RP
 });
 
 test("chunk adapter persists deterministic snapshot fields and cleanup uses one RPC", async () => {
-  let persisted: Record<string, unknown> | undefined;
+  const sqlQueries: Array<{ text: string; values?: unknown[] }> = [];
   let cleanup: Record<string, unknown> | undefined;
-  const query = {
-    upsert(value: Record<string, unknown>) {
-      persisted = value;
-      return { abortSignal: async () => ({ error: null }) };
+  const connection = {
+    async query(text: string | { text: string; values?: unknown[] }, values?: unknown[]) {
+      if (typeof text === "string") sqlQueries.push({ text, values });
+      else sqlQueries.push({ text: text.text, values: text.values });
     },
+    release() {},
+  };
+  const sqlClient = {
+    async connect() { return connection; },
   };
   const databaseClient = {
-    from(table: string) { assert.equal(table, "repository_chunks"); return query; },
     async rpc(name: string, input: Record<string, unknown>) {
       assert.equal(name, "delete_repository_retrieval_data"); cleanup = input;
       return { error: null };
@@ -195,15 +198,154 @@ test("chunk adapter persists deterministic snapshot fields and cleanup uses one 
     summary: null, startLine: 1, endLine: 1, embedding: Array.from({ length: 1536 }, () => 0), tokenCount: 7,
     embeddingVersion: "embedding-index-test", chunkId: "src/api.ts:1-1", chunkHash: "chunk-hash",
   };
-  await storeChunkEmbedding(input, { databaseClient: databaseClient as never });
-  const firstId = persisted?.id;
-  await storeChunkEmbedding(input, { databaseClient: databaseClient as never });
-  assert.equal(persisted?.id, firstId);
-  assert.equal(persisted?.repository_revision, "job-1:1");
-  assert.equal(persisted?.token_count, 7);
-  assert.equal(typeof persisted?.content_hash, "string");
+  await storeChunkEmbedding(input, { sqlClient });
+  const insert = sqlQueries.find((entry) => /insert into public\.repository_chunks/i.test(entry.text));
+  assert.ok(insert);
+  const firstId = insert.values?.[0];
+  await storeChunkEmbedding(input, { sqlClient });
+  const secondInsert = sqlQueries.filter((entry) => /insert into public\.repository_chunks/i.test(entry.text))[1];
+  assert.equal(secondInsert?.values?.[0], firstId);
+  assert.match(insert.text, /on conflict \(embedding_version, chunk_id\) do nothing/i);
+  assert.deepEqual(
+    sqlQueries.slice(0, 4).map((entry) => entry.text.trim().split(/\s+/).slice(0, 2).join(" ").toLowerCase()),
+    ["begin", "select set_config('statement_timeout',", "insert into", "commit"],
+  );
+  assert.equal(insert.values?.[2], "job-1:1");
+  assert.equal(insert.values?.[14], 7);
+  assert.equal(typeof insert.values?.[13], "string");
+  assert.match(String(insert.values?.[16]), /^\[[\d,.-]+\]$/);
   await deleteRepositoryRetrievalData("acme/api", "job-1:1", databaseClient as never);
   assert.deepEqual(cleanup, { input_repository: "acme/api", input_keep_revision: "job-1:1" });
+});
+
+test("chunk adapter rolls back and preserves PostgreSQL diagnostics", async () => {
+  const pgError = Object.assign(new Error("new row violates check constraint repository_chunks_embedding_dimension"), {
+    code: "23514",
+    detail: "Failing row contains vector omitted and Bearer secret-token",
+    hint: "Check embedding dimension. api_key=secret-value",
+  });
+  const calls: string[] = [];
+  const connection = {
+    async query(text: string | { text: string; values?: unknown[] }) {
+      const sqlText = typeof text === "string" ? text : text.text;
+      calls.push(sqlText.trim().split(/\s+/).slice(0, 2).join(" ").toLowerCase());
+      if (/insert into public\.repository_chunks/i.test(sqlText)) throw pgError;
+    },
+    release() {},
+  };
+  const input = {
+    repository: "acme/api", repositoryRevision: "rev-1", filePath: "src/api.ts",
+    language: "typescript", chunkIndex: 0, content: "export const route = true;",
+    summary: null, startLine: 1, endLine: 1, embedding: Array.from({ length: 1536 }, () => 0), tokenCount: 7,
+    embeddingVersion: "embedding-index-test", chunkId: "src/api.ts:1-1", chunkHash: "chunk-hash",
+  };
+
+  await assert.rejects(
+    storeChunkEmbedding(input, { sqlClient: { async connect() { return connection; } } }),
+    (error: unknown) => {
+      assert.equal(error instanceof EmbeddingPersistenceError, true);
+      const actual = error as EmbeddingPersistenceError;
+      assert.equal(actual.cause, pgError);
+      assert.equal(actual.diagnostics.operation, "repository_chunks.upsert");
+      assert.equal(actual.diagnostics.errorCode, "23514");
+      assert.equal(actual.diagnostics.errorMessage, pgError.message);
+      assert.match(actual.diagnostics.details ?? "", /Bearer \[REDACTED\]/);
+      assert.match(actual.diagnostics.hint ?? "", /api_key=\[REDACTED\]/);
+      const serialized = JSON.stringify(actual.diagnostics);
+      assert.equal(serialized.includes("secret-token"), false);
+      assert.equal(serialized.includes("secret-value"), false);
+      assert.equal(serialized.includes("[0,0,0"), false);
+      return true;
+    },
+  );
+  assert.deepEqual(calls, [
+    "begin",
+    "select set_config('statement_timeout',",
+    "insert into",
+    "rollback",
+  ]);
+});
+
+test("chunk adapter preserves safe direct SQL diagnostics", async () => {
+  const sqlError = {
+    code: "23514",
+    message: "new row violates check constraint repository_chunks_embedding_dimension",
+    detail: "Failing row contains vector omitted and Bearer secret-token",
+    hint: "Check embedding dimension. api_key=secret-value",
+  };
+  const connection = {
+    async query(text: string | { text: string; values?: unknown[] }) {
+      const sqlText = typeof text === "string" ? text : text.text;
+      if (/insert into public\.repository_chunks/i.test(sqlText)) throw sqlError;
+    },
+    release() {},
+  };
+  const input = {
+    repository: "acme/api", repositoryRevision: "rev-1", filePath: "src/api.ts",
+    language: "typescript", chunkIndex: 0, content: "export const route = true;",
+    summary: null, startLine: 1, endLine: 1, embedding: Array.from({ length: 1536 }, () => 0), tokenCount: 7,
+    embeddingVersion: "embedding-index-test", chunkId: "src/api.ts:1-1", chunkHash: "chunk-hash",
+  };
+
+  await assert.rejects(
+    storeChunkEmbedding(input, { sqlClient: { async connect() { return connection; } } }),
+    (error: unknown) => {
+      assert.equal(error instanceof EmbeddingPersistenceError, true);
+      const actual = error as EmbeddingPersistenceError;
+      assert.equal(actual.cause, sqlError);
+      assert.equal(actual.diagnostics.operation, "repository_chunks.upsert");
+      assert.equal(actual.diagnostics.repositoryId, "acme/api");
+      assert.equal(actual.diagnostics.revision, "rev-1");
+      assert.equal(actual.diagnostics.chunkId, "src/api.ts:1-1");
+      assert.equal(actual.diagnostics.embeddingDimension, 1536);
+      assert.equal(actual.diagnostics.errorCode, "23514");
+      assert.equal(actual.diagnostics.errorMessage, sqlError.message);
+      const serialized = JSON.stringify(actual.diagnostics);
+      assert.equal(serialized.includes("secret-token"), false);
+      assert.equal(serialized.includes("secret-value"), false);
+      assert.equal(serialized.includes("[0,0,0"), false);
+      return true;
+    },
+  );
+});
+
+test("chunk adapter summarizes HTML persistence errors without raw response leakage", async () => {
+  const sqlError = {
+    message: `<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head>
+      <body><h1>Sorry, you have been blocked</h1>
+      <h2><span>You are unable to access</span> supabase.co</h2>
+      <span>Cloudflare Ray ID: <strong>a2463691edb3897e</strong></span>
+      <span id="cf-footer-ip">49.36.243.127</span></body></html>`,
+  };
+  const connection = {
+    async query(text: string | { text: string; values?: unknown[] }) {
+      const sqlText = typeof text === "string" ? text : text.text;
+      if (/insert into public\.repository_chunks/i.test(sqlText)) throw sqlError;
+    },
+    release() {},
+  };
+  const input = {
+    repository: "acme/api", repositoryRevision: "rev-1", filePath: "src/api.ts",
+    language: "typescript", chunkIndex: 0, content: "export const route = true;",
+    summary: null, startLine: 1, endLine: 1, embedding: Array.from({ length: 1536 }, () => 0), tokenCount: 7,
+    embeddingVersion: "embedding-index-test", chunkId: "src/api.ts:1-1", chunkHash: "chunk-hash",
+  };
+
+  await assert.rejects(
+    storeChunkEmbedding(input, { sqlClient: { async connect() { return connection; } } }),
+    (error: unknown) => {
+      assert.equal(error instanceof EmbeddingPersistenceError, true);
+      const actual = error as EmbeddingPersistenceError;
+      assert.match(actual.diagnostics.errorMessage, /Attention Required! \| Cloudflare/);
+      assert.match(actual.diagnostics.errorMessage, /Sorry, you have been blocked/);
+      assert.match(actual.diagnostics.errorMessage, /Cloudflare Ray ID: a2463691edb3897e/);
+      const serialized = JSON.stringify(actual.diagnostics);
+      assert.equal(serialized.includes("<html"), false);
+      assert.equal(serialized.includes("49.36.243.127"), false);
+      assert.equal(serialized.includes("[0,0,0"), false);
+      return true;
+    },
+  );
 });
 
 test("keyword adapter scopes candidates by repository and revision before local scoring", async () => {

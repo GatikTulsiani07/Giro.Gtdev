@@ -21,6 +21,7 @@ import {
   clearRepositoryIndexRegistry,
   getRepositoryIndexMetadata,
 } from "../services/repository/indexingService.js";
+import { EmbeddingPersistenceError } from "../services/embeddings/store.js";
 import {
   clearRepositoryOwners,
   setRepositoryOwner,
@@ -254,6 +255,100 @@ test("embedding and OpenAI failures use external failure codes", () => {
   assert.equal(openai.retryable, true);
   assert.equal(embedding.code, "embedding_failed");
   assert.equal(embedding.retryable, true);
+});
+
+test("embedding persistence failure keeps safe durable diagnostics and logging", async () => {
+  const job = await store.createJob(BASE_JOB);
+  const cause = {
+    code: "23514",
+    message: "repository_chunks_embedding_dimension violated",
+    details: "vector rejected with Bearer secret-token",
+    hint: "Check model dimension. api_key=secret-value",
+  };
+  const error = new EmbeddingPersistenceError({
+    operation: "repository_chunks.upsert",
+    repositoryId: BASE_JOB.repositoryId,
+    revision: "rev-1",
+    chunkId: "src/api.ts:1-1",
+    embeddingDimension: 1536,
+    provider: "mock",
+    model: "text-embedding-3-small",
+    errorMessage: cause.message,
+    errorCode: cause.code,
+    details: "vector rejected with Bearer [REDACTED]",
+    hint: "Check model dimension. api_key=[REDACTED]",
+  }, cause);
+  const entries: Array<{ event: string; fields?: Record<string, unknown> }> = [];
+
+  const report = await processNextIndexingJob({
+    workerId: "worker-1",
+    jobStore: store,
+    logger: {
+      info: (event, fields) => entries.push({ event, fields }),
+      error: (event, fields) => entries.push({ event, fields }),
+    },
+    executeIndexingPipeline: failingPipeline("embed", error),
+  });
+
+  const stored = await store.getJob(job.jobId);
+  const failedLog = entries.find((entry) => entry.event === "indexing_job_failed");
+  assert.equal(report.status, "failed");
+  assert.equal(report.failure?.code, "embedding_failed");
+  assert.equal(report.failure?.message, "Repository embedding failed.");
+  assert.equal(report.failure?.retryable, true);
+  assert.equal(stored?.failure?.code, "embedding_failed");
+  assert.equal(stored?.failure?.details?.operation, "repository_chunks.upsert");
+  assert.equal(stored?.failure?.details?.errorCode, "23514");
+  assert.equal(stored?.failure?.details?.originalErrorCode, "23514");
+  assert.equal(stored?.failure?.details?.repositoryId, BASE_JOB.repositoryId);
+  assert.equal(stored?.failure?.details?.chunkId, "src/api.ts:1-1");
+  assert.equal(failedLog?.fields?.failureCode, "embedding_failed");
+  assert.equal(failedLog?.fields?.failureMessage, "Repository embedding failed.");
+  assert.equal(failedLog?.fields?.originalErrorMessage, cause.message);
+  assert.equal(failedLog?.fields?.originalErrorCode, "23514");
+  assert.equal(typeof failedLog?.fields?.originalErrorStack, "string");
+  const serialized = JSON.stringify({ failure: stored?.failure, log: failedLog });
+  assert.equal(serialized.includes("secret-token"), false);
+  assert.equal(serialized.includes("secret-value"), false);
+  assert.equal(serialized.includes("[0,0,0"), false);
+});
+
+test("embedding persistence failure logging summarizes HTML responses and keeps stack frames", async () => {
+  const job = await store.createJob(BASE_JOB);
+  const html = `<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head>
+    <body><h1>Sorry, you have been blocked</h1>
+    <h2><span>You are unable to access</span> supabase.co</h2>
+    <span>Cloudflare Ray ID: <strong>a2463691edb3897e</strong></span>
+    <span id="cf-footer-ip">49.36.243.127</span></body></html>`;
+  const error = new EmbeddingPersistenceError({
+    operation: "repository_chunks.upsert",
+    repositoryId: BASE_JOB.repositoryId,
+    revision: "rev-1",
+    chunkId: "src/api.ts:1-1",
+    embeddingDimension: 1536,
+    provider: "mock",
+    model: "text-embedding-3-small",
+    errorMessage: "Attention Required! | Cloudflare | Sorry, you have been blocked | Cloudflare Ray ID: a2463691edb3897e",
+  }, { message: html });
+  error.stack = `${error.name}: ${error.message}\n    at storeChunkEmbedding (/repo/store.ts:10:5)`;
+  const entries: Array<{ event: string; fields?: Record<string, unknown> }> = [];
+
+  await processNextIndexingJob({
+    workerId: "worker-1",
+    jobStore: store,
+    logger: {
+      info: (event, fields) => entries.push({ event, fields }),
+      error: (event, fields) => entries.push({ event, fields }),
+    },
+    executeIndexingPipeline: failingPipeline("embed", error),
+  });
+
+  const failedLog = entries.find((entry) => entry.event === "indexing_job_failed");
+  assert.match(String(failedLog?.fields?.originalErrorMessage), /Attention Required! \| Cloudflare/);
+  assert.match(String(failedLog?.fields?.originalErrorStack), /storeChunkEmbedding/);
+  const serialized = JSON.stringify(failedLog);
+  assert.equal(serialized.includes("<html"), false);
+  assert.equal(serialized.includes("49.36.243.127"), false);
 });
 
 test("repository store update failure marks job failed without stack trace", async () => {
